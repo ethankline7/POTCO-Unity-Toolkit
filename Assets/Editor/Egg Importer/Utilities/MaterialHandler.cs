@@ -19,10 +19,11 @@ public class MaterialHandler
     
     // Cache for default colors to avoid repeated string operations
     private static readonly Dictionary<string, Color> DefaultColorCache = new Dictionary<string, Color>();
-    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, GameObject rootGO)
+    
+    // New overload that accepts alpha textures specified by .egg files
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
     {
-        DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths");
-        // Pre-size the list to avoid resizing during population
+        DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths and {alphaPaths.Count} alpha paths");
         var materials = new List<Material>(texturePaths.Count + 1);
         
         foreach (var kvp in texturePaths)
@@ -32,20 +33,47 @@ public class MaterialHandler
             
             DebugLogger.LogEggImporter($"Creating material: {materialName} with texture: {texturePath}");
             
-            Material mat = CreateVertexColorMaterial(materialName);
+            // Check if this material has an alpha texture specified
+            string alphaPath = alphaPaths.TryGetValue(materialName, out string alpha) ? alpha : null;
             
+            Material mat;
             string textureFileName = Path.GetFileName(texturePath);
-            Texture2D texture = FindTextureInProject(textureFileName);
-            
-            if (texture != null)
+            Texture2D colorTex = FindTextureInProject(textureFileName);
+            if (!colorTex) colorTex = LoadTextureByFileName(textureFileName);
+
+            Texture2D alphaTex = null;
+            if (!string.IsNullOrEmpty(alphaPath))
             {
-                mat.mainTexture = texture;
+                string alphaFileName = Path.GetFileName(alphaPath);
+                alphaTex = FindTextureInProject(alphaFileName);
+                if (!alphaTex) alphaTex = LoadTextureByFileName(alphaFileName);
+                
+                if (alphaTex)
+                    DebugLogger.LogEggImporter($"[AlphaMask] Found alpha texture for {materialName}: {alphaFileName}");
+                else
+                    DebugLogger.LogWarningEggImporter($"[AlphaMask] Could not load alpha texture: {alphaFileName}");
+            }
+
+            // Always use the unified vertex color material
+            mat = CreateVertexColorMaterial(materialName);
+            
+            if (colorTex)
+            {
+                mat.mainTexture = colorTex;
                 DebugLogger.LogEggImporter($"Assigned texture {textureFileName} to material {materialName}");
             }
             else
             {
                 DebugLogger.LogWarningEggImporter($"Could not find texture: {textureFileName}");
                 mat.color = GetDefaultColorForMaterial(materialName);
+            }
+            
+            // Set alpha texture if available
+            if (alphaTex)
+            {
+                mat.SetTexture("_AlphaTex", alphaTex);
+                if (mat.HasProperty("_Cutoff")) mat.SetFloat("_Cutoff", 0.1f);
+                DebugLogger.LogEggImporter($"[AlphaMask] Assigned alpha texture to {materialName}: {alphaTex.name}");
             }
             
             // Use cached property IDs for better performance
@@ -57,16 +85,22 @@ public class MaterialHandler
             materials.Add(mat);
         }
         
-        // Always ensure Default-Material exists for polygons that don't specify textures
+        // Always ensure Default-Material exists
         var defaultMaterial = CreateVertexColorMaterial("Default-Material");
         materials.Add(defaultMaterial);
         
-        if (materials.Count == 1) // Only default material was added
+        if (materials.Count == 1)
         {
             DebugLogger.LogEggImporter("No textures found, using default material only");
         }
         
         return materials;
+    }
+
+    // Legacy overload for backward compatibility
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, GameObject rootGO)
+    {
+        return CreateMaterials(texturePaths, new Dictionary<string, string>(), rootGO);
     }
     
     private Texture2D FindTextureInProject(string textureFileName)
@@ -202,5 +236,19 @@ public class MaterialHandler
         }
         
         return _standardShader;
+    }
+    
+
+
+    private static Texture2D LoadTextureByFileName(string fileName)
+    {
+        var guids = AssetDatabase.FindAssets($"{Path.GetFileNameWithoutExtension(fileName)} t:Texture2D");
+        foreach (var g in guids)
+        {
+            var p = AssetDatabase.GUIDToAssetPath(g);
+            if (string.Equals(Path.GetFileName(p), fileName, System.StringComparison.OrdinalIgnoreCase))
+                return AssetDatabase.LoadAssetAtPath<Texture2D>(p);
+        }
+        return null;
     }
 }

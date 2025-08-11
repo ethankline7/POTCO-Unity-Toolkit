@@ -380,7 +380,7 @@ public class GeometryProcessor
     }
 
 
-    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, ParserUtilities parserUtils)
+    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, ParserUtilities parserUtils)
     {
         for (int i = 0; i < lines.Length; i++)
         {
@@ -395,7 +395,22 @@ public class GeometryProcessor
                     for (int j = i + 1; j < blockEnd; j++)
                     {
                         string innerLine = lines[j].Trim();
-                        if (innerLine.StartsWith("\"") && innerLine.EndsWith("\"")) { texturePaths[texName] = innerLine.Trim('"'); break; }
+                        if (innerLine.StartsWith("\"") && innerLine.EndsWith("\"")) 
+                        { 
+                            texturePaths[texName] = innerLine.Trim('"'); 
+                        }
+                        else if (innerLine.StartsWith("<Scalar> alpha-file"))
+                        {
+                            // Extract alpha file path from: <Scalar> alpha-file { "path/to/file_a.rgb" }
+                            int startQuote = innerLine.IndexOf('"');
+                            int endQuote = innerLine.LastIndexOf('"');
+                            if (startQuote >= 0 && endQuote > startQuote)
+                            {
+                                string alphaPath = innerLine.Substring(startQuote + 1, endQuote - startQuote - 1);
+                                alphaPaths[texName] = alphaPath;
+                                DebugLogger.LogEggImporter($"[AlphaParse] Found alpha-file for {texName}: {alphaPath}");
+                            }
+                        }
                     }
                 }
             }
@@ -442,6 +457,13 @@ public class GeometryProcessor
                 vertexPool.Add(vert);
             }
         }
+    }
+
+    // Legacy overload for backward compatibility
+    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, ParserUtilities parserUtils)
+    {
+        var alphaPaths = new Dictionary<string, string>();
+        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, parserUtils);
     }
 
 

@@ -264,13 +264,14 @@ public class EggImporter : ScriptedImporter
         // Pre-size collections based on typical EGG file contents
         var vertexPool = new List<EggVertex>(1024); // Typical vertex count estimate
         var texturePaths = new Dictionary<string, string>(16); // Typical texture count
+        var alphaPaths = new Dictionary<string, string>(16); // Alpha texture paths
         _joints = new Dictionary<string, EggJoint>(32); // Typical joint count
-        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths);
+        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths);
         DebugLogger.LogEggImporter($"Parsed {vertexPool.Count} vertices and {texturePaths.Count} textures");
         ParseAllJoints(lines);
         DebugLogger.LogEggImporter($"Parsed {_joints.Count} joints, hasSkeletalData: {_hasSkeletalData}");
         PopulateJointWeightsFromVertices(vertexPool);
-        _materials = CreateMaterials(texturePaths, rootGO);
+        _materials = CreateMaterials(texturePaths, alphaPaths, rootGO);
         // Use optimized material dictionary creation from MaterialHandler
         _materialDict = _materialHandler.CreateMaterialDictionary(_materials);
         CreateMasterVertexBuffer(vertexPool);
@@ -393,14 +394,14 @@ public class EggImporter : ScriptedImporter
         }
     }
 
-    private void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths)
+    private void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths)
     {
-        _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, _parserUtils);
+        _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, _parserUtils);
     }
 
-    private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, GameObject rootGO)
+    private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
     {
-        return _materialHandler.CreateMaterials(texturePaths, rootGO);
+        return _materialHandler.CreateMaterials(texturePaths, alphaPaths, rootGO);
     }
 
     private void CreateMasterVertexBuffer(List<EggVertex> vertexPool)

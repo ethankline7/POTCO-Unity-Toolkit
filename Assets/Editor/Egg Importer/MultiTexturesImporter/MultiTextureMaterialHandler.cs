@@ -69,7 +69,7 @@ public class MultiTextureMaterialHandler
                 if (mat.HasProperty(MetallicPropertyId))
                     mat.SetFloat(MetallicPropertyId, 0.0f);
                 if (mat.HasProperty(GlossinessPropertyId))
-                    mat.SetFloat(GlossinessPropertyId, 0.1f);
+                    mat.SetFloat(GlossinessPropertyId, 0.0f);
             }
             
             materials.Add(mat);
@@ -127,7 +127,7 @@ public class MultiTextureMaterialHandler
             if (mat.HasProperty(MetallicPropertyId))
                 mat.SetFloat(MetallicPropertyId, 0.0f);
             if (mat.HasProperty(GlossinessPropertyId))
-                mat.SetFloat(GlossinessPropertyId, 0.1f);
+                mat.SetFloat(GlossinessPropertyId, 0.0f);
             
             materials.Add(mat);
         }
@@ -308,7 +308,7 @@ public class MultiTextureMaterialHandler
         if (mat.HasProperty(MetallicPropertyId))
             mat.SetFloat(MetallicPropertyId, 0.0f);
         if (mat.HasProperty(GlossinessPropertyId))
-            mat.SetFloat(GlossinessPropertyId, 0.1f);
+            mat.SetFloat(GlossinessPropertyId, 0.0f);
             
         DebugLogger.LogEggImporter($"Created vertex color material '{materialName}' using shader: {shader.name}");
         
@@ -429,7 +429,7 @@ public class MultiTextureMaterialHandler
         if (mat.HasProperty("_Metallic"))
             mat.SetFloat("_Metallic", 0.0f);
         if (mat.HasProperty("_Glossiness"))
-            mat.SetFloat("_Glossiness", 0.1f);
+            mat.SetFloat("_Glossiness", 0.0f);
         
         return mat;
     }
@@ -560,7 +560,7 @@ public class MultiTextureMaterialHandler
         if (mat.HasProperty("_Metallic"))
             mat.SetFloat("_Metallic", 0.0f);
         if (mat.HasProperty("_Glossiness"))
-            mat.SetFloat("_Glossiness", 0.1f);
+            mat.SetFloat("_Glossiness", 0.0f);
             
         return mat;
     }

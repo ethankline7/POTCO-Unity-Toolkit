@@ -12,6 +12,12 @@ public class MultiTextureEggImporter
     private MultiTextureAnimationProcessor _animationProcessor;
     private MultiTextureMaterialHandler _materialHandler;
     
+    // Add main components for alpha parsing
+    private ParserUtilities _mainParserUtils;
+    private GeometryProcessor _mainGeometryProcessor;
+    private MaterialHandler _mainMaterialHandler;
+    
+    
     // Fields exactly like the reference implementation
     private List<Material> _materials;
     private Dictionary<string, Material> _materialDict;
@@ -30,6 +36,12 @@ public class MultiTextureEggImporter
         _geometryProcessor = new MultiTextureGeometryProcessor();
         _animationProcessor = new MultiTextureAnimationProcessor();
         _materialHandler = new MultiTextureMaterialHandler();
+        
+        // Initialize main components for alpha parsing
+        _mainParserUtils = new ParserUtilities();
+        _mainGeometryProcessor = new GeometryProcessor();
+        _mainMaterialHandler = new MaterialHandler();
+        
     }
     
     public void ImportEggFile(string[] lines, GameObject rootGO, UnityEditor.AssetImporters.AssetImportContext ctx)
@@ -65,8 +77,14 @@ public class MultiTextureEggImporter
         // Pre-size collections based on typical EGG file contents
         var vertexPool = new List<EggVertex>(1024); // Typical vertex count estimate
         var texturePaths = new Dictionary<string, string>(16); // Typical texture count
+        var alphaPaths = new Dictionary<string, string>(16); // Alpha texture paths
         _joints = new Dictionary<string, EggJoint>(32); // Typical joint count
+        
+        // Parse textures with MultiTexture system (for UV mappings and multi-texture support)
         ParseAllTexturesAndVertices(lines, vertexPool, texturePaths);
+        
+        // Also parse alpha paths using main GeometryProcessor (just for alpha-file entries)
+        ParseAlphaTextures(lines, texturePaths, alphaPaths);
         DebugLogger.LogEggImporter($"Parsed {vertexPool.Count} vertices and {texturePaths.Count} textures");
         ParseAllJoints(lines);
         DebugLogger.LogEggImporter($"Parsed {_joints.Count} joints, hasSkeletalData: {_hasSkeletalData}");
@@ -120,11 +138,13 @@ public class MultiTextureEggImporter
         {
             DebugLogger.LogEggImporter("🔥 Detected multi-texture materials - using DelFuego overlay system");
             _materials = CreateMaterialsWithMultiTexture(texturePaths, allMaterialNames.ToList(), rootGO, Vector4.zero);
+            // Apply alpha textures to DelFuego materials after creation
+            ApplyAlphaTexturesToMaterials(_materials, alphaPaths);
         }
         else
         {
-            DebugLogger.LogEggImporter("📦 Using simple material creation");
-            _materials = CreateMaterials(texturePaths, rootGO);
+            DebugLogger.LogEggImporter("📦 Using unified material creation with alpha support");
+            _materials = CreateMaterialsWithAlpha(texturePaths, alphaPaths, rootGO);
         }
         
         // Use optimized material dictionary creation from MaterialHandler
@@ -157,6 +177,77 @@ public class MultiTextureEggImporter
     private List<Material> CreateMaterialsWithMultiTexture(Dictionary<string, string> texturePaths, List<string> materialNames, GameObject rootGO, Vector4 uvBounds)
     {
         return _materialHandler.CreateMaterialsWithMultiTexture(texturePaths, materialNames, rootGO, uvBounds);
+    }
+    
+    private List<Material> CreateMaterialsWithAlpha(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
+    {
+        return _mainMaterialHandler.CreateMaterials(texturePaths, alphaPaths, rootGO);
+    }
+    
+    private void ParseAlphaTextures(string[] lines, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths)
+    {
+        // Use main GeometryProcessor to extract just the alpha-file entries
+        var dummyVertexPool = new List<EggVertex>();
+        var dummyTexturePaths = new Dictionary<string, string>();
+        _mainGeometryProcessor.ParseAllTexturesAndVertices(lines, dummyVertexPool, dummyTexturePaths, alphaPaths, _mainParserUtils);
+    }
+    
+    private void ApplyAlphaTexturesToMaterials(List<Material> materials, Dictionary<string, string> alphaPaths)
+    {
+        if (alphaPaths.Count == 0) return;
+        
+        foreach (var material in materials)
+        {
+            if (alphaPaths.TryGetValue(material.name, out string alphaPath))
+            {
+                // Find the alpha texture
+                string alphaFileName = Path.GetFileName(alphaPath);
+                Texture2D alphaTex = FindTextureInProject(alphaFileName);
+                if (!alphaTex) alphaTex = LoadTextureByFileName(alphaFileName);
+                
+                if (alphaTex)
+                {
+                    material.SetTexture("_AlphaTex", alphaTex);
+                    if (material.HasProperty("_Cutoff")) material.SetFloat("_Cutoff", 0.1f);
+                    DebugLogger.LogEggImporter($"[AlphaMask] Applied alpha texture to DelFuego material {material.name}: {alphaTex.name}");
+                }
+                else
+                {
+                    DebugLogger.LogWarningEggImporter($"[AlphaMask] Could not find alpha texture for DelFuego material {material.name}: {alphaFileName}");
+                }
+            }
+        }
+    }
+    
+    // Helper methods from MaterialHandler for texture loading
+    private Texture2D FindTextureInProject(string textureFileName)
+    {
+        string[] guids = UnityEditor.AssetDatabase.FindAssets(Path.GetFileNameWithoutExtension(textureFileName) + " t:texture2D");
+        
+        foreach (string guid in guids)
+        {
+            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+            string foundFileName = Path.GetFileName(path);
+            
+            if (foundFileName.Equals(textureFileName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                Texture2D texture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                if (texture != null) return texture;
+            }
+        }
+        return null;
+    }
+
+    private Texture2D LoadTextureByFileName(string fileName)
+    {
+        var guids = UnityEditor.AssetDatabase.FindAssets($"{Path.GetFileNameWithoutExtension(fileName)} t:Texture2D");
+        foreach (var g in guids)
+        {
+            var p = UnityEditor.AssetDatabase.GUIDToAssetPath(g);
+            if (string.Equals(Path.GetFileName(p), fileName, System.StringComparison.OrdinalIgnoreCase))
+                return UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(p);
+        }
+        return null;
     }
 
     private void CreateMasterVertexBuffer(List<EggVertex> vertexPool)

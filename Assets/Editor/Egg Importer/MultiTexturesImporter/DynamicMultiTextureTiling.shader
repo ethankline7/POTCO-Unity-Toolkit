@@ -16,7 +16,7 @@ Shader "EggImporter/DynamicMultiTextureTiling"
         
         _BlendMode ("Blend Strength", Range(0,1)) = 0.5
         _Metallic ("Metallic", Range(0,1)) = 0.0
-        _Glossiness ("Smoothness", Range(0,1)) = 0.1
+        _Glossiness ("Smoothness", Range(0,1)) = 0.0
     }
     
     SubShader
