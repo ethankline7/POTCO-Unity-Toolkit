@@ -29,7 +29,7 @@ The whole point of this is to bring out the creativity within our community, cre
 🗺️ **World Data Importer** - Import POTCO World Data files into Unity scenes  
 🏴‍☠️ **World Data Exporter** - Export Unity scenes back to game-compatible files  
 ⛏️ **Procedural Cave Generator** - Create interconnected cave systems with presets  
-🎨 **Advanced EGG File Importer** - Import Panda3D .egg models
+🎨 **Advanced EGG File Importer** - Import Panda3D .egg models              
 🖼️ **Native .RGB Importer** - Supports .rgb alpha transparency 
 
 ### Level Creation & Management
@@ -162,7 +162,6 @@ https://github.com/user-attachments/assets/b4187ae0-391a-410d-99f8-5706204fa792
 ## ⚠️ Known Issues
 
 - Some manually dragged objects may not receive ObjectListInfo components automatically - use "Add ObjectListInfo to Selected Objects" in the exporter
-- Alpha transparency is not working
 - Large cave systems may occasionally experience piece overlapping
 - Complex EGG files with extensive bone data may require additional processing time
 
