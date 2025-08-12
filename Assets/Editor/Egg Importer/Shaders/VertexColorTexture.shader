@@ -14,7 +14,7 @@ Shader "EggImporter/VertexColorTexture"
         Cull [_Cull]
         
         CGPROGRAM
-        #pragma surface surf Unlit vertex:vert alphatest:_Cutoff
+        #pragma surface surf BrightLambert vertex:vert alphatest:_Cutoff
         #include "UnityCG.cginc"
 
         sampler2D _MainTex;
@@ -34,10 +34,18 @@ Shader "EggImporter/VertexColorTexture"
             o.color = v.color;
         }
 
-        // Custom unlit lighting function
-        half4 LightingUnlit(SurfaceOutput s, half3 lightDir, half atten)
+        // Custom lighting model with ambient lighting so models aren't pitch black
+        half4 LightingBrightLambert(SurfaceOutput s, half3 lightDir, half atten)
         {
-            return half4(s.Albedo, s.Alpha);
+            half NdotL = dot(s.Normal, lightDir);
+            half diff = NdotL * 0.5 + 0.5; // Wrap lighting for brightness
+            half4 c;
+            // Add ambient lighting (15% minimum brightness) plus directional lighting
+            half3 ambient = s.Albedo * 0.15; // 15% ambient light
+            half3 directional = s.Albedo * _LightColor0.rgb * (diff * atten);
+            c.rgb = ambient + directional;
+            c.a = s.Alpha;
+            return c;
         }
 
         void surf(Input IN, inout SurfaceOutput o)
