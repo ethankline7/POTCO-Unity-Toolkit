@@ -14,7 +14,7 @@ Shader "EggImporter/VertexColorTexture"
         Cull [_Cull]
         
         CGPROGRAM
-        #pragma surface surf Lambert vertex:vert alphatest:_Cutoff
+        #pragma surface surf Unlit vertex:vert alphatest:_Cutoff
         #include "UnityCG.cginc"
 
         sampler2D _MainTex;
@@ -32,6 +32,12 @@ Shader "EggImporter/VertexColorTexture"
             UNITY_INITIALIZE_OUTPUT(Input, o);
             o.uv_MainTex = v.texcoord.xy;
             o.color = v.color;
+        }
+
+        // Custom unlit lighting function
+        half4 LightingUnlit(SurfaceOutput s, half3 lightDir, half atten)
+        {
+            return half4(s.Albedo, s.Alpha);
         }
 
         void surf(Input IN, inout SurfaceOutput o)
@@ -52,7 +58,7 @@ Shader "EggImporter/VertexColorTexture"
             if (alphaTexColor.r < 0.99 || alphaTexColor.g < 0.99 || alphaTexColor.b < 0.99)
             {
                 // Alpha mask is assigned - use it with binary cutoff
-                fixed aMask = step(0.5, alphaTexColor.r);
+                fixed aMask = alphaTexColor.r * 0.5;
                 o.Alpha = aMask * finalColor.a;
             }
             else
