@@ -362,8 +362,10 @@ public class MultiTextureMaterialHandler
         DebugLogger.LogEggImporter($"🔧 Creating multi-texture material: {materialName}");
         DebugLogger.LogEggImporter($"🔧 Texture names array: [{string.Join(", ", textureNames)}]");
         
-        // NEW APPROACH: Create dual-texture material for main + tiling overlay
-        Material mat = new Material(Shader.Find("Standard")) { name = materialName };
+        // Use custom MultiTexture shader for proper multiplicative blending (darker when combined)
+        Shader multiShader = Shader.Find("EggImporter/MultiTextureBlend");
+        if (multiShader == null) multiShader = Shader.Find("Standard");
+        Material mat = new Material(multiShader) { name = materialName };
         
         // Find the base/main texture (usually the island palette)
         Texture2D mainTexture = null;
@@ -407,21 +409,31 @@ public class MultiTextureMaterialHandler
             DebugLogger.LogEggImporter($"✅ Main texture applied: {mainTexture.name}");
         }
         
-        // For overlay, we'll use detail texture or create a custom shader approach
+        // Set up overlay texture using MultiTextureBlend shader properties
         if (overlayTexture != null)
         {
-            // Try to use detail texture for overlay if Standard shader supports it
-            if (mat.HasProperty("_DetailAlbedoMap"))
+            if (mat.HasProperty("_BlendTex"))
             {
+                // Use custom MultiTexture shader
+                mat.SetTexture("_BlendTex", overlayTexture);
+                mat.SetFloat("_BlendMode", 0.5f); // 50% blend strength
+                mat.SetFloat("_BlendScale", 8.0f); // Tiling scale for overlay
+                DebugLogger.LogEggImporter($"✅ Overlay texture applied with MultiTexture shader (multiplicative blend): {overlayTexture.name}");
+            }
+            else if (mat.HasProperty("_DetailAlbedoMap"))
+            {
+                // Fallback to Standard shader detail mapping
                 mat.SetTexture("_DetailAlbedoMap", overlayTexture);
                 mat.SetFloat("_DetailNormalMapScale", 1.0f);
-                DebugLogger.LogEggImporter($"✅ Overlay texture applied as detail: {overlayTexture.name}");
+                if (mat.HasProperty("_DetailAlbedoMapScale"))
+                    mat.SetFloat("_DetailAlbedoMapScale", 0.5f);
+                DebugLogger.LogEggImporter($"✅ Overlay texture applied as detail (fallback): {overlayTexture.name}");
             }
             else
             {
-                // Fallback: Use overlay as main texture if no detail support
+                // Last resort: Use overlay as main texture
                 mat.mainTexture = overlayTexture;
-                DebugLogger.LogEggImporter($"⚠️ Fallback: Using overlay as main texture: {overlayTexture.name}");
+                DebugLogger.LogEggImporter($"⚠️ Using overlay as main texture (no multi-texture support): {overlayTexture.name}");
             }
         }
         
@@ -430,6 +442,10 @@ public class MultiTextureMaterialHandler
             mat.SetFloat("_Metallic", 0.0f);
         if (mat.HasProperty("_Glossiness"))
             mat.SetFloat("_Glossiness", 0.0f);
+        if (mat.HasProperty("_SpecColor"))
+            mat.SetColor("_SpecColor", Color.black);
+        if (mat.HasProperty("_Shininess"))
+            mat.SetFloat("_Shininess", 0.0f);
         
         return mat;
     }
@@ -548,19 +564,23 @@ public class MultiTextureMaterialHandler
                 Vector2 detailTiling = new Vector2(40.0f, 40.0f); // 40x tiling for more repetition
                 mat.SetTextureScale("_DetailAlbedoMap", detailTiling);
                 
-                // Increase detail intensity for more prominent overlay
+                // Reduce detail intensity for darker blending instead of brighter
                 if (mat.HasProperty("_DetailAlbedoMapScale"))
-                    mat.SetFloat("_DetailAlbedoMapScale", 2.0f);
+                    mat.SetFloat("_DetailAlbedoMapScale", 0.5f);
                     
                 DebugLogger.LogEggImporter($"🔄 DelFuego overlay texture: {overlayTexture.name} (20x tiling as detail map)");
             }
         }
         
-        // Standard material properties
+        // Set material properties for better appearance
         if (mat.HasProperty("_Metallic"))
             mat.SetFloat("_Metallic", 0.0f);
         if (mat.HasProperty("_Glossiness"))
             mat.SetFloat("_Glossiness", 0.0f);
+        if (mat.HasProperty("_SpecColor"))
+            mat.SetColor("_SpecColor", Color.black);
+        if (mat.HasProperty("_Shininess"))
+            mat.SetFloat("_Shininess", 0.0f);
             
         return mat;
     }

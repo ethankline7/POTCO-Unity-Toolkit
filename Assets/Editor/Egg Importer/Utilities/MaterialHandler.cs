@@ -73,7 +73,17 @@ public class MaterialHandler
             {
                 mat.SetTexture("_AlphaTex", alphaTex);
                 if (mat.HasProperty("_Cutoff")) mat.SetFloat("_Cutoff", 0.1f);
-                DebugLogger.LogEggImporter($"[AlphaMask] Assigned alpha texture to {materialName}: {alphaTex.name}");
+                // Set culling to off so both sides are visible for alpha-masked materials
+                mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
+                DebugLogger.LogEggImporter($"[AlphaMask] Assigned alpha texture to {materialName}: {alphaTex.name} (Cull: Off)");
+            }
+            else
+            {
+                // Set culling to back for regular materials (only show front faces)
+                mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Back);
+                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+                DebugLogger.LogEggImporter($"[Standard] Material {materialName} set to back-face culling (Cull: Back)");
             }
             
             // Use cached property IDs for better performance

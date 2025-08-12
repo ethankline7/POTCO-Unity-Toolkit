@@ -6,14 +6,13 @@ Shader "EggImporter/VertexColorTexture"
         _AlphaTex ("Alpha Mask (optional)", 2D) = "white" {}
         _Color ("Color", Color) = (1,1,1,1)
         _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.1
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
     }
     SubShader
     {
-        Tags { "Queue"="AlphaTest" "RenderType"="TransparentCutout" }
         LOD 200
-        Cull Off
-        ZWrite On
-
+        Cull [_Cull]
+        
         CGPROGRAM
         #pragma surface surf Lambert vertex:vert alphatest:_Cutoff
         #include "UnityCG.cginc"
