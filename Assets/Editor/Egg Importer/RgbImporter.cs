@@ -66,7 +66,7 @@ public class RgbImporter : ScriptedImporter
             texture.Apply();
             
             texture.wrapMode = TextureWrapMode.Repeat;
-            texture.filterMode = FilterMode.Point; // Use point filtering to avoid blurred alpha edges
+            texture.filterMode = FilterMode.Bilinear; // Use bilinear filtering for smooth alpha blending
             
             ctx.AddObjectToAsset("Texture", texture);
             ctx.SetMainObject(texture);
