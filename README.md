@@ -29,7 +29,8 @@ The whole point of this is to bring out the creativity within our community, cre
 🗺️ **World Data Importer** - Import POTCO World Data files into Unity scenes  
 🏴‍☠️ **World Data Exporter** - Export Unity scenes back to game-compatible files  
 ⛏️ **Procedural Cave Generator** - Create interconnected cave systems with presets  
-🎨 **Advanced EGG File Importer** - Import Panda3D models with multi-texture support  
+🎨 **Advanced EGG File Importer** - Import Panda3D .egg models
+🖼️ **Native .RGB Importer** - Supports .rgb alpha transparency 
 
 ### Level Creation & Management
 🏗️ **Level Editor (Prop Browser)** - Visual asset browser and placement tool  
@@ -42,7 +43,7 @@ The whole point of this is to bring out the creativity within our community, cre
 ## 🛠️ Quick Start
 
 ### Requirements
-- Unity 6000.1.11f1
+- Unity 6000.1.11f1 (Most versions work)
 - Universal Render Pipeline (URP)
 
 Open the project in Unity 6000.1.11f1, then access tools via:
