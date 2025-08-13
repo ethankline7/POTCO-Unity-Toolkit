@@ -38,10 +38,10 @@ Shader "EggImporter/VertexColorTexture"
         half4 LightingBrightLambert(SurfaceOutput s, half3 lightDir, half atten)
         {
             half NdotL = dot(s.Normal, lightDir);
-            half diff = NdotL * 0.5 + 0.5; // Wrap lighting for brightness
+            half diff = NdotL * 0.3 + 0.3; // Wrap lighting for brightness
             half4 c;
-            // Add ambient lighting (15% minimum brightness) plus directional lighting
-            half3 ambient = s.Albedo * 0.15; // 15% ambient light
+            // Add ambient lighting (5% minimum brightness) plus directional lighting
+            half3 ambient = s.Albedo * 0.05; // 5% ambient light
             half3 directional = s.Albedo * _LightColor0.rgb * (diff * atten);
             c.rgb = ambient + directional;
             c.a = s.Alpha;
