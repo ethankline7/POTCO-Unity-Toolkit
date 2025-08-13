@@ -23,6 +23,9 @@ public class MultiTextureGeometryProcessor
     // Track which textures are secondary in multi-texture polygons
     private HashSet<string> _secondaryTextures = new HashSet<string>();
     
+    // Vertex pool mapping for multi-vertex pool support
+    private Dictionary<string, Dictionary<int, int>> vertexPoolMappings = new Dictionary<string, Dictionary<int, int>>();
+    
     public MultiTextureGeometryProcessor()
     {
         _parserUtils = new MultiTextureParserUtilities();
@@ -345,11 +348,24 @@ public class MultiTextureGeometryProcessor
         // Clear secondary texture registry for this import
         SecondaryTextureRegistry.Clear();
         
+        // Track current vertex pool context for proper vertex association
+        string currentVertexPoolName = "";
+        
         // Parse textures and collect UV name mappings
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
-            if (line.StartsWith("<Texture>"))
+            if (line.StartsWith("<VertexPool>"))
+            {
+                // Extract vertex pool name and set context
+                var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 1)
+                {
+                    currentVertexPoolName = parts[1];
+                    DebugLogger.LogEggImporter($"[MultiTexture-VertexPool] Entering vertex pool: {currentVertexPoolName}");
+                }
+            }
+            else if (line.StartsWith("<Texture>"))
             {
                 var parts = line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length > 1)
@@ -385,6 +401,7 @@ public class MultiTextureGeometryProcessor
             else if (line.StartsWith("<Vertex>"))
             {
                 var vert = new EggVertex();
+                vert.vertexPoolName = currentVertexPoolName; // Assign vertex to current pool
                 var posParts = lines[++i].Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 vert.position = new Vector3(float.Parse(posParts[0], CultureInfo.InvariantCulture), float.Parse(posParts[2], CultureInfo.InvariantCulture), float.Parse(posParts[1], CultureInfo.InvariantCulture));
                 int vertexEnd = parserUtils.FindMatchingBrace(lines, i - 1);
@@ -453,7 +470,7 @@ public class MultiTextureGeometryProcessor
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
         
         // Check for collision tags - skip collision polygons based on settings
-        if (!EggImporterSettings.Instance.importCollisions)
+        if (EggImporterSettings.Instance.skipCollisions)
         {
             for (int j = i + 1; j < blockEnd; j++)
             {
@@ -511,24 +528,75 @@ public class MultiTextureGeometryProcessor
             if (innerLine.StartsWith("<VertexRef>"))
             {
                 string valuesString = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
-                var vRefParts = valuesString.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries).Where(s => int.TryParse(s, out _)).ToArray();
-                foreach (string part in vRefParts)
+                
+                // Parse vertex pool reference if present
+                string referencedVertexPool = "";
+                if (valuesString.Contains("<Ref>"))
                 {
-                    if (int.TryParse(part, out int vertIndex))
+                    int refStart = valuesString.IndexOf("<Ref>");
+                    int refOpenBrace = valuesString.IndexOf('{', refStart);
+                    int refCloseBrace = valuesString.IndexOf('}', refOpenBrace);
+                    if (refOpenBrace != -1 && refCloseBrace != -1)
                     {
-                        vertexIndices.Add(vertIndex);
+                        referencedVertexPool = valuesString.Substring(refOpenBrace + 1, refCloseBrace - refOpenBrace - 1).Trim();
+                        DebugLogger.LogEggImporter($"[MultiTexture-VertexRef] Polygon references vertex pool: {referencedVertexPool}");
+                        // Remove the <Ref> part from vertex indices parsing
+                        valuesString = valuesString.Substring(0, refStart).Trim();
                     }
                 }
                 
-                // Add to submesh (keep original triangle logic)
+                var vRefParts = valuesString.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries).Where(s => int.TryParse(s, out _)).ToArray();
+                
+                // Map local vertex indices to global indices and collect them
+                string poolName = string.IsNullOrEmpty(referencedVertexPool) ? "default" : referencedVertexPool;
+                if (vertexPoolMappings.ContainsKey(poolName))
+                {
+                    var poolMapping = vertexPoolMappings[poolName];
+                    foreach (string part in vRefParts)
+                    {
+                        if (int.TryParse(part, out int localIndex) && poolMapping.TryGetValue(localIndex, out int globalIndex))
+                        {
+                            vertexIndices.Add(globalIndex);
+                        }
+                    }
+                }
+                
+                // Add to submesh using mapped global indices
                 if (vRefParts.Length >= 3)
                 {
-                    int v0 = int.Parse(vRefParts[0]); int v1 = int.Parse(vRefParts[1]); int v2 = int.Parse(vRefParts[2]);
-                    subMeshes[polygonTextureRef].Add(v0); subMeshes[polygonTextureRef].Add(v2); subMeshes[polygonTextureRef].Add(v1);
-                    if (vRefParts.Length > 3)
+                    if (vertexPoolMappings.ContainsKey(poolName))
                     {
-                        int v3 = int.Parse(vRefParts[3]);
-                        subMeshes[polygonTextureRef].Add(v0); subMeshes[polygonTextureRef].Add(v3); subMeshes[polygonTextureRef].Add(v2);
+                        var poolMapping = vertexPoolMappings[poolName];
+                        
+                        int localV0 = int.Parse(vRefParts[0]); int localV1 = int.Parse(vRefParts[1]); int localV2 = int.Parse(vRefParts[2]);
+                        
+                        if (poolMapping.TryGetValue(localV0, out int globalV0) && 
+                            poolMapping.TryGetValue(localV1, out int globalV1) && 
+                            poolMapping.TryGetValue(localV2, out int globalV2))
+                        {
+                            subMeshes[polygonTextureRef].Add(globalV0); subMeshes[polygonTextureRef].Add(globalV2); subMeshes[polygonTextureRef].Add(globalV1);
+                            
+                            if (vRefParts.Length > 3)
+                            {
+                                int localV3 = int.Parse(vRefParts[3]);
+                                if (poolMapping.TryGetValue(localV3, out int globalV3))
+                                {
+                                    subMeshes[polygonTextureRef].Add(globalV0); subMeshes[polygonTextureRef].Add(globalV3); subMeshes[polygonTextureRef].Add(globalV2);
+                                }
+                                else
+                                {
+                                    DebugLogger.LogErrorEggImporter($"MultiTexture: Vertex index {localV3} not found in vertex pool '{poolName}'");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            DebugLogger.LogErrorEggImporter($"MultiTexture: One or more vertex indices ({localV0}, {localV1}, {localV2}) not found in vertex pool '{poolName}'");
+                        }
+                    }
+                    else
+                    {
+                        DebugLogger.LogErrorEggImporter($"MultiTexture: Vertex pool '{poolName}' not found in mappings");
                     }
                 }
             }
@@ -556,9 +624,9 @@ public class MultiTextureGeometryProcessor
                 string groupName = _parserUtils.GetGroupName(line);
                 
                 // Skip collision groups based on settings
-                if (groupName.ToLower().Contains("collision") && !EggImporterSettings.Instance.importCollisions)
+                if (groupName.ToLower().Contains("collision") && EggImporterSettings.Instance.skipCollisions)
                 {
-                    DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Import Collisions disabled)");
+                    DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Skip Collisions enabled)");
                     int collisionGroupEnd = _parserUtils.FindMatchingBrace(lines, i);
                     i = collisionGroupEnd + 1;
                     continue;
@@ -735,18 +803,61 @@ public class MultiTextureGeometryProcessor
         // Store vertex pool for multi-texture UV processing
         _vertexPool = vertexPool;
         
+        // Create mapping from vertex pool + local index to global index
+        vertexPoolMappings.Clear();
+        var verticesByPool = new Dictionary<string, List<EggVertex>>();
+        
+        // Group vertices by their vertex pool
+        foreach (var vertex in vertexPool)
+        {
+            string poolName = string.IsNullOrEmpty(vertex.vertexPoolName) ? "default" : vertex.vertexPoolName;
+            if (!verticesByPool.ContainsKey(poolName))
+                verticesByPool[poolName] = new List<EggVertex>();
+            verticesByPool[poolName].Add(vertex);
+        }
+        
+        // Create mapping and master arrays
+        var masterVerticesList = new List<Vector3>();
+        var masterNormalsList = new List<Vector3>();
+        var masterUVsList = new List<Vector2>();
+        var masterColorsList = new List<Color>();
+        
+        int globalIndex = 0;
+        foreach (var poolKvp in verticesByPool)
+        {
+            string poolName = poolKvp.Key;
+            var poolVertices = poolKvp.Value;
+            
+            vertexPoolMappings[poolName] = new Dictionary<int, int>();
+            
+            for (int localIndex = 0; localIndex < poolVertices.Count; localIndex++)
+            {
+                var vertex = poolVertices[localIndex];
+                vertexPoolMappings[poolName][localIndex] = globalIndex;
+                
+                masterVerticesList.Add(vertex.position);
+                masterNormalsList.Add(vertex.normal);
+                masterUVsList.Add(vertex.uv);
+                masterColorsList.Add(vertex.color);
+                
+                globalIndex++;
+            }
+            
+            DebugLogger.LogEggImporter($"[MultiTexture-VertexPool] Mapped {poolVertices.Count} vertices from pool '{poolName}' to global indices {globalIndex - poolVertices.Count}-{globalIndex - 1}");
+        }
+        
         // Generate fallback UV coordinates for vertices missing named UVs
         GenerateFallbackUVCoordinates(vertexPool);
         
         // Create overlay UV channels for multi-texture support
         CreateOverlayUVChannels(vertexPool);
         
-        masterVertices = vertexPool.Select(v => v.position).ToArray();
-        masterNormals = vertexPool.Select(v => v.normal).ToArray();
-        masterUVs = vertexPool.Select(v => v.uv).ToArray();  // Original primary UV channel
-        masterColors = vertexPool.Select(v => v.color).ToArray();
+        masterVertices = masterVerticesList.ToArray();
+        masterNormals = masterNormalsList.ToArray();
+        masterUVs = masterUVsList.ToArray();
+        masterColors = masterColorsList.ToArray();
         
-        DebugLogger.LogEggImporter($"✅ Created robust master vertex buffer with {vertexPool.Count} vertices");
+        DebugLogger.LogEggImporter($"[MultiTexture-VertexPool] Created master vertex buffer with {masterVertices.Length} total vertices from {verticesByPool.Count} vertex pools");
         DebugLogger.LogEggImporter($"✅ Found vertices with named UVs: {vertexPool.Count(v => v.namedUVs.Count > 0)}");
     }
     

@@ -9,6 +9,7 @@ public class EggVertex
     public Dictionary<string, Vector2> namedUVs = new Dictionary<string, Vector2>(); // Named UV sets
     public Color color = Color.white;
     public Dictionary<string, float> boneWeights = new Dictionary<string, float>();
+    public string vertexPoolName = ""; // Track which vertex pool this vertex belongs to
     
     // Helper method to get UV coordinates for a specific texture
     public Vector2 GetUVForTexture(string textureName, Dictionary<string, string> textureUVMappings)
