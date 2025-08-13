@@ -29,12 +29,13 @@ public class EggImportStartupPrompt
         bool skipStartupPrompt = EditorPrefs.GetBool("EggImporter_SkipStartupPrompt", false);
         if (skipStartupPrompt) return;
         
-        // Check if there are any EGG files in the project
-        string[] eggFiles = Directory.GetFiles(Application.dataPath, "*.egg", SearchOption.AllDirectories);
-        if (eggFiles.Length == 0) return; // No EGG files found, skip prompt
+        // Check if there are any EGG files in the project (use basic filtering)
+        var settings = EggImporterSettings.Instance;
+        var eggFiles = GetFilteredEggFiles(settings);
+        if (eggFiles.Count == 0) return; // No EGG files found, skip prompt
         
         // Show the blocking modal dialog
-        ShowImportPromptDialog(eggFiles.Length);
+        ShowImportPromptDialog(eggFiles.Count);
     }
     
     private static void ShowImportPromptDialog(int eggFileCount)
@@ -99,14 +100,68 @@ public class EggImportStartupPrompt
         DebugLogger.LogEggImporter($"Startup EGG import completed: {importedCount}/{totalFiles} files processed.");
     }
     
-    public static void ImportAllEggFilesWithProgressAndFilters(EggImporterSettings settings)
+    // Centralized file discovery with early filtering to skip excluded files entirely
+    private static List<string> GetFilteredEggFiles(EggImporterSettings settings)
     {
-        string[] allEggFiles = Directory.GetFiles(Application.dataPath, "*.egg", SearchOption.AllDirectories);
-        var filteredFiles = new System.Collections.Generic.List<string>();
+        var filteredFiles = new List<string>();
         
-        // Apply filters to determine which files to import
+        // Get all .egg files but apply basic filters immediately
+        string[] allEggFiles = Directory.GetFiles(Application.dataPath, "*.egg", SearchOption.AllDirectories);
+        
         foreach (string fullPath in allEggFiles)
         {
+            string fileName = Path.GetFileNameWithoutExtension(fullPath).ToLower();
+            string relativePath = "Assets" + fullPath.Substring(Application.dataPath.Length).Replace('\\', '/');
+            
+            // Skip footprints early if setting is enabled
+            if (settings.skipFootprints && fileName.EndsWith("_footprint"))
+                continue;
+                
+            // Skip collisions early if setting is enabled  
+            if (settings.skipCollisions && fileName.EndsWith("_coll"))
+                continue;
+                
+            // Skip excluded folders early based on EditorPrefs
+            string folderPath = Path.GetDirectoryName(relativePath);
+            if (!string.IsNullOrEmpty(folderPath))
+            {
+                string[] pathParts = folderPath.Split('/', '\\');
+                bool shouldSkipFolder = false;
+                
+                // Check each folder part against EditorPrefs
+                foreach (string pathPart in pathParts)
+                {
+                    if (!string.IsNullOrEmpty(pathPart) && pathPart != "Assets")
+                    {
+                        bool skipThisFolder = EditorPrefs.GetBool($"EggImporter_SkipFolder_{pathPart}", false);
+                        if (skipThisFolder)
+                        {
+                            shouldSkipFolder = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSkipFolder) continue;
+            }
+            
+            // File passed basic filters, add to list
+            filteredFiles.Add(fullPath);
+        }
+        
+        DebugLogger.LogEggImporter($"Pre-filtered {allEggFiles.Length} files down to {filteredFiles.Count} files (skipped {allEggFiles.Length - filteredFiles.Count} excluded files)");
+        return filteredFiles;
+    }
+    
+    public static void ImportAllEggFilesWithProgressAndFilters(EggImporterSettings settings)
+    {
+        // Get pre-filtered files to avoid processing excluded files
+        var filteredFiles = GetFilteredEggFiles(settings);
+        
+        // Apply additional filters to determine which files to import
+        var finalFilteredFiles = new System.Collections.Generic.List<string>();
+        for (int i = 0; i < filteredFiles.Count; i++)
+        {
+            string fullPath = filteredFiles[i];
             string fileName = Path.GetFileNameWithoutExtension(fullPath).ToLower();
             string relativePath = "Assets" + fullPath.Substring(Application.dataPath.Length).Replace('\\', '/');
             
@@ -134,16 +189,16 @@ public class EggImportStartupPrompt
                         continue;
                 }
                 
-                filteredFiles.Add(relativePath);
+                finalFilteredFiles.Add(relativePath);
             }
             catch
             {
                 // If we can't read the file, include it anyway
-                filteredFiles.Add(relativePath);
+                finalFilteredFiles.Add(relativePath);
             }
         }
         
-        ImportFileListWithProgress(filteredFiles.ToArray());
+        ImportFileListWithProgress(finalFilteredFiles.ToArray());
     }
     
     private static void ImportFileListWithProgress(string[] files)
