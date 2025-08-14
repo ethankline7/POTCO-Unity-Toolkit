@@ -586,12 +586,16 @@ public class GeometryProcessor
                 string groupName = _parserUtils.GetGroupName(line);
                 
                 // Skip collision groups based on settings
-                if (groupName.ToLower().Contains("collision") && EggImporterSettings.Instance.skipCollisions)
+                if (EggImporterSettings.Instance.skipCollisions)
                 {
-                    DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Skip Collisions enabled)");
-                    int collisionGroupEnd = _parserUtils.FindMatchingBrace(lines, i);
-                    i = collisionGroupEnd + 1;
-                    continue;
+                    bool isCollisionGroup = groupName.ToLower().Contains("collision") || ContainsCollideTag(lines, i, _parserUtils.FindMatchingBrace(lines, i));
+                    if (isCollisionGroup)
+                    {
+                        DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Skip Collisions enabled - contains <Collide> tag or collision in name)");
+                        int collisionGroupEnd = _parserUtils.FindMatchingBrace(lines, i);
+                        i = collisionGroupEnd + 1;
+                        continue;
+                    }
                 }
                 
                 // Check if this is an LOD group and handle according to settings
@@ -936,6 +940,33 @@ public class GeometryProcessor
         }
         
         return false; // Default to not importing if we can't determine
+    }
+    
+    private bool ContainsCollideTag(string[] lines, int groupStart, int groupEnd)
+    {
+        // Check if this specific group (not its children) contains <Collide> tags at its direct level
+        int currentDepth = 0;
+        for (int i = groupStart + 1; i < groupEnd; i++)
+        {
+            string line = lines[i].Trim();
+            
+            // Track nesting depth to only check direct children
+            if (line.StartsWith("<Group>"))
+            {
+                currentDepth++;
+            }
+            else if (line.StartsWith("}"))
+            {
+                if (currentDepth > 0)
+                    currentDepth--;
+            }
+            else if (line.StartsWith("<Collide>") && currentDepth == 0)
+            {
+                // Only return true if <Collide> is at the direct level of this group
+                return true;
+            }
+        }
+        return false;
     }
     
     private Material GetCachedDefaultMaterial(string materialName)
