@@ -598,6 +598,15 @@ public class GeometryProcessor
                     }
                 }
                 
+                // Check if this is a named LOD group and handle according to settings
+                if (EggImporterSettings.Instance.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly && ShouldSkipNamedLODGroup(groupName))
+                {
+                    DebugLogger.LogEggImporter($"🚫 Skipping named LOD group: '{groupName}' (Highest LOD only enabled)");
+                    int namedLodGroupEnd = _parserUtils.FindMatchingBrace(lines, i);
+                    i = namedLodGroupEnd + 1;
+                    continue;
+                }
+                
                 // Check if this is an LOD group and handle according to settings
                 int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
                 if (IsLODGroup(lines, i, groupEnd) && !ShouldImportLOD(lines, i, groupEnd, groupName))
@@ -967,6 +976,25 @@ public class GeometryProcessor
             }
         }
         return false;
+
+    private bool ShouldSkipNamedLODGroup(string groupName)
+    {
+        // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow
+        string lowerGroupName = groupName.ToLower();
+        
+        if (lowerGroupName == "lod_high" || lowerGroupName == "lod_hi")
+        {
+            return false; // Always import highest quality
+        }
+        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" || 
+                 lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super")
+        {
+            DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}'");
+            return true; // Skip lower quality groups
+        }
+        
+        return false; // Not a named LOD group
+
     }
     
     private Material GetCachedDefaultMaterial(string materialName)
