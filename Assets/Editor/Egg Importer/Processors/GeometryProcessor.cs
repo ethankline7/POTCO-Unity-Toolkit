@@ -976,6 +976,7 @@ public class GeometryProcessor
             }
         }
         return false;
+    }
 
     private bool ShouldSkipNamedLODGroup(string groupName)
     {
@@ -994,7 +995,6 @@ public class GeometryProcessor
         }
         
         return false; // Not a named LOD group
-
     }
     
     private Material GetCachedDefaultMaterial(string materialName)
