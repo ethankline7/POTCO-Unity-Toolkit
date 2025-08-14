@@ -275,39 +275,7 @@ public class EggImportStartupPrompt
     
     public static bool ShouldImportHighestLODOnly(string fileName)
     {
-        // Character LODs
-        if (fileName.EndsWith("_hi")) return true;
-        if (fileName.EndsWith("_med") || fileName.EndsWith("_low") || fileName.EndsWith("_super"))
-        {
-            string baseName = fileName.Substring(0, fileName.LastIndexOf("_"));
-            string[] hiFiles = Directory.GetFiles(Application.dataPath, baseName + "_hi.egg", SearchOption.AllDirectories);
-            return hiFiles.Length == 0;
-        }
-        
-        // Numeric LODs
-        var match = System.Text.RegularExpressions.Regex.Match(fileName, @"(.+)_mp_(\d+)$");
-        if (match.Success)
-        {
-            string baseName = match.Groups[1].Value;
-            int currentLOD = int.Parse(match.Groups[2].Value);
-            string[] allFiles = Directory.GetFiles(Application.dataPath, "*.egg", SearchOption.AllDirectories);
-            
-            int highestLOD = currentLOD;
-            foreach (string file in allFiles)
-            {
-                string fileNameOnly = Path.GetFileNameWithoutExtension(file).ToLower();
-                var fileMatch = System.Text.RegularExpressions.Regex.Match(fileNameOnly, @"(.+)_mp_(\d+)$");
-                if (fileMatch.Success && fileMatch.Groups[1].Value == baseName)
-                {
-                    int fileLOD = int.Parse(fileMatch.Groups[2].Value);
-                    if (fileLOD > highestLOD) highestLOD = fileLOD;
-                }
-            }
-            
-            return currentLOD >= highestLOD;
-        }
-        
-        return true;
+        return LODFilteringUtility.ShouldImportHighestLODOnly(fileName);
     }
 }
 
