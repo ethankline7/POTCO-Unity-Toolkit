@@ -105,9 +105,9 @@ public class GeometryProcessor
             DebugLogger.LogEggImporter($"Static mesh uses {meshVertices.Length} vertices out of {masterVertices.Length} total vertices");
         }
 
-        // Calculate bounds to fix pivot point based on settings
+        // Calculate bounds to fix pivot point based on settings - SKIP for skeletal meshes (matches working version)
         var settings = EggImporterSettings.Instance;
-        if (meshVertices.Length > 0 && settings.pivotMode != EggImporterSettings.PivotMode.Original)
+        if (meshVertices.Length > 0 && settings.pivotMode != EggImporterSettings.PivotMode.Original && !(hasSkeletalData && rootJoint != null && rootBoneObject != null))
         {
             Vector3 min = meshVertices[0];
             Vector3 max = meshVertices[0];

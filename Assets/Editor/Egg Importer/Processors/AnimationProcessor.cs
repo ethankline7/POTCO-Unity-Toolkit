@@ -45,8 +45,9 @@ public class AnimationProcessor
                     var clip = new AnimationClip { name = bundleName + "_anim" };
                     DebugLogger.LogEggImporter($"🎬 ANIMATION: Created clip: '{clip.name}'");
 
-                    string armaturePath = rootBoneObject != null ? rootBoneObject.name : "";
-                    DebugLogger.LogEggImporter($"🎬 ANIMATION: Armature path: '{armaturePath}'");
+                    // For animation files, bones are created under Armature, but we want direct bone names for paths
+                    string armaturePath = "";
+                    DebugLogger.LogEggImporter($"🎬 ANIMATION: Armature path: '{armaturePath}' (bones will be accessed directly)");
 
                     int bundleEnd = _parserUtils.FindMatchingBrace(lines, i);
                     if (bundleEnd != -1)
@@ -117,6 +118,135 @@ public class AnimationProcessor
 
         DebugLogger.LogEggImporter($"🎬 ANIMATION: Completed. Found {bundleCount} bundles total");
         }
+
+    public void ParseStandaloneAnimationBundle(string[] lines, int start, int end, AnimationClip clip)
+    {
+        DebugLogger.LogEggImporter($"🎬 STANDALONE: Parsing standalone animation bundle from line {start} to {end}");
+
+        int i = start;
+        while (i < end)
+        {
+            string line = lines[i].Trim();
+            if (string.IsNullOrEmpty(line))
+            {
+                i++;
+                continue;
+            }
+
+            if (line.StartsWith("<Table>"))
+            {
+                var parts = line.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 1)
+                {
+                    string tableName = parts[1].Trim('"');
+                    DebugLogger.LogEggImporter($"🎬 STANDALONE: Processing table '{tableName}'");
+
+                    if (tableName == "<skeleton>")
+                    {
+                        int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
+                        if (tableEnd != -1)
+                        {
+                            ParseStandaloneAnimationBundle(lines, i + 1, tableEnd, clip);
+                            i = tableEnd + 1;
+                        }
+                        else
+                        {
+                            i++;
+                        }
+                    }
+                    else
+                    {
+                        // This is a bone table - parse its animations with proper bone path
+                        string bonePath = tableName;
+                        DebugLogger.LogEggImporter($"🎬 STANDALONE: Processing bone '{bonePath}'");
+
+                        int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
+                        if (tableEnd != -1)
+                        {
+                            ParseStandaloneBoneAnimationTable(lines, i + 1, tableEnd, clip, bonePath);
+                            i = tableEnd + 1;
+                        }
+                        else
+                        {
+                            i++;
+                        }
+                    }
+                }
+                else
+                {
+                    i++;
+                }
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        DebugLogger.LogEggImporter($"🎬 STANDALONE: Completed parsing standalone animation bundle");
+    }
+
+    private void ParseStandaloneBoneAnimationTable(string[] lines, int start, int end, AnimationClip clip, string bonePath)
+    {
+        DebugLogger.LogEggImporter($"🦴 STANDALONE: Parsing bone '{bonePath}' from line {start} to {end}");
+
+        int i = start;
+        while (i < end)
+        {
+            string line = lines[i].Trim();
+            if (string.IsNullOrEmpty(line))
+            {
+                i++;
+                continue;
+            }
+
+            if (line.StartsWith("<Table>"))
+            {
+                var parts = line.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 1)
+                {
+                    string tableName = parts[1].Trim('"');
+                    string childPath = bonePath + "/" + tableName;
+                    DebugLogger.LogEggImporter($"🦴 STANDALONE: Found child bone '{childPath}'");
+
+                    int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
+                    if (tableEnd != -1)
+                    {
+                        ParseStandaloneBoneAnimationTable(lines, i + 1, tableEnd, clip, childPath);
+                        i = tableEnd + 1;
+                    }
+                    else
+                    {
+                        i++;
+                    }
+                }
+                else
+                {
+                    i++;
+                }
+            }
+            else if (line.StartsWith("<Xfm$Anim_S$>"))
+            {
+                DebugLogger.LogEggImporter($"🦴 STANDALONE: Found transform animation for bone: {bonePath}");
+                int xfmEnd = _parserUtils.FindMatchingBrace(lines, i);
+                if (xfmEnd != -1)
+                {
+                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath);
+                    i = xfmEnd + 1;
+                }
+                else
+                {
+                    i++;
+                }
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        DebugLogger.LogEggImporter($"🦴 STANDALONE: Completed parsing bone '{bonePath}'");
+    }
 
     public void ParseBundleBonesAndAnimations(string[] lines, int start, int end, EggJoint parentJoint, string currentPath, AnimationClip clip, Dictionary<string, EggJoint> joints)
     {
@@ -591,7 +721,9 @@ public class AnimationProcessor
 
     private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps)
     {
-        DebugLogger.LogEggImporter($"📈 CURVES: Creating curves for bone '{bonePath}' with {numKeyframes} keyframes at {fps} fps");
+        // Fix bone path to match actual hierarchy created by GeometryProcessor
+        string correctedBonePath = CorrectBonePath(bonePath);
+        DebugLogger.LogEggImporter($"📈 CURVES: Creating curves for bone '{bonePath}' -> corrected to '{correctedBonePath}' with {numKeyframes} keyframes at {fps} fps");
 
         // Pre-size keyframe lists to avoid resizing during population
         var posXKeys = new List<Keyframe>(numKeyframes);
@@ -654,34 +786,51 @@ public class AnimationProcessor
         // Use cached channel references for faster checks
         if (xChannel != null || yChannel != null || zChannel != null)
         {
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalPosition.x", new AnimationCurve(posXKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalPosition.y", new AnimationCurve(posYKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalPosition.z", new AnimationCurve(posZKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalPosition.x", new AnimationCurve(posXKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalPosition.y", new AnimationCurve(posYKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalPosition.z", new AnimationCurve(posZKeys.ToArray()));
             curvesAdded += 3;
-            DebugLogger.LogEggImporter($"📈 CURVES: Set position curves for {bonePath}");
+            DebugLogger.LogEggImporter($"📈 CURVES: Set position curves for {correctedBonePath}");
         }
 
         if (hChannel != null || pChannel != null || rChannel != null)
         {
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalRotation.x", new AnimationCurve(rotXKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalRotation.y", new AnimationCurve(rotYKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalRotation.z", new AnimationCurve(rotZKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalRotation.w", new AnimationCurve(rotWKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalRotation.x", new AnimationCurve(rotXKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalRotation.y", new AnimationCurve(rotYKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalRotation.z", new AnimationCurve(rotZKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalRotation.w", new AnimationCurve(rotWKeys.ToArray()));
             curvesAdded += 4;
-            DebugLogger.LogEggImporter($"📈 CURVES: Set rotation curves for {bonePath}");
+            DebugLogger.LogEggImporter($"📈 CURVES: Set rotation curves for {correctedBonePath}");
         }
 
         if (iChannel != null || jChannel != null || kChannel != null)
         {
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalScale.x", new AnimationCurve(scaleXKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalScale.y", new AnimationCurve(scaleYKeys.ToArray()));
-            clip.SetCurve(bonePath, typeof(Transform), "m_LocalScale.z", new AnimationCurve(scaleZKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalScale.x", new AnimationCurve(scaleXKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalScale.y", new AnimationCurve(scaleYKeys.ToArray()));
+            clip.SetCurve(correctedBonePath, typeof(Transform), "m_LocalScale.z", new AnimationCurve(scaleZKeys.ToArray()));
             curvesAdded += 3;
-            DebugLogger.LogEggImporter($"📈 CURVES: Set scale curves for {bonePath}");
+            DebugLogger.LogEggImporter($"📈 CURVES: Set scale curves for {correctedBonePath}");
         }
 
-        DebugLogger.LogEggImporter($"📈 CURVES: Added {curvesAdded} curves for '{bonePath}' with orientation fix");
+        DebugLogger.LogEggImporter($"📈 CURVES: Added {curvesAdded} curves for '{correctedBonePath}' with orientation fix");
         }
+
+    private string CorrectBonePath(string bonePath)
+    {
+        // For standalone animations, ensure they target the Armature/ hierarchy
+        // that is created when importing models with skeletal data
+        
+        // Remove any leading slash first
+        bonePath = bonePath.TrimStart('/');
+        
+        // If the path doesn't already include Armature/, prepend it
+        if (!bonePath.StartsWith("Armature/") && !string.IsNullOrEmpty(bonePath))
+        {
+            return "Armature/" + bonePath;
+        }
+        
+        return bonePath;
+    }
 
     private float GetChannelValue(Dictionary<string, List<float>> channels, string channelName, int keyframeIndex, float defaultValue = 0f)
     {
