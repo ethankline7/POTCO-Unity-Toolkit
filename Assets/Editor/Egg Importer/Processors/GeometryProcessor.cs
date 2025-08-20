@@ -462,7 +462,7 @@ public class GeometryProcessor
                         if (openBrace == -1 || closeBrace == -1) continue;
                         string valuesString = attributeLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
                         var valueParts = valuesString.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries);
-                        if (attributeLine.StartsWith("<UV>")) { vert.uv = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
+                        if (attributeLine.StartsWith("<UV>") && !attributeLine.Contains("tattoomap")) { vert.uv = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
                         else if (attributeLine.StartsWith("<Normal>")) { vert.normal = new Vector3(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[2], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
                         else if (attributeLine.StartsWith("<RGBA>")) { vert.color = new Color(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture), float.Parse(valueParts[2], CultureInfo.InvariantCulture), float.Parse(valueParts[3], CultureInfo.InvariantCulture)); }
                     }
