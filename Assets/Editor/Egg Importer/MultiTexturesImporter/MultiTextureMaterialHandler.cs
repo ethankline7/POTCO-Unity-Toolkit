@@ -20,7 +20,31 @@ public class MultiTextureMaterialHandler
     
     // Cache for default colors to avoid repeated string operations
     private static readonly Dictionary<string, Color> DefaultColorCache = new Dictionary<string, Color>();
-    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, GameObject rootGO)
+    
+    private void ApplyTextureWrapModes(Texture2D texture, string textureName, MultiTextureEggImporter importer)
+    {
+        if (texture == null || importer == null) return;
+        
+        // Set wrap mode U
+        if (importer.TextureWrapU.TryGetValue(textureName, out string wrapU))
+        {
+            texture.wrapModeU = wrapU == "repeat" ? TextureWrapMode.Repeat :
+                                wrapU == "mirror" ? TextureWrapMode.Mirror :
+                                TextureWrapMode.Clamp;
+            DebugLogger.LogEggImporter($"🔄 Applied wrap mode U: {wrapU} to texture '{textureName}'");
+        }
+        
+        // Set wrap mode V  
+        if (importer.TextureWrapV.TryGetValue(textureName, out string wrapV))
+        {
+            texture.wrapModeV = wrapV == "repeat" ? TextureWrapMode.Repeat :
+                                wrapV == "mirror" ? TextureWrapMode.Mirror :
+                                TextureWrapMode.Clamp;
+            DebugLogger.LogEggImporter($"🔄 Applied wrap mode V: {wrapV} to texture '{textureName}'");
+        }
+    }
+    
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, GameObject rootGO, MultiTextureEggImporter importer = null)
     {
         DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths");
         // Pre-size the list to avoid resizing during population
@@ -55,9 +79,17 @@ public class MultiTextureMaterialHandler
                 {
                     mat.mainTexture = texture;
                     
-                    // Set texture wrap mode based on research findings
-                    texture.wrapMode = DetermineTextureWrapMode(textureFileName, materialName);
-                    DebugLogger.LogEggImporter($"Assigned texture {textureFileName} with {texture.wrapMode} wrap mode");
+                    // Apply wrap modes from EGG file data if available, otherwise use defaults
+                    if (importer != null)
+                    {
+                        ApplyTextureWrapModes(texture, materialName, importer);
+                    }
+                    else
+                    {
+                        // Fallback to research-based wrap mode detection
+                        texture.wrapMode = DetermineTextureWrapMode(textureFileName, materialName);
+                    }
+                    DebugLogger.LogEggImporter($"Assigned texture {textureFileName} with wrap modes U:{texture.wrapModeU} V:{texture.wrapModeV}");
                 }
                 else
                 {
@@ -87,7 +119,7 @@ public class MultiTextureMaterialHandler
         return materials;
     }
     
-    public List<Material> CreateMaterialsWithMultiTexture(Dictionary<string, string> texturePaths, List<string> materialNames, GameObject rootGO, Vector4 uvBounds)
+    public List<Material> CreateMaterialsWithMultiTexture(Dictionary<string, string> texturePaths, List<string> materialNames, GameObject rootGO, Vector4 uvBounds, MultiTextureEggImporter importer = null)
     {
         DebugLogger.LogEggImporter($"🔍 Creating materials from {texturePaths.Count} texture paths and {materialNames.Count} material names");
         DebugLogger.LogEggImporter($"🔍 Texture paths: {string.Join(", ", texturePaths.Keys)}");
@@ -113,9 +145,17 @@ public class MultiTextureMaterialHandler
             {
                 mat.mainTexture = texture;
                 
-                // Set texture wrap mode based on research findings
-                texture.wrapMode = DetermineTextureWrapMode(textureFileName, materialName);
-                DebugLogger.LogEggImporter($"Assigned texture {textureFileName} with {texture.wrapMode} wrap mode");
+                // Apply wrap modes from EGG file data if available, otherwise use defaults
+                if (importer != null)
+                {
+                    ApplyTextureWrapModes(texture, materialName, importer);
+                }
+                else
+                {
+                    // Fallback to research-based wrap mode detection
+                    texture.wrapMode = DetermineTextureWrapMode(textureFileName, materialName);
+                }
+                DebugLogger.LogEggImporter($"Assigned texture {textureFileName} with wrap modes U:{texture.wrapModeU} V:{texture.wrapModeV}");
             }
             else
             {
@@ -144,7 +184,7 @@ public class MultiTextureMaterialHandler
                 {
                     DebugLogger.LogEggImporter($"🎨 Creating multi-texture material #{multiTextureCount}: {materialName}");
                     DebugLogger.LogEggImporter($"🎨 Texture components: [{string.Join(", ", textureNames)}]");
-                    Material multiMat = CreateMultiTextureMaterial(materialName, textureNames, texturePaths, uvBounds);
+                    Material multiMat = CreateMultiTextureMaterial(materialName, textureNames, texturePaths, uvBounds, importer);
                     materials.Add(multiMat);
                 }
             }
@@ -357,7 +397,7 @@ public class MultiTextureMaterialHandler
     
     // REMOVED: Standard shader helpers - reverted to vertex color approach
     
-    private Material CreateMultiTextureMaterial(string materialName, string[] textureNames, Dictionary<string, string> texturePaths, Vector4 uvBounds)
+    private Material CreateMultiTextureMaterial(string materialName, string[] textureNames, Dictionary<string, string> texturePaths, Vector4 uvBounds, MultiTextureEggImporter importer = null)
     {
         DebugLogger.LogEggImporter($"🔧 Creating multi-texture material: {materialName}");
         DebugLogger.LogEggImporter($"🔧 Texture names array: [{string.Join(", ", textureNames)}]");
@@ -381,28 +421,174 @@ public class MultiTextureMaterialHandler
                 
                 if (texture != null)
                 {
-                    // Identify main vs overlay texture by name pattern (FIXED: proper priority)
-                    string lowerTexture = textureName.ToLower();
+                    // Identify main vs overlay texture by UV set presence
+                    // Textures with named UV sets (like "multi" or "grunge") are overlay textures
+                    // Textures without named UV sets use the primary UV and are main textures
+                    bool hasNamedUVSet = importer != null && importer.TextureToUVSet.ContainsKey(textureName);
                     
-                    // FIRST: Check for overlay textures (multi_ prefix is strongest indicator)
-                    if (lowerTexture.Contains("multi_"))
+                    DebugLogger.LogEggImporter($"🔍 Texture analysis: '{textureName}' hasNamedUVSet={hasNamedUVSet}");
+                    if (hasNamedUVSet && importer != null)
                     {
-                        overlayTexture = texture;
-                        texture.wrapMode = TextureWrapMode.Repeat; // Overlay texture uses repeat for tiling
-                        DebugLogger.LogEggImporter($"🔄 Assigned tiling overlay texture: {textureFileName}");
+                        DebugLogger.LogEggImporter($"🔍   UV set name: '{importer.TextureToUVSet[textureName]}'");
                     }
-                    // SECOND: Everything else becomes main texture (palette, cliff, volcano, etc.)
+                    
+                    // Overlay textures have named UV sets (multi, grunge, etc.)
+                    if (hasNamedUVSet)
+                    {
+                        if (overlayTexture == null) // Only assign if we don't already have an overlay
+                        {
+                            overlayTexture = texture;
+                            // Apply wrap modes from EGG file data if available, otherwise default to repeat
+                            if (importer != null)
+                            {
+                                ApplyTextureWrapModes(texture, textureName, importer);
+                            }
+                            else
+                            {
+                                texture.wrapMode = TextureWrapMode.Repeat; // Overlay texture uses repeat for tiling
+                            }
+                            DebugLogger.LogEggImporter($"🔄 Assigned tiling overlay texture: {textureFileName} (UV set: {importer?.TextureToUVSet[textureName] ?? "unknown"})");
+                        }
+                        else
+                        {
+                            DebugLogger.LogEggImporter($"⚠️ Skipping additional overlay texture: {textureFileName} (already have {overlayTexture.name})");
+                        }
+                    }
+                    // Main textures use primary UV (no named UV set)
                     else
                     {
-                        mainTexture = texture;
-                        texture.wrapMode = TextureWrapMode.Clamp; // Base texture uses clamp
-                        DebugLogger.LogEggImporter($"🎨 Assigned main texture: {textureFileName}");
+                        if (mainTexture == null) // Only assign if we don't already have a main texture
+                        {
+                            mainTexture = texture;
+                            // Apply wrap modes from EGG file data if available, otherwise default to clamp
+                            if (importer != null)
+                            {
+                                ApplyTextureWrapModes(texture, textureName, importer);
+                                // Override wrap mode for palette textures that are incorrectly set to repeat in EGG files
+                                if (textureName.ToLower().Contains("palette"))
+                                {
+                                    texture.wrapMode = TextureWrapMode.Clamp;
+                                    DebugLogger.LogEggImporter($"🔧 Overrode wrap mode to clamp for palette texture: {textureFileName}");
+                                }
+                            }
+                            else
+                            {
+                                texture.wrapMode = TextureWrapMode.Clamp; // Base texture uses clamp
+                            }
+                            DebugLogger.LogEggImporter($"🎨 Assigned main texture: {textureFileName}");
+                        }
+                        else
+                        {
+                            DebugLogger.LogEggImporter($"⚠️ Skipping additional main texture: {textureFileName} (already have {mainTexture.name})");
+                        }
                     }
                 }
             }
         }
         
+        // Fallback strategy: If we have textures but both/neither have named UV sets,
+        // use texture name patterns to determine main vs overlay
+        if (mainTexture == null && overlayTexture == null && textureNames.Length >= 2)
+        {
+            DebugLogger.LogEggImporter($"⚠️ Fallback strategy: Both textures lack UV set info, using name patterns");
+            
+            // Find textures and assign based on name patterns
+            Texture2D firstTexture = null, secondTexture = null;
+            string firstName = "", secondName = "";
+            
+            for (int i = 0; i < Mathf.Min(2, textureNames.Length); i++)
+            {
+                if (texturePaths.ContainsKey(textureNames[i]))
+                {
+                    string texturePath = texturePaths[textureNames[i]];
+                    string textureFileName = Path.GetFileName(texturePath);
+                    Texture2D texture = FindTextureInProject(textureFileName);
+                    
+                    if (texture != null)
+                    {
+                        if (i == 0) { firstTexture = texture; firstName = textureNames[i]; }
+                        else { secondTexture = texture; secondName = textureNames[i]; }
+                    }
+                }
+            }
+            
+            // Use name patterns to decide which is main vs overlay
+            if (firstTexture != null && secondTexture != null)
+            {
+                bool firstIsOverlay = firstName.ToLower().Contains("multi") || firstName.ToLower().Contains("overlay") || firstName.ToLower().Contains("grunge");
+                bool secondIsOverlay = secondName.ToLower().Contains("multi") || secondName.ToLower().Contains("overlay") || secondName.ToLower().Contains("grunge");
+                bool firstIsPalette = firstName.ToLower().Contains("palette");
+                bool secondIsPalette = secondName.ToLower().Contains("palette");
+                
+                DebugLogger.LogEggImporter($"🔍 Pattern analysis: '{firstName}' isOverlay={firstIsOverlay} isPalette={firstIsPalette}");
+                DebugLogger.LogEggImporter($"🔍 Pattern analysis: '{secondName}' isOverlay={secondIsOverlay} isPalette={secondIsPalette}");
+                
+                if (firstIsOverlay && !secondIsOverlay)
+                {
+                    // First texture is overlay, second is main
+                    overlayTexture = firstTexture;
+                    mainTexture = secondTexture;
+                    DebugLogger.LogEggImporter($"📍 Pattern-based assignment: '{firstName}' → overlay, '{secondName}' → main");
+                }
+                else if (!firstIsOverlay && secondIsOverlay)
+                {
+                    // First texture is main, second is overlay  
+                    mainTexture = firstTexture;
+                    overlayTexture = secondTexture;
+                    DebugLogger.LogEggImporter($"📍 Pattern-based assignment: '{firstName}' → main, '{secondName}' → overlay");
+                }
+                else if (firstIsPalette && !secondIsPalette)
+                {
+                    // First texture is palette (main), second is overlay
+                    mainTexture = firstTexture;
+                    overlayTexture = secondTexture;
+                    DebugLogger.LogEggImporter($"📍 Palette-based assignment: '{firstName}' → main (palette), '{secondName}' → overlay");
+                }
+                else if (!firstIsPalette && secondIsPalette)
+                {
+                    // Second texture is palette (main), first is overlay
+                    overlayTexture = firstTexture;
+                    mainTexture = secondTexture;
+                    DebugLogger.LogEggImporter($"📍 Palette-based assignment: '{firstName}' → overlay, '{secondName}' → main (palette)");
+                }
+                else
+                {
+                    // Both have same pattern, use first as main, second as overlay
+                    mainTexture = firstTexture;
+                    overlayTexture = secondTexture;
+                    DebugLogger.LogEggImporter($"📍 Default assignment: '{firstName}' → main, '{secondName}' → overlay");
+                }
+                
+                // Apply appropriate wrap modes
+                if (importer != null)
+                {
+                    string mainTextureName = mainTexture == firstTexture ? firstName : secondName;
+                    string overlayTextureName = overlayTexture == firstTexture ? firstName : secondName;
+                    
+                    if (mainTexture != null) 
+                    {
+                        ApplyTextureWrapModes(mainTexture, mainTextureName, importer);
+                        // Override wrap mode for palette textures that are incorrectly set to repeat in EGG files
+                        if (mainTextureName.ToLower().Contains("palette"))
+                        {
+                            mainTexture.wrapMode = TextureWrapMode.Clamp;
+                            DebugLogger.LogEggImporter($"📍 Overrode wrap mode to clamp for palette texture: {mainTexture.name}");
+                        }
+                    }
+                    if (overlayTexture != null) ApplyTextureWrapModes(overlayTexture, overlayTextureName, importer);
+                }
+                else
+                {
+                    // Apply default wrap modes when no importer data
+                    if (mainTexture != null) mainTexture.wrapMode = TextureWrapMode.Clamp;
+                    if (overlayTexture != null) overlayTexture.wrapMode = TextureWrapMode.Repeat;
+                }
+            }
+        }
+        
         // Set up the material with main texture and overlay
+        DebugLogger.LogEggImporter($"🎨 Material '{materialName}' - Main: {mainTexture?.name ?? "none"}, Overlay: {overlayTexture?.name ?? "none"}");
+        
         if (mainTexture != null)
         {
             mat.mainTexture = mainTexture;
@@ -417,7 +603,7 @@ public class MultiTextureMaterialHandler
                 // Use custom MultiTexture shader
                 mat.SetTexture("_BlendTex", overlayTexture);
                 mat.SetFloat("_BlendMode", 0.5f); // 50% blend strength
-                mat.SetFloat("_BlendScale", 8.0f); // Tiling scale for overlay
+                // Don't set _BlendScale - UVs are already properly scaled in the EGG file
                 DebugLogger.LogEggImporter($"✅ Overlay texture applied with MultiTexture shader (multiplicative blend): {overlayTexture.name}");
             }
             else if (mat.HasProperty("_DetailAlbedoMap"))
@@ -476,6 +662,7 @@ public class MultiTextureMaterialHandler
         DebugLogger.LogEggImporter($"🔄 Using default Repeat wrap mode for texture: {textureFileName}");
         return TextureWrapMode.Repeat;
     }
+
     
     // DELFUEGO OVERLAY SYSTEM: Detect and create overlay materials for padres-style islands
     

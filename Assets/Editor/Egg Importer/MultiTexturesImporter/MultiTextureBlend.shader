@@ -6,74 +6,69 @@ Shader "EggImporter/MultiTextureBlend"
         _BlendTex ("Blend Texture", 2D) = "white" {}
         _Color ("Color", Color) = (1,1,1,1)
         _BlendMode ("Blend Mode", Range(0,1)) = 0.5
-        _BlendScale ("Blend UV Scale", Float) = 8.0
+        _BlendScale ("Blend UV Scale", Float) = 32.0
     }
     SubShader
     {
         Tags { "RenderType"="Opaque" }
-        LOD 100
+        LOD 200
 
-        Pass
+        CGPROGRAM
+        #pragma surface surf BrightLambert vertex:vert
+        #include "UnityCG.cginc"
+
+        sampler2D _MainTex;
+        sampler2D _BlendTex;
+        fixed4 _Color;
+        float _BlendMode;
+        float _BlendScale;
+
+        struct Input
         {
-            CGPROGRAM
-            #pragma vertex vert
-            #pragma fragment frag
-            #include "UnityCG.cginc"
+            float2 uv_MainTex;
+            float2 uv2_BlendTex;
+            fixed4 color : COLOR;
+        };
 
-            struct appdata
-            {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;   // Primary UVs for base texture
-                float2 uv2 : TEXCOORD1;  // Overlay UVs for tiling texture
-                float4 color : COLOR;
-            };
-
-            struct v2f
-            {
-                float2 uv : TEXCOORD0;
-                float2 blendUV : TEXCOORD1;
-                float4 vertex : SV_POSITION;
-                float4 color : COLOR;
-            };
-
-            sampler2D _MainTex;
-            sampler2D _BlendTex;
-            float4 _MainTex_ST;
-            float4 _BlendTex_ST;
-            float4 _Color;
-            float _BlendMode;
-            float _BlendScale;
-
-            v2f vert (appdata v)
-            {
-                v2f o;
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                // Use primary UVs for base texture (perfect ground texture mapping)
-                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
-                // Use overlay UVs for tiling texture (proper world-space coordinates)
-                o.blendUV = TRANSFORM_TEX(v.uv2, _BlendTex) * _BlendScale;
-                o.color = v.color;
-                return o;
-            }
-
-            fixed4 frag (v2f i) : SV_Target
-            {
-                // Sample base texture (ground) with corrected UVs
-                fixed4 baseColor = tex2D(_MainTex, i.uv);
-                
-                // Sample blend texture (grass) with scaled UVs for tiling
-                fixed4 blendColor = tex2D(_BlendTex, i.blendUV);
-                
-                // Use multiplicative blending for darker, more realistic appearance
-                // This matches Panda3D's modulate blending behavior
-                fixed4 finalColor = baseColor * lerp(fixed4(1,1,1,1), blendColor, _BlendMode);
-                
-                // Apply vertex colors and material color
-                finalColor *= i.color * _Color;
-                
-                return finalColor;
-            }
-            ENDCG
+        void vert(inout appdata_full v, out Input o)
+        {
+            UNITY_INITIALIZE_OUTPUT(Input, o);
+            o.uv_MainTex = v.texcoord.xy;
+            o.uv2_BlendTex = v.texcoord1.xy;
+            o.color = v.color;
         }
+
+        // Custom lighting model with ambient lighting so models aren't pitch black
+        half4 LightingBrightLambert(SurfaceOutput s, half3 lightDir, half atten)
+        {
+            half NdotL = dot(s.Normal, lightDir);
+            half diff = NdotL * 0.3 + 0.3; // Wrap lighting for brightness
+            half4 c;
+            // Add ambient lighting (5% minimum brightness) plus directional lighting
+            half3 ambient = s.Albedo * 0.05; // 5% ambient light
+            half3 directional = s.Albedo * _LightColor0.rgb * (diff * atten);
+            c.rgb = ambient + directional;
+            c.a = s.Alpha;
+            return c;
+        }
+
+        void surf(Input IN, inout SurfaceOutput o)
+        {
+            // Sample base texture (ground) with corrected UVs
+            fixed4 baseColor = tex2D(_MainTex, IN.uv_MainTex);
+            
+            // Sample blend texture (grass) with scaled UVs for tiling
+            fixed4 blendColor = tex2D(_BlendTex, IN.uv2_BlendTex * _BlendScale);
+            
+            // Direct multiplicative blending - multiply textures together for darkening effect
+            fixed4 finalColor = baseColor * blendColor;
+            
+            // Apply vertex colors and material color
+            finalColor *= IN.color * _Color;
+            
+            o.Albedo = finalColor.rgb;
+            o.Alpha = finalColor.a;
+        }
+        ENDCG
     }
 }

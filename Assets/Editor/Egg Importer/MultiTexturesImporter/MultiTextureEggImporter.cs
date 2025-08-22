@@ -5,6 +5,36 @@ using System.Linq;
 using POTCO.Editor;
 using System.IO;
 
+// UV Transform matrix for per-texture coordinate transformations
+public struct UVXform 
+{
+    public float m00, m01, m02; // first row
+    public float m10, m11, m12; // second row
+    
+    public static UVXform Identity => new UVXform { m00 = 1, m11 = 1 };
+    
+    public static UVXform Mul(UVXform a, UVXform b) => new UVXform {
+        m00 = a.m00 * b.m00 + a.m01 * b.m10,
+        m01 = a.m00 * b.m01 + a.m01 * b.m11,
+        m02 = a.m00 * b.m02 + a.m01 * b.m12 + a.m02,
+        m10 = a.m10 * b.m00 + a.m11 * b.m10,
+        m11 = a.m10 * b.m01 + a.m11 * b.m11,
+        m12 = a.m10 * b.m02 + a.m11 * b.m12 + a.m12,
+    };
+    
+    public static UVXform Translate(float u, float v) => new UVXform { m00 = 1, m11 = 1, m02 = u, m12 = v };
+    public static UVXform Scale(float su, float sv) => new UVXform { m00 = su, m11 = sv };
+    public static UVXform Rotate(float deg) {
+        float r = deg * Mathf.Deg2Rad;
+        float c = Mathf.Cos(r), s = Mathf.Sin(r);
+        return new UVXform { m00 = c, m01 = -s, m10 = s, m11 = c };
+    }
+    
+    public static Vector2 Apply(UVXform m, Vector2 uv)
+        => new Vector2(m.m00 * uv.x + m.m01 * uv.y + m.m02,
+                       m.m10 * uv.x + m.m11 * uv.y + m.m12);
+}
+
 public class MultiTextureEggImporter
 {
     private MultiTextureParserUtilities _parserUtils;
@@ -29,6 +59,18 @@ public class MultiTextureEggImporter
     private EggJoint _rootJoint;
     private bool _hasSkeletalData = false;
     private GameObject _rootBoneObject;
+    
+    // UV Transform system for per-texture transforms and named UV sets
+    private Dictionary<string, string> _textureToUVSet = new Dictionary<string, string>();
+    private Dictionary<string, UVXform> _textureUVXform = new Dictionary<string, UVXform>();
+    private Dictionary<string, string> _textureWrapU = new Dictionary<string, string>();
+    private Dictionary<string, string> _textureWrapV = new Dictionary<string, string>();
+    
+    // Public access for geometry processor
+    public Dictionary<string, string> TextureToUVSet => _textureToUVSet;
+    public Dictionary<string, UVXform> TextureUVXform => _textureUVXform;
+    public Dictionary<string, string> TextureWrapU => _textureWrapU;
+    public Dictionary<string, string> TextureWrapV => _textureWrapV;
     
     public MultiTextureEggImporter()
     {
@@ -166,17 +208,17 @@ public class MultiTextureEggImporter
     // Copy all the helper methods from reference implementation
     private void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths)
     {
-        _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, _parserUtils);
+        _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, _parserUtils, this);
     }
 
     private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, GameObject rootGO)
     {
-        return _materialHandler.CreateMaterialsWithMultiTexture(texturePaths, new List<string>(), rootGO, Vector4.zero);
+        return _materialHandler.CreateMaterialsWithMultiTexture(texturePaths, new List<string>(), rootGO, Vector4.zero, this);
     }
     
     private List<Material> CreateMaterialsWithMultiTexture(Dictionary<string, string> texturePaths, List<string> materialNames, GameObject rootGO, Vector4 uvBounds)
     {
-        return _materialHandler.CreateMaterialsWithMultiTexture(texturePaths, materialNames, rootGO, uvBounds);
+        return _materialHandler.CreateMaterialsWithMultiTexture(texturePaths, materialNames, rootGO, uvBounds, this);
     }
     
     private List<Material> CreateMaterialsWithAlpha(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
@@ -269,7 +311,7 @@ public class MultiTextureEggImporter
     {
         _geometryProcessor.CreateMeshForGameObject(go, subMeshes, materialNames, ctx,
             _masterVertices, _masterNormals, _masterUVs, _masterColors, _materialDict,
-            _hasSkeletalData, _rootJoint, _rootBoneObject, _joints);
+            _hasSkeletalData, _rootJoint, _rootBoneObject, _joints, this);
     }
 
     private void ParseAnimations(string[] lines, GameObject rootGO, UnityEditor.AssetImporters.AssetImportContext ctx)

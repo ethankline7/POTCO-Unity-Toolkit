@@ -26,6 +26,30 @@ public class MultiTextureGeometryProcessor
     // Vertex pool mapping for multi-vertex pool support
     private Dictionary<string, Dictionary<int, int>> vertexPoolMappings = new Dictionary<string, Dictionary<int, int>>();
     
+    // UV channel mapping for named UV sets
+    private readonly Dictionary<string, int> _uvSetToChannel = new Dictionary<string, int> { ["__PRIMARY__"] = 0 };
+    
+    private int GetOrAssignChannel(string uvName)
+    {
+        if (string.IsNullOrEmpty(uvName)) return 0; // primary
+        if (!_uvSetToChannel.TryGetValue(uvName, out int ch))
+        {
+            // Common overlay UV set names should always map to channel 1 (uv2) for shader compatibility
+            if (uvName == "multi" || uvName == "grunge" || uvName == "overlay" || uvName == "detail" || uvName == "uvMulti")
+            {
+                ch = 1; // Always use channel 1 (uv2) for overlay textures
+            }
+            else
+            {
+                // Other named UV sets get assigned dynamically
+                ch = Mathf.Max(2, _uvSetToChannel.Count); // Start from channel 2 for other UV sets
+            }
+            _uvSetToChannel[uvName] = ch;
+            DebugLogger.LogEggImporter($"🔗 Assigned UV channel {ch} to UV set '{uvName}'");
+        }
+        return ch;
+    }
+    
     public MultiTextureGeometryProcessor()
     {
         _parserUtils = new MultiTextureParserUtilities();
@@ -39,7 +63,7 @@ public class MultiTextureGeometryProcessor
 
     public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx, 
         Vector3[] masterVertices, Vector3[] masterNormals, Vector2[] masterUVs, Color[] masterColors, 
-        Dictionary<string, Material> materialDict, bool hasSkeletalData, EggJoint rootJoint, GameObject rootBoneObject, Dictionary<string, EggJoint> joints)
+        Dictionary<string, Material> materialDict, bool hasSkeletalData, EggJoint rootJoint, GameObject rootBoneObject, Dictionary<string, EggJoint> joints, MultiTextureEggImporter importer)
     {
         DebugLogger.LogEggImporter($"Creating mesh for GameObject: {go.name}");
 
@@ -71,12 +95,31 @@ public class MultiTextureGeometryProcessor
             }
         }
 
+        // Determine which UV channels are needed for this mesh
+        var requiredChannels = new HashSet<int>();
+        requiredChannels.Add(0); // Always need primary channel
+        
+        foreach (string materialName in materialNames)
+        {
+            if (importer.TextureToUVSet.TryGetValue(materialName, out string uvSetName))
+            {
+                int channel = GetOrAssignChannel(uvSetName);
+                requiredChannels.Add(channel);
+            }
+        }
+        
         // Create local vertex arrays with only the vertices this mesh uses
         var sortedIndices = usedVertexIndices.OrderBy(x => x).ToArray();
         var localVertices = new Vector3[sortedIndices.Length];
         var localNormals = new Vector3[sortedIndices.Length];
-        var localUVs = new Vector2[sortedIndices.Length];
         var localColors = new Color[sortedIndices.Length];
+        
+        // Create UV arrays for each required channel
+        var uvChannels = new Dictionary<int, Vector2[]>();
+        foreach (int channel in requiredChannels)
+        {
+            uvChannels[channel] = new Vector2[sortedIndices.Length];
+        }
 
         // Create mapping from global index to local index - pre-size dictionary
         var globalToLocalMap = new Dictionary<int, int>(sortedIndices.Length);
@@ -86,38 +129,97 @@ public class MultiTextureGeometryProcessor
             globalToLocalMap[globalIndex] = i;
             localVertices[i] = masterVertices[globalIndex];
             localNormals[i] = masterNormals[globalIndex];
-            localUVs[i] = masterUVs[globalIndex];
             localColors[i] = masterColors[globalIndex];
+            
+            // Get vertex from master arrays to access named UVs
+            var vertex = _vertexPool[globalIndex];
+            
+            // Assign UVs to appropriate channels
+            foreach (int channel in requiredChannels)
+            {
+                if (channel == 0)
+                {
+                    // Primary channel gets the main UV
+                    uvChannels[channel][i] = masterUVs[globalIndex];
+                }
+                else
+                {
+                    // Find the UV set name for this channel
+                    string uvSetName = _uvSetToChannel.FirstOrDefault(kvp => kvp.Value == channel).Key;
+                    if (!string.IsNullOrEmpty(uvSetName) && vertex.namedUVs.TryGetValue(uvSetName, out Vector2 namedUV))
+                    {
+                        uvChannels[channel][i] = namedUV;
+                    }
+                    else
+                    {
+                        // Fallback to primary UV if named UV not found
+                        uvChannels[channel][i] = masterUVs[globalIndex];
+                    }
+                }
+            }
         }
         
         // Detect tiling frequency before processing UVs
         // REMOVED: Tiling frequency detection - reverted to pre-shader state
         
-        // Analyze and normalize UV coordinates for this specific mesh
-        NormalizeMeshUVCoordinates(localUVs, go.name);
+        // Do not modify authored UVs here. Tiling will be handled by wrap modes and per-texture UV transforms.
 
         DebugLogger.LogEggImporter($"Mesh uses {localVertices.Length} vertices out of {masterVertices.Length} total vertices");
 
         var mesh = new Mesh { name = go.name + "_mesh_" + System.Guid.NewGuid().ToString("N")[..8] };
         mesh.vertices = localVertices;
         mesh.normals = localNormals;
-        mesh.uv = localUVs;  // Primary UV channel for base textures
+        // UV channels will be assigned below based on requirements
         mesh.colors = localColors;
         mesh.subMeshCount = materialNames.Count;
         
-        // Set overlay UV channel for multi-texture support
-        if (_overlayUVChannels.ContainsKey("overlay_uv"))
+        // Apply per-texture transforms to UV channels before assigning to mesh
+        foreach (string materialName in materialNames)
         {
-            Vector2[] localOverlayUVs = new Vector2[localVertices.Length];
-            Vector2[] globalOverlayUVs = _overlayUVChannels["overlay_uv"];
-            for (int i = 0; i < usedVertexIndices.Count; i++)
+            // Check if this texture has a transform that needs to be applied
+            if (importer.TextureUVXform.TryGetValue(materialName, out UVXform transform))
             {
-                int globalIndex = usedVertexIndices.ElementAt(i);
-                localOverlayUVs[i] = globalOverlayUVs[globalIndex];
+                // Determine which channel to apply the transform to
+                int channel = 0; // Default to primary channel
+                if (importer.TextureToUVSet.TryGetValue(materialName, out string uvSetName))
+                {
+                    // Texture has explicit UV set mapping
+                    channel = GetOrAssignChannel(uvSetName);
+                }
+                
+                // Apply transform to the appropriate channel
+                if (uvChannels.TryGetValue(channel, out Vector2[] channelUVs))
+                {
+                    for (int i = 0; i < channelUVs.Length; i++)
+                    {
+                        channelUVs[i] = UVXform.Apply(transform, channelUVs[i]);
+                    }
+                    DebugLogger.LogEggImporter($"🔄 Applied UV transform to channel {channel} for texture '{materialName}' (UV set: {uvSetName ?? "primary"})");
+                }
             }
-            mesh.uv2 = localOverlayUVs;  // Overlay UV channel for multi-textures
-            DebugLogger.LogEggImporter($"✅ Set UV2 overlay channel with {localOverlayUVs.Length} coordinates for mesh {mesh.name}");
         }
+        
+        // Assign UV channels based on requirements
+        if (uvChannels.TryGetValue(0, out Vector2[] uv0)) 
+        {
+            var sampleUV = uv0.Length > 0 ? uv0[0] : Vector2.zero;
+            DebugLogger.LogEggImporter($"📊 UV Channel 0 (main): {uv0.Length} coords, sample: ({sampleUV.x:F3}, {sampleUV.y:F3})");
+            mesh.uv = uv0;
+        }
+        if (uvChannels.TryGetValue(1, out Vector2[] uv2)) 
+        {
+            var sampleUV2 = uv2.Length > 0 ? uv2[0] : Vector2.zero;
+            DebugLogger.LogEggImporter($"📊 UV Channel 1 (overlay): {uv2.Length} coords, sample: ({sampleUV2.x:F3}, {sampleUV2.y:F3})");
+            mesh.uv2 = uv2;
+        }
+        if (uvChannels.TryGetValue(2, out Vector2[] uv3)) mesh.uv3 = uv3;
+        if (uvChannels.TryGetValue(3, out Vector2[] uv4)) mesh.uv4 = uv4;
+        if (uvChannels.TryGetValue(4, out Vector2[] uv5)) mesh.uv5 = uv5;
+        if (uvChannels.TryGetValue(5, out Vector2[] uv6)) mesh.uv6 = uv6;
+        if (uvChannels.TryGetValue(6, out Vector2[] uv7)) mesh.uv7 = uv7;
+        if (uvChannels.TryGetValue(7, out Vector2[] uv8)) mesh.uv8 = uv8;
+        
+        DebugLogger.LogEggImporter($"✅ Assigned {uvChannels.Count} UV channels to mesh: {go.name}");
 
         // Pre-size materials list to avoid resizing
         var rendererMaterials = new List<Material>(materialNames.Count);
@@ -343,7 +445,7 @@ public class MultiTextureGeometryProcessor
     }
 
 
-    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, MultiTextureParserUtilities parserUtils)
+    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, MultiTextureParserUtilities parserUtils, MultiTextureEggImporter importer)
     {
         // Clear secondary texture registry for this import
         SecondaryTextureRegistry.Clear();
@@ -373,6 +475,9 @@ public class MultiTextureGeometryProcessor
                     string texName = parts[1];
                     int blockEnd = parserUtils.FindMatchingBrace(lines, i);
                     
+                    // Initialize transform matrix as identity
+                    UVXform transform = UVXform.Identity;
+                    
                     for (int j = i + 1; j < blockEnd; j++)
                     {
                         string innerLine = lines[j].Trim();
@@ -389,13 +494,96 @@ public class MultiTextureGeometryProcessor
                             {
                                 string uvSetName = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
                                 
-                                // Normalize UV set names to handle different conventions
+                                // Store in importer's UV set mapping
+                                importer.TextureToUVSet[texName] = uvSetName;
+                                
+                                // Also store in local mapping for backward compatibility
                                 string normalizedUVName = NormalizeUVSetName(uvSetName);
                                 _textureUVMappings[texName] = normalizedUVName;
                                 DebugLogger.LogEggImporter($"🔍 Texture '{texName}' uses UV set '{uvSetName}' (normalized: '{normalizedUVName}')");
                             }
                         }
+                        else if (innerLine.StartsWith("<Translate>"))
+                        {
+                            // Parse translate: <Translate> { u v 0 }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace != -1 && closeBrace != -1)
+                            {
+                                string[] values = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1)
+                                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (values.Length >= 2 && 
+                                    float.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float u) &&
+                                    float.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float v))
+                                {
+                                    transform = UVXform.Mul(transform, UVXform.Translate(u, v));
+                                    DebugLogger.LogEggImporter($"🔄 Texture '{texName}' translate: ({u}, {v})");
+                                }
+                            }
+                        }
+                        else if (innerLine.StartsWith("<Scale>"))
+                        {
+                            // Parse scale: <Scale> { su sv 1 }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace != -1 && closeBrace != -1)
+                            {
+                                string[] values = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1)
+                                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (values.Length >= 2 && 
+                                    float.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float su) &&
+                                    float.TryParse(values[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float sv))
+                                {
+                                    transform = UVXform.Mul(transform, UVXform.Scale(su, sv));
+                                    DebugLogger.LogEggImporter($"🔄 Texture '{texName}' scale: ({su}, {sv})");
+                                }
+                            }
+                        }
+                        else if (innerLine.StartsWith("<Rotate>"))
+                        {
+                            // Parse rotate: <Rotate> { deg 0 0 1 }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace != -1 && closeBrace != -1)
+                            {
+                                string[] values = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1)
+                                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                if (values.Length >= 1 && 
+                                    float.TryParse(values[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float deg))
+                                {
+                                    transform = UVXform.Mul(transform, UVXform.Rotate(deg));
+                                    DebugLogger.LogEggImporter($"🔄 Texture '{texName}' rotate: {deg} degrees");
+                                }
+                            }
+                        }
+                        else if (innerLine.StartsWith("<Scalar> wrapu"))
+                        {
+                            // Parse wrapu: <Scalar> wrapu { repeat }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace != -1 && closeBrace != -1)
+                            {
+                                string wrapMode = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
+                                importer.TextureWrapU[texName] = wrapMode;
+                                DebugLogger.LogEggImporter($"🔄 Texture '{texName}' wrapu: {wrapMode}");
+                            }
+                        }
+                        else if (innerLine.StartsWith("<Scalar> wrapv"))
+                        {
+                            // Parse wrapv: <Scalar> wrapv { repeat }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace != -1 && closeBrace != -1)
+                            {
+                                string wrapMode = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
+                                importer.TextureWrapV[texName] = wrapMode;
+                                DebugLogger.LogEggImporter($"🔄 Texture '{texName}' wrapv: {wrapMode}");
+                            }
+                        }
                     }
+                    
+                    // Store the final transform in the importer
+                    importer.TextureUVXform[texName] = transform;
                 }
             }
             else if (line.StartsWith("<Vertex>"))
@@ -861,6 +1049,7 @@ public class MultiTextureGeometryProcessor
         DebugLogger.LogEggImporter($"✅ Found vertices with named UVs: {vertexPool.Count(v => v.namedUVs.Count > 0)}");
     }
     
+    /* DISABLED: Destructive UV processing methods - these methods modify authored UVs
     private void NormalizeMeshUVCoordinates(Vector2[] meshUVs, string meshName)
     {
         if (meshUVs.Length == 0) return;
@@ -1383,6 +1572,7 @@ public class MultiTextureGeometryProcessor
             }
         }
     }
+    */ // END DISABLED UV processing methods
     
     // SHADER-BASED TILING SYSTEM: Detect repetition frequency and let shaders handle tiling
     private Vector2 DetectTilingFrequency(Vector2[] meshUVs, string meshName)
@@ -1496,24 +1686,12 @@ public class MultiTextureGeometryProcessor
         return null;
     }
     
-    // Normalize different UV set naming conventions to a standard name
+    // Keep UV set names as-is to preserve distinction between different overlay textures
     private string NormalizeUVSetName(string uvSetName)
     {
-        // Map all overlay texture UV sets to a standard name for Unity
-        // This helps with consistent shader UV channel mapping
-        switch (uvSetName.ToLower())
-        {
-            case "muti-sand":
-            case "multi-sand":
-            case "uvset":
-            case "sand":
-            case "uvnoise":
-            case "dirt":
-            case "rock":
-                return "overlay_uv"; // Standardized name for overlay textures
-            default:
-                return uvSetName; // Keep original name if not recognized
-        }
+        // Don't normalize - keep the original UV set name so we can distinguish
+        // between different overlay UV sets (multi, grunge, etc.)
+        return uvSetName;
     }
     
     private HashSet<int> _multiTextureVertices = new HashSet<int>();
@@ -1571,17 +1749,9 @@ public class MultiTextureGeometryProcessor
                     scaleU = 1.0f; scaleV = 1.0f;
                 }
                 
-                // Generate fallback overlay UVs for vertices that don't have them
-                foreach (var vertex in verticesWithoutOverlayUVs)
-                {
-                    // Convert primary UV (0-1) to overlay UV range
-                    float overlayU = minU + (vertex.uv.x * scaleU);
-                    float overlayV = minV + (vertex.uv.y * scaleV);
-                    
-                    vertex.namedUVs["overlay_uv"] = new Vector2(overlayU, overlayV);
-                }
-                
-                DebugLogger.LogEggImporter($"✅ Generated fallback overlay UVs for {verticesWithoutOverlayUVs.Count} vertices");
+                // Don't generate fallback overlay UVs - only use what's explicitly in the EGG file
+                // Vertices without named UVs shouldn't get them artificially added
+                DebugLogger.LogEggImporter($"ℹ️ {verticesWithoutOverlayUVs.Count} vertices don't have overlay UVs (this is normal)");
             }
         }
     }
@@ -1595,7 +1765,7 @@ public class MultiTextureGeometryProcessor
         {
             foreach (var uvSetName in vertex.namedUVs.Keys)
             {
-                allNamedUVSets.Add("overlay_uv"); // Use normalized name
+                allNamedUVSets.Add(uvSetName); // Keep original UV set name
             }
         }
         
@@ -2076,5 +2246,42 @@ public class MultiTextureGeometryProcessor
         _cachedDefaultMaterial = new Material(standardShader) { name = materialName };
         
         return _cachedDefaultMaterial;
+    }
+    
+    // Normalize primary UVs to proper 0-1 atlas range for palette textures
+    private void NormalizePrimaryUVsForAtlas(Vector2[] uvs, string meshName)
+    {
+        if (uvs.Length == 0) return;
+        
+        float minU = uvs.Min(uv => uv.x);
+        float maxU = uvs.Max(uv => uv.x);
+        float minV = uvs.Min(uv => uv.y);
+        float maxV = uvs.Max(uv => uv.y);
+        
+        DebugLogger.LogEggImporter($"🔍 Primary UV range for {meshName}: U({minU:F2}-{maxU:F2}) V({minV:F2}-{maxV:F2})");
+        
+        // Check if UVs are way outside expected atlas range (0-1)
+        if (maxU > 10.0f || maxV > 10.0f || minU < -5.0f || minV < -5.0f)
+        {
+            // These are clearly atlas coordinates that need normalization
+            float rangeU = maxU - minU;
+            float rangeV = maxV - minV;
+            
+            DebugLogger.LogEggImporter($"🔧 Normalizing atlas UVs for {meshName}: range U={rangeU:F1} V={rangeV:F1}");
+            
+            // Normalize to 0-1 range while preserving proportions
+            for (int i = 0; i < uvs.Length; i++)
+            {
+                float normalizedU = rangeU > 0 ? (uvs[i].x - minU) / rangeU : 0.5f;
+                float normalizedV = rangeV > 0 ? (uvs[i].y - minV) / rangeV : 0.5f;
+                uvs[i] = new Vector2(normalizedU, normalizedV);
+            }
+            
+            DebugLogger.LogEggImporter($"✅ Normalized primary UVs to 0-1 atlas range for {meshName}");
+        }
+        else
+        {
+            DebugLogger.LogEggImporter($"✅ Primary UVs already in reasonable range for {meshName}");
+        }
     }
 }
