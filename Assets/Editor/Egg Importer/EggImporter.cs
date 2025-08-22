@@ -86,18 +86,20 @@ public class EggImporter : ScriptedImporter
         if (isAnimationOnly)
         {
             HandleAnimationOnlyFile(lines, rootGO, ctx);
+            // Don't add rootGO for animation-only files since the AnimationClip is the main object
         }
         else if (requiresMultiTexture)
         {
             HandleMultiTextureFile(lines, rootGO, ctx);
+            ctx.AddObjectToAsset("main", rootGO);
+            ctx.SetMainObject(rootGO);
         }
         else
         {
             HandleGeometryFile(lines, rootGO, ctx);
+            ctx.AddObjectToAsset("main", rootGO);
+            ctx.SetMainObject(rootGO);
         }
-
-        ctx.AddObjectToAsset("main", rootGO);
-        ctx.SetMainObject(rootGO);
 
         // Add materials to context - optimized with null check
         if (_materials?.Count > 0)
@@ -174,28 +176,79 @@ public class EggImporter : ScriptedImporter
 
     private void HandleAnimationOnlyFile(string[] lines, GameObject rootGO, AssetImportContext ctx)
     {
-        DebugLogger.LogEggImporter("🎯 COMBINED: Processing animation-only file");
+        DebugLogger.LogEggImporter("🎯 ANIMATION: Processing animation-only file");
 
-        // Pre-size joints dictionary based on typical animation file sizes
-        _joints = new Dictionary<string, EggJoint>(32);
-        GameObject armature = new GameObject("Armature");
-        armature.transform.SetParent(rootGO.transform, false);
-        _rootBoneObject = armature;
+        // Create standalone AnimationClips that can be applied to any compatible model
+        CreateStandaloneAnimationClips(lines, rootGO, ctx);
 
-        ParseBoneHierarchyAndAnimations(lines, rootGO, ctx);
+        DebugLogger.LogEggImporter("🎯 ANIMATION: Animation-only processing complete");
+    }
 
-        if (_rootJoint != null)
+    private void CreateStandaloneAnimationClips(string[] lines, GameObject rootGO, AssetImportContext ctx)
+    {
+        DebugLogger.LogEggImporter("🎬 STANDALONE: Creating standalone animation clips");
+
+        // Use the .egg filename as the animation name
+        string eggFileName = Path.GetFileNameWithoutExtension(ctx.assetPath);
+        AnimationClip mainClip = null;
+
+        for (int i = 0; i < lines.Length; i++)
         {
-            DebugLogger.LogEggImporter("🎯 COMBINED: Creating bone hierarchy from parsed data");
-            _geometryProcessor.CreateBoneHierarchy(armature.transform, _rootJoint);
-        }
-        else if (_joints.Count > 0)
-        {
-            DebugLogger.LogEggImporter("🎯 COMBINED: Creating bone hierarchy from joint dictionary");
-            _geometryProcessor.CreateBoneHierarchyFromTables(armature.transform, _joints);
-        }
+            string line = lines[i].Trim();
+            if (line.StartsWith("<Bundle>"))
+            {
+                var parts = line.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 1)
+                {
+                    string bundleName = parts[1];
+                    DebugLogger.LogEggImporter($"🎬 STANDALONE: Found animation bundle: '{bundleName}'");
 
-        DebugLogger.LogEggImporter("🎯 COMBINED: Animation-only processing complete");
+                    var clip = new AnimationClip { name = eggFileName }; // Use .egg filename instead of bundle name
+                    clip.legacy = true; // Use legacy animation for compatibility with Animation component
+                    clip.wrapMode = WrapMode.Loop;
+
+                    int bundleEnd = _parserUtils.FindMatchingBrace(lines, i);
+                    if (bundleEnd != -1)
+                    {
+                        _animationProcessor.ParseStandaloneAnimationBundle(lines, i + 1, bundleEnd, clip);
+
+                        var curveBindings = AnimationUtility.GetCurveBindings(clip);
+                        if (curveBindings.Length > 0)
+                        {
+                            DebugLogger.LogEggImporter($"🎬 STANDALONE: Created clip '{clip.name}' with {curveBindings.Length} curves");
+                            
+                            // Set the first valid clip as the main object
+                            if (mainClip == null)
+                            {
+                                mainClip = clip;
+                                ctx.AddObjectToAsset("main", clip); // Add to context first
+                                ctx.SetMainObject(clip); // Then set as main object
+                                DebugLogger.LogEggImporter($"🎬 STANDALONE: Set '{clip.name}' as main object");
+                            }
+                            else
+                            {
+                                ctx.AddObjectToAsset(clip.name + "_extra", clip);
+                            }
+                        }
+                        else
+                        {
+                            DebugLogger.LogWarningEggImporter($"⚠️ STANDALONE: Animation clip '{clip.name}' has no curves");
+                        }
+
+                        i = bundleEnd;
+                    }
+                }
+            }
+        }
+        
+        // If no main clip was set, create a dummy one to avoid import errors
+        if (mainClip == null)
+        {
+            var dummyClip = new AnimationClip { name = eggFileName };
+            ctx.AddObjectToAsset("main", dummyClip);
+            ctx.SetMainObject(dummyClip);
+            DebugLogger.LogWarningEggImporter($"⚠️ STANDALONE: No valid animations found, created dummy clip");
+        }
     }
 
     private void ParseBoneHierarchyAndAnimations(string[] lines, GameObject rootGO, AssetImportContext ctx)
