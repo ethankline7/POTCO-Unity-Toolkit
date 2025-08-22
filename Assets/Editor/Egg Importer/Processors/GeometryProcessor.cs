@@ -758,21 +758,49 @@ public class GeometryProcessor
         if (openBrace == -1 || closeBrace == -1) return;
         string content = fullBlock.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
         var parts = content.Split(SpaceNewlineCarriageReturnSeparators, StringSplitOptions.RemoveEmptyEntries);
+        
         float membership = 1.0f;
+        string referencedVertexPool = "";
+        var localVertexIndices = new List<int>();
+        
+        // First pass: collect vertex indices and find referenced pool
         for (int i = 0; i < parts.Length; i++)
         {
             string part = parts[i].Trim();
             if (part.StartsWith("<Scalar>") && i + 2 < parts.Length && parts[i + 1] == "membership")
             {
-                if (float.TryParse(parts[i + 2].TrimEnd('}'), NumberStyles.Float, CultureInfo.InvariantCulture, out float mem)) { membership = mem; }
+                if (float.TryParse(parts[i + 2].TrimEnd('}'), NumberStyles.Float, CultureInfo.InvariantCulture, out float mem)) 
+                    membership = mem;
                 i += 2;
             }
-            else if (part == "<Ref>") { break; }
-            else if (int.TryParse(part, out int vertexIndex)) { joint.vertexWeights[vertexIndex] = membership; }
+            else if (part == "<Ref>" && i + 2 < parts.Length)
+            {
+                referencedVertexPool = parts[i + 2].TrimStart('{').TrimEnd('}').Trim();
+                break; // Stop processing after finding the ref
+            }
+            else if (int.TryParse(part, out int localVertexIndex))
+            {
+                localVertexIndices.Add(localVertexIndex);
+            }
+        }
+        
+        // Convert local indices to global indices using vertex pool mapping
+        string poolName = string.IsNullOrEmpty(referencedVertexPool) ? "default" : referencedVertexPool;
+        if (vertexPoolMappings.ContainsKey(poolName))
+        {
+            var poolMapping = vertexPoolMappings[poolName];
+            foreach (int localIndex in localVertexIndices)
+            {
+                if (poolMapping.TryGetValue(localIndex, out int globalIndex))
+                {
+                    joint.vertexWeights[globalIndex] = membership;
+                }
+            }
         }
     }
 
     private Dictionary<string, Dictionary<int, int>> vertexPoolMappings = new Dictionary<string, Dictionary<int, int>>();
+
 
     public void CreateMasterVertexBuffer(List<EggVertex> vertexPool, out Vector3[] masterVertices,
         out Vector3[] masterNormals, out Vector2[] masterUVs, out Color[] masterColors)
