@@ -675,20 +675,31 @@ public class GeometryProcessor
             }
             else if (line.StartsWith("<Transform>"))
             {
-                // Cache transform end to avoid multiple calls
-                int transformEnd = _parserUtils.FindMatchingBrace(lines, i);
+                // Check if this group or its children will contain polygons by looking ahead in the EGG structure
+                bool containsGeometry = WillContainGeometry(lines, i, hierarchyMap, currentPath);
                 
-                // Skip expensive geometry checking for now - apply all transforms for correctness
-                if (hierarchyMap.TryGetValue(currentPath, out Transform transform))
+                if (containsGeometry)
                 {
-                    DebugLogger.LogEggImporter($"🔄 Applying transform to GameObject: '{transform.name}' at path: '{currentPath}'");
-                    ParseTransformOptimized(lines, i, transformEnd, transform.gameObject);
+                    DebugLogger.LogEggImporter($"🚫 Skipping transform for geometry group: '{currentPath}' (vertices already in world space)");
+                    int transformEnd = _parserUtils.FindMatchingBrace(lines, i);
+                    i = transformEnd;
                 }
                 else
                 {
-                    DebugLogger.LogWarningEggImporter($"⚠️ Transform found but no GameObject at path: '{currentPath}'");
+                    // Cache transform end to avoid multiple calls
+                    int transformEnd = _parserUtils.FindMatchingBrace(lines, i);
+                    
+                    if (hierarchyMap.TryGetValue(currentPath, out Transform transform))
+                    {
+                        DebugLogger.LogEggImporter($"🔄 Applying transform to GameObject: '{transform.name}' at path: '{currentPath}'");
+                        ParseTransformOptimized(lines, i, transformEnd, transform.gameObject);
+                    }
+                    else
+                    {
+                        DebugLogger.LogWarningEggImporter($"⚠️ Transform found but no GameObject at path: '{currentPath}'");
+                    }
+                    i = transformEnd + 1;
                 }
-                i = transformEnd + 1;
             }
             else if (line.StartsWith("<Polygon>"))
             {
