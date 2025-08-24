@@ -8,13 +8,24 @@ namespace WorldDataImporter.Utilities
 {
     public static class AssetUtilities
     {
+        // Cache phase folders to avoid repeated directory scanning
+        private static string[] _cachedPhaseFolders;
+        private static bool _phaseFoldersCached = false;
+        
         public static GameObject InstantiatePrefab(string modelPath, GameObject parentGO, bool useEgg, ImportStatistics stats = null)
         {
-            string[] phaseFolders = Directory.GetDirectories("Assets/Resources", "phase_*", SearchOption.AllDirectories);
+            // Use cached phase folders
+            if (!_phaseFoldersCached)
+            {
+                _cachedPhaseFolders = Directory.GetDirectories("Assets/Resources", "phase_*", SearchOption.AllDirectories);
+                _phaseFoldersCached = true;
+                DebugLogger.LogWorldImporter($"🗂️ Cached {_cachedPhaseFolders.Length} phase folders for asset loading");
+            }
+            
             GameObject assetToInstantiate = null;
             string extension = useEgg ? ".egg" : ".prefab";
 
-            foreach (string phase in phaseFolders)
+            foreach (string phase in _cachedPhaseFolders)
             {
                 string attemptPath = Path.Combine(phase, modelPath + extension).Replace("\\", "/");
                 assetToInstantiate = AssetDatabase.LoadAssetAtPath<GameObject>(attemptPath);
@@ -99,6 +110,13 @@ namespace WorldDataImporter.Utilities
             if (stats != null && removedCount > 0) stats.collisionRemoved += removedCount;
         }
 
+
+        public static void InvalidatePhaseFolderCache()
+        {
+            _phaseFoldersCached = false;
+            _cachedPhaseFolders = null;
+            DebugLogger.LogWorldImporter("🔄 Phase folder cache invalidated");
+        }
 
         public static void CreateLight(GameObject obj, ObjectData lightData, ImportStatistics stats = null)
         {
