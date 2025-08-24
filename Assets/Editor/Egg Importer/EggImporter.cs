@@ -6,6 +6,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Diagnostics;
 using POTCO.Editor;
 
 [ScriptedImporter(1, "egg")]
@@ -29,6 +30,8 @@ public class EggImporter : ScriptedImporter
     private GeometryProcessor _geometryProcessor;
     private MaterialHandler _materialHandler;
     private ParserUtilities _parserUtils;
+    private Dictionary<string, float> _timingData;
+    private Stopwatch _timer;
 
     public override void OnImportAsset(AssetImportContext ctx)
     {
@@ -63,6 +66,11 @@ public class EggImporter : ScriptedImporter
             return;
         }
         
+        // Initialize timing system
+        _timer = new Stopwatch();
+        _timingData = new Dictionary<string, float>();
+        _timer.Start();
+        
         // Track import statistics
         var startTime = EditorApplication.timeSinceStartup;
         bool importSuccessful = false;
@@ -74,10 +82,12 @@ public class EggImporter : ScriptedImporter
         _geometryProcessor = new GeometryProcessor();
         _materialHandler = new MaterialHandler();
         _parserUtils = new ParserUtilities();
+        RecordTiming("Processor Initialization");
 
         var rootGO = new GameObject(Path.GetFileNameWithoutExtension(ctx.assetPath));
         
         // lines already read above for animation filtering
+        RecordTiming("File Analysis Complete");
         DebugLogger.LogEggImporter($"Animation-only file: {isAnimationOnly}");
 
         // Check if this requires multi-texture processing
@@ -85,18 +95,24 @@ public class EggImporter : ScriptedImporter
         
         if (isAnimationOnly)
         {
+            RecordTiming("Processing Start - Animation Only");
             HandleAnimationOnlyFile(lines, rootGO, ctx);
+            RecordTiming("Animation Processing Complete");
             // Don't add rootGO for animation-only files since the AnimationClip is the main object
         }
         else if (requiresMultiTexture)
         {
+            RecordTiming("Processing Start - Multi-Texture");
             HandleMultiTextureFile(lines, rootGO, ctx);
+            RecordTiming("Multi-Texture Processing Complete");
             ctx.AddObjectToAsset("main", rootGO);
             ctx.SetMainObject(rootGO);
         }
         else
         {
+            RecordTiming("Processing Start - Standard Geometry");
             HandleGeometryFile(lines, rootGO, ctx);
+            RecordTiming("Geometry Processing Complete");
             ctx.AddObjectToAsset("main", rootGO);
             ctx.SetMainObject(rootGO);
         }
@@ -109,12 +125,20 @@ public class EggImporter : ScriptedImporter
                 ctx.AddObjectToAsset(material.name, material);
             }
         }
+        RecordTiming("Adding Materials to Context");
 
         importSuccessful = true;
+        
+        // Finalize timing
+        RecordTiming("Import Complete");
+        _timer.Stop();
         
         // Track import statistics
         var importTime = (float)(EditorApplication.timeSinceStartup - startTime);
         UpdateImportStatistics(ctx.assetPath, importTime, importSuccessful);
+        
+        // Store timing data for performance window
+        StoreTimingData(ctx.assetPath, importTime);
         
         DebugLogger.LogEggImporter("--- EGG IMPORTER: COMPLETE ---");
     }
@@ -319,15 +343,27 @@ public class EggImporter : ScriptedImporter
         var texturePaths = new Dictionary<string, string>(16); // Typical texture count
         var alphaPaths = new Dictionary<string, string>(16); // Alpha texture paths
         _joints = new Dictionary<string, EggJoint>(32); // Typical joint count
+        
         ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths);
+        RecordTiming("Parse Textures and Vertices");
         DebugLogger.LogEggImporter($"Parsed {vertexPool.Count} vertices and {texturePaths.Count} textures");
+        
         ParseAllJoints(lines);
+        RecordTiming("Parse Joints");
         DebugLogger.LogEggImporter($"Parsed {_joints.Count} joints, hasSkeletalData: {_hasSkeletalData}");
+        
         PopulateJointWeightsFromVertices(vertexPool);
+        RecordTiming("Populate Joint Weights");
+        
         _materials = CreateMaterials(texturePaths, alphaPaths, rootGO);
+        RecordTiming("Create Materials");
+        
         // Use optimized material dictionary creation from MaterialHandler
         _materialDict = _materialHandler.CreateMaterialDictionary(_materials);
+        RecordTiming("Create Material Dictionary");
+        
         CreateMasterVertexBuffer(vertexPool);
+        RecordTiming("Create Master Vertex Buffer");
         if (_hasSkeletalData && _rootJoint != null)
         {
             _rootBoneObject = new GameObject("Armature");
@@ -336,6 +372,7 @@ public class EggImporter : ScriptedImporter
             {
                 CreateBoneHierarchy(_rootBoneObject.transform, _rootJoint);
                 DebugBoneHierarchy(_rootBoneObject.transform);
+                RecordTiming("Create Bone Hierarchy");
             }
             catch (System.Exception e)
             {
@@ -346,6 +383,7 @@ public class EggImporter : ScriptedImporter
                     DestroyImmediate(_rootBoneObject);
                     _rootBoneObject = null;
                 }
+                RecordTiming("Create Bone Hierarchy (Failed)");
             }
         }
         // --- Pass 2: Build Hierarchy and Map Geometry ---
@@ -353,7 +391,9 @@ public class EggImporter : ScriptedImporter
         var geometryMap = new Dictionary<string, GeometryData>(64);
         var hierarchyMap = new Dictionary<string, Transform>(64);
         hierarchyMap[""] = rootGO.transform; // Root path
+        
         BuildHierarchyAndMapGeometry(lines, 0, lines.Length, "", hierarchyMap, geometryMap);
+        RecordTiming("Build Hierarchy and Map Geometry");
         DebugLogger.LogEggImporter($"Built hierarchy with {hierarchyMap.Count} objects and {geometryMap.Count} geometry groups");
         foreach (var kvp in geometryMap)
         {
@@ -362,6 +402,7 @@ public class EggImporter : ScriptedImporter
         
         // --- Pass 2.5: Consolidate Parent-Child Geometry ---
         ConsolidateParentChildGeometry(hierarchyMap, geometryMap);
+        RecordTiming("Consolidate Geometry");
         
         // --- Pass 3: Create Meshes from Mapped Geometry ---
         foreach (var kvp in geometryMap)
@@ -373,8 +414,11 @@ public class EggImporter : ScriptedImporter
                 CreateMeshForGameObject(targetTransform.gameObject, geo.subMeshes, geo.materialNames, ctx);
             }
         }
+        RecordTiming("Create Meshes");
+        
         // --- Pass 4: Parse and create animations ---
         ParseAnimations(lines, rootGO, ctx);
+        RecordTiming("Parse Animations");
     }
     
     private void HandleMultiTextureFile(string[] lines, GameObject rootGO, AssetImportContext ctx)
@@ -678,5 +722,59 @@ public class EggImporter : ScriptedImporter
         }
         
         return false;
+    }
+    
+    private void RecordTiming(string phase)
+    {
+        if (_timer != null && _timingData != null)
+        {
+            _timingData[phase] = (float)_timer.Elapsed.TotalMilliseconds;
+        }
+    }
+    
+    private void StoreTimingData(string filePath, float totalTime)
+    {
+        // Check if performance tracking is enabled
+        bool performanceTrackingEnabled = EditorPrefs.GetBool("EggImporter_PerformanceTrackingEnabled", false);
+        if (!performanceTrackingEnabled || _timingData == null || _timingData.Count == 0) 
+        {
+            return;
+        }
+        
+        // Store only the current/latest import timing data
+        string fileName = Path.GetFileNameWithoutExtension(filePath);
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        
+        // Calculate phase durations
+        var phaseDurations = new Dictionary<string, float>();
+        var orderedPhases = _timingData.Keys.OrderBy(k => _timingData[k]).ToList();
+        
+        for (int i = 0; i < orderedPhases.Count; i++)
+        {
+            string currentPhase = orderedPhases[i];
+            if (i == 0)
+            {
+                phaseDurations[currentPhase] = _timingData[currentPhase];
+            }
+            else
+            {
+                string previousPhase = orderedPhases[i - 1];
+                phaseDurations[currentPhase] = _timingData[currentPhase] - _timingData[previousPhase];
+            }
+        }
+        
+        // Store current import data (overwrites previous)
+        EditorPrefs.SetString("EggImporter_CurrentImport_FileName", fileName);
+        EditorPrefs.SetString("EggImporter_CurrentImport_Timestamp", timestamp);
+        EditorPrefs.SetFloat("EggImporter_CurrentImport_TotalTime", totalTime);
+        EditorPrefs.SetInt("EggImporter_CurrentImport_PhaseCount", phaseDurations.Count);
+        
+        int phaseIndex = 0;
+        foreach (var kvp in phaseDurations)
+        {
+            EditorPrefs.SetString($"EggImporter_CurrentImport_Phase_{phaseIndex}_Name", kvp.Key);
+            EditorPrefs.SetFloat($"EggImporter_CurrentImport_Phase_{phaseIndex}_Duration", kvp.Value);
+            phaseIndex++;
+        }
     }
 }
