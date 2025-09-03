@@ -66,12 +66,13 @@ public class GeometryProcessor
         else
         {
             DebugLogger.LogEggImporter($"Using optimized local vertices for STATIC mesh");
-            // Collect all unique vertex indices used by this mesh
+            // Collect all unique vertex indices used by this mesh - optimized
             var usedVertexIndices = new HashSet<int>();
-            foreach (var submesh in subMeshes.Values)
+            foreach (var submeshTriangles in subMeshes.Values)
             {
-                foreach (int vertexIndex in submesh)
+                for (int i = 0; i < submeshTriangles.Count; i++)
                 {
+                    int vertexIndex = submeshTriangles[i];
                     if (vertexIndex >= 0 && vertexIndex < masterVertices.Length)
                     {
                         usedVertexIndices.Add(vertexIndex);
@@ -178,20 +179,22 @@ public class GeometryProcessor
                 }
                 else
                 {
-                    // Static mesh: remap global indices to local indices
-                    var localTriangles = new List<int>(globalTriangles.Count);
-                    foreach (int globalIndex in globalTriangles)
+                    // Static mesh: remap global indices to local indices - optimized
+                    var localTriangles = new int[globalTriangles.Count];
+                    for (int i = 0; i < globalTriangles.Count; i++)
                     {
+                        int globalIndex = globalTriangles[i];
                         if (globalToLocalMap.TryGetValue(globalIndex, out int localIndex))
                         {
-                            localTriangles.Add(localIndex);
+                            localTriangles[i] = localIndex;
                         }
                         else
                         {
                             DebugLogger.LogErrorEggImporter($"Failed to remap global vertex index {globalIndex} to local index");
+                            localTriangles[i] = 0; // Fallback to avoid crashes
                         }
                     }
-                    DebugLogger.LogEggImporter($"Setting triangles for STATIC submesh {j} ({matName}): {localTriangles.Count} triangles (remapped from global indices)");
+                    DebugLogger.LogEggImporter($"Setting triangles for STATIC submesh {j} ({matName}): {localTriangles.Length} triangles (remapped from global indices)");
                     mesh.SetTriangles(localTriangles, j, false);
                 }
             }
@@ -258,43 +261,88 @@ public class GeometryProcessor
             return;
         }
 
-        // Check for valid bone weights
-        int verticesWithWeights = 0;
-
-        for (int i = 0; i < masterVertices.Length; i++)
+        // Highly optimized bone weight calculation - vertex-centric approach
+        var boneNameToIndex = new Dictionary<string, int>(bones.Count);
+        for (int i = 0; i < bones.Count; i++)
         {
-            var weights = new List<KeyValuePair<int, float>>();
-            foreach (var joint in joints.Values)
+            boneNameToIndex[bones[i].name] = i;
+        }
+
+        // Pre-build vertex weight data structure for faster lookup
+        var vertexWeights = new Dictionary<int, List<KeyValuePair<int, float>>>(masterVertices.Length);
+        
+        // Single pass through joints to build vertex weight lookup
+        foreach (var joint in joints.Values)
+        {
+            if (boneNameToIndex.TryGetValue(joint.name, out int boneIndex))
             {
-                if (joint.vertexWeights.ContainsKey(i))
+                foreach (var weightEntry in joint.vertexWeights)
                 {
-                    int boneIndex = bones.FindIndex(b => b.name == joint.name);
-                    if (boneIndex >= 0) { weights.Add(new KeyValuePair<int, float>(boneIndex, joint.vertexWeights[i])); }
+                    int vertexIndex = weightEntry.Key;
+                    float weight = weightEntry.Value;
+                    
+                    if (!vertexWeights.ContainsKey(vertexIndex))
+                    {
+                        vertexWeights[vertexIndex] = new List<KeyValuePair<int, float>>(4);
+                    }
+                    vertexWeights[vertexIndex].Add(new KeyValuePair<int, float>(boneIndex, weight));
                 }
             }
+        }
 
-            if (weights.Count > 0) verticesWithWeights++;
-
-            weights = weights.OrderByDescending(w => w.Value).Take(4).ToList();
-            float totalWeight = weights.Sum(w => w.Value);
-            if (totalWeight > 0)
+        // Check for valid bone weights - much faster now
+        int verticesWithWeights = vertexWeights.Count;
+        
+        for (int i = 0; i < masterVertices.Length; i++)
+        {
+            if (vertexWeights.TryGetValue(i, out List<KeyValuePair<int, float>> weights))
             {
-                for (int j = 0; j < weights.Count; j++) { weights[j] = new KeyValuePair<int, float>(weights[j].Key, weights[j].Value / totalWeight); }
+                // Sort by weight descending and take top 4
+                weights.Sort((a, b) => b.Value.CompareTo(a.Value));
+                int actualWeights = Math.Min(4, weights.Count);
+                
+                // Calculate total weight for normalization
+                float totalWeight = 0f;
+                for (int j = 0; j < actualWeights; j++)
+                {
+                    totalWeight += weights[j].Value;
+                }
+
+                // Normalize and assign weights
+                boneWeights[i] = new BoneWeight();
+                if (totalWeight > 0f)
+                {
+                    if (actualWeights > 0)
+                    {
+                        boneWeights[i].boneIndex0 = weights[0].Key;
+                        boneWeights[i].weight0 = weights[0].Value / totalWeight;
+                    }
+                    if (actualWeights > 1)
+                    {
+                        boneWeights[i].boneIndex1 = weights[1].Key;
+                        boneWeights[i].weight1 = weights[1].Value / totalWeight;
+                    }
+                    if (actualWeights > 2)
+                    {
+                        boneWeights[i].boneIndex2 = weights[2].Key;
+                        boneWeights[i].weight2 = weights[2].Value / totalWeight;
+                    }
+                    if (actualWeights > 3)
+                    {
+                        boneWeights[i].boneIndex3 = weights[3].Key;
+                        boneWeights[i].weight3 = weights[3].Value / totalWeight;
+                    }
+                }
             }
             else
             {
                 // If no weights, bind to root bone
-                if (bones.Count > 0)
+                boneWeights[i] = new BoneWeight
                 {
-                    weights.Add(new KeyValuePair<int, float>(0, 1.0f));
-                }
+                    boneIndex0 = 0,
+                    weight0 = 1.0f
+                };
             }
-
-            boneWeights[i] = new BoneWeight();
-            if (weights.Count > 0) { boneWeights[i].boneIndex0 = weights[0].Key; boneWeights[i].weight0 = weights[0].Value; }
-            if (weights.Count > 1) { boneWeights[i].boneIndex1 = weights[1].Key; boneWeights[i].weight1 = weights[1].Value; }
-            if (weights.Count > 2) { boneWeights[i].boneIndex2 = weights[2].Key; boneWeights[i].weight2 = weights[2].Value; }
-            if (weights.Count > 3) { boneWeights[i].boneIndex3 = weights[3].Key; boneWeights[i].weight3 = weights[3].Value; }
         }
 
         DebugLogger.LogEggImporter($"Vertices with bone weights: {verticesWithWeights}/{masterVertices.Length}");
@@ -585,15 +633,17 @@ public class GeometryProcessor
             {
                 string groupName = _parserUtils.GetGroupName(line);
                 
-                // Skip collision groups based on settings
+                // Cache the group end to avoid multiple expensive FindMatchingBrace calls
+                int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
+                
+                // Skip collision groups based on settings - optimized
                 if (EggImporterSettings.Instance.skipCollisions)
                 {
-                    bool isCollisionGroup = groupName.ToLower().Contains("collision") || ContainsCollideTag(lines, i, _parserUtils.FindMatchingBrace(lines, i));
+                    bool isCollisionGroup = groupName.IndexOf("collision", System.StringComparison.OrdinalIgnoreCase) >= 0 || ContainsCollideTag(lines, i, groupEnd);
                     if (isCollisionGroup)
                     {
                         DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Skip Collisions enabled - contains <Collide> tag or collision in name)");
-                        int collisionGroupEnd = _parserUtils.FindMatchingBrace(lines, i);
-                        i = collisionGroupEnd + 1;
+                        i = groupEnd + 1;
                         continue;
                     }
                 }
@@ -602,13 +652,11 @@ public class GeometryProcessor
                 if (EggImporterSettings.Instance.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly && ShouldSkipNamedLODGroup(groupName))
                 {
                     DebugLogger.LogEggImporter($"🚫 Skipping named LOD group: '{groupName}' (Highest LOD only enabled)");
-                    int namedLodGroupEnd = _parserUtils.FindMatchingBrace(lines, i);
-                    i = namedLodGroupEnd + 1;
+                    i = groupEnd + 1;
                     continue;
                 }
                 
                 // Check if this is an LOD group and handle according to settings
-                int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
                 if (IsLODGroup(lines, i, groupEnd) && !ShouldImportLOD(lines, i, groupEnd, groupName))
                 {
                     DebugLogger.LogEggImporter($"🚫 Skipping LOD group: '{groupName}' based on import settings");
@@ -636,18 +684,22 @@ public class GeometryProcessor
                     int transformEnd = _parserUtils.FindMatchingBrace(lines, i);
                     i = transformEnd;
                 }
-                else if (hierarchyMap.TryGetValue(currentPath, out Transform transform))
-                {
-                    DebugLogger.LogEggImporter($"🔄 Applying transform to GameObject: '{transform.name}' at path: '{currentPath}'");
-                    ParseTransform(lines, ref i, transform.gameObject);
-                }
                 else
                 {
-                    DebugLogger.LogWarningEggImporter($"⚠️ Transform found but no GameObject at path: '{currentPath}'");
+                    // Cache transform end to avoid multiple calls
                     int transformEnd = _parserUtils.FindMatchingBrace(lines, i);
-                    i = transformEnd;
+                    
+                    if (hierarchyMap.TryGetValue(currentPath, out Transform transform))
+                    {
+                        DebugLogger.LogEggImporter($"🔄 Applying transform to GameObject: '{transform.name}' at path: '{currentPath}'");
+                        ParseTransformOptimized(lines, i, transformEnd, transform.gameObject);
+                    }
+                    else
+                    {
+                        DebugLogger.LogWarningEggImporter($"⚠️ Transform found but no GameObject at path: '{currentPath}'");
+                    }
+                    i = transformEnd + 1;
                 }
-                i++;
             }
             else if (line.StartsWith("<Polygon>"))
             {
@@ -687,6 +739,40 @@ public class GeometryProcessor
         go.transform.localRotation = unityRotation;
         go.transform.localScale = unityScale;
         i = blockEnd;
+    }
+    
+    private void ParseTransformOptimized(string[] lines, int start, int end, GameObject go)
+    {
+        Vector3 position = Vector3.zero;
+        Quaternion rotation = Quaternion.identity;
+        Vector3 scale = Vector3.one;
+        
+        // Optimized parsing - direct loop without repeated operations
+        for (int j = start + 1; j < end; j++)
+        {
+            string line = lines[j];
+            if (line.Length > 10) // Quick length check to avoid Trim on short lines
+            {
+                line = line.Trim();
+                if (line.Length > 11 && line[0] == '<')
+                {
+                    if (line.StartsWith("<Translate>")) { position += _parserUtils.ParseVector3(line); }
+                    else if (line.StartsWith("<Rotate>")) { rotation *= _parserUtils.ParseAngleAxis(line); }
+                    else if (line.StartsWith("<Scale>")) { scale = Vector3.Scale(scale, _parserUtils.ParseVector3(line)); }
+                }
+            }
+        }
+        
+        // Apply coordinate system conversion
+        Vector3 unityPosition = new Vector3(position.x, position.z, position.y);
+        Quaternion unityRotation = new Quaternion(rotation.x, rotation.z, rotation.y, -rotation.w);
+        Vector3 unityScale = new Vector3(scale.x, scale.z, scale.y);
+        
+        DebugLogger.LogEggImporter($"📍 Setting transform for '{go.name}': pos={unityPosition}, rot={unityRotation.eulerAngles}, scale={unityScale}");
+        
+        go.transform.localPosition = unityPosition;
+        go.transform.localRotation = unityRotation;
+        go.transform.localScale = unityScale;
     }
 
     public EggJoint ParseJoint(string[] lines, ref int i, Dictionary<string, EggJoint> joints, ParserUtilities parserUtils)

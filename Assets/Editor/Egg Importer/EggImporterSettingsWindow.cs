@@ -31,6 +31,9 @@ public class EggImporterSettingsWindow : EditorWindow
     private int cachedGeneratedPrefabs = 0;
     private float lastStatisticsRefresh = 0f;
     
+    // Performance section foldout
+    private bool performanceFoldout = false;
+    
     [MenuItem("POTCO/EGG Importer Manager")]
     public static void ShowWindow()
     {
@@ -642,6 +645,93 @@ public class EggImporterSettingsWindow : EditorWindow
         
         EditorGUILayout.EndVertical();
         
+        // Performance Analysis Section - with foldout
+        EditorGUILayout.BeginVertical(sectionStyle);
+        performanceFoldout = EditorGUILayout.Foldout(performanceFoldout, "⏱️ Performance Analysis", true);
+        
+        if (performanceFoldout)
+        {
+            GUILayout.Space(5);
+            
+            // Performance tracking toggle
+            bool performanceTrackingEnabled = EditorPrefs.GetBool("EggImporter_PerformanceTrackingEnabled", false);
+            bool newPerformanceTrackingEnabled = EditorGUILayout.Toggle("Enable Performance Tracking (Debug)", performanceTrackingEnabled);
+            if (newPerformanceTrackingEnabled != performanceTrackingEnabled)
+            {
+                EditorPrefs.SetBool("EggImporter_PerformanceTrackingEnabled", newPerformanceTrackingEnabled);
+                if (!newPerformanceTrackingEnabled)
+                {
+                    // Clear all performance data when disabled
+                    ClearPerformanceData();
+                }
+            }
+            
+            if (!performanceTrackingEnabled)
+            {
+                EditorGUILayout.HelpBox("Performance tracking is disabled. Enable it above to collect timing data for debugging.", MessageType.Info);
+            }
+            else
+            {
+                // Check for recent import data
+                string fileName = EditorPrefs.GetString("EggImporter_CurrentImport_FileName", "");
+                string timestamp = EditorPrefs.GetString("EggImporter_CurrentImport_Timestamp", "");
+                float totalTime = EditorPrefs.GetFloat("EggImporter_CurrentImport_TotalTime", 0f);
+                int phaseCount = EditorPrefs.GetInt("EggImporter_CurrentImport_PhaseCount", 0);
+                
+                if (string.IsNullOrEmpty(fileName))
+                {
+                    EditorGUILayout.HelpBox("No timing data available. Import an .egg file to see performance metrics.", MessageType.Info);
+                }
+                else
+                {
+                    // Display current import timing data (single entry)
+                    // Note: fileName, timestamp, totalTime, phaseCount are already retrieved above
+                    EditorGUILayout.LabelField("Latest Import:", $"{fileName} ({totalTime:F2}s)");
+                    EditorGUILayout.LabelField("Import Time:", timestamp);
+                    
+                    // Show top 3 slowest phases
+                    var phases = new List<(string name, float duration)>();
+                    for (int j = 0; j < phaseCount; j++)
+                    {
+                        string phaseName = EditorPrefs.GetString($"EggImporter_CurrentImport_Phase_{j}_Name", "");
+                        float duration = EditorPrefs.GetFloat($"EggImporter_CurrentImport_Phase_{j}_Duration", 0f);
+                        if (!string.IsNullOrEmpty(phaseName))
+                        {
+                            phases.Add((phaseName, duration));
+                        }
+                    }
+                    
+                    if (phases.Count > 0)
+                    {
+                        phases.Sort((a, b) => b.duration.CompareTo(a.duration));
+                        EditorGUILayout.LabelField("Top Performance Areas:", "");
+                        for (int i = 0; i < Mathf.Min(3, phases.Count); i++)
+                        {
+                            string displayName = FormatPhaseName(phases[i].name);
+                            EditorGUILayout.LabelField($"  {i+1}. {displayName}", $"{phases[i].duration:F1}ms");
+                        }
+                    }
+                    
+                    // Performance rating
+                    string rating = "⚡ Excellent";
+                    if (totalTime > 2f) rating = "🐢 Slow";
+                    else if (totalTime > 1f) rating = "⚠️ Moderate";
+                    else if (totalTime > 0.5f) rating = "✅ Good";
+                    
+                    EditorGUILayout.LabelField("Performance Rating:", rating);
+                }
+            
+            GUILayout.Space(5);
+            
+            if (GUILayout.Button("📋 Copy Performance Report"))
+            {
+                CopyPerformanceReportToClipboard();
+            }
+        }
+        }
+        
+        EditorGUILayout.EndVertical();
+        
         // Actions Section
         EditorGUILayout.BeginVertical(sectionStyle);
         GUILayout.Label("🔧 Statistics Actions", EditorStyles.boldLabel);
@@ -762,6 +852,114 @@ public class EggImporterSettingsWindow : EditorWindow
             EditorUtility.DisplayDialog("Export Failed", $"Failed to export statistics report:\n{e.Message}", "OK");
             DebugLogger.LogErrorEggImporter($"Failed to export statistics report: {e.Message}");
         }
+    }
+    
+    
+    private string FormatPhaseName(string phaseName)
+    {
+        // Convert technical phase names to user-friendly ones
+        if (phaseName.Contains("Initialization")) return "🔄 Initialization";
+        if (phaseName.Contains("File Analysis")) return "📄 File Analysis";
+        if (phaseName.Contains("Parse Textures")) return "🔍 Parse Textures & Vertices";
+        if (phaseName.Contains("Parse Joints")) return "🦴 Parse Joints";
+        if (phaseName.Contains("Create Materials")) return "🎨 Create Materials";
+        if (phaseName.Contains("Create Material Dictionary")) return "📚 Material Dictionary";
+        if (phaseName.Contains("Master Vertex Buffer")) return "🔗 Vertex Buffer";
+        if (phaseName.Contains("Build Hierarchy")) return "🏗️ Build Hierarchy";
+        if (phaseName.Contains("Create Meshes")) return "🔺 Create Meshes";
+        if (phaseName.Contains("Parse Animations")) return "🎭 Parse Animations";
+        if (phaseName.Contains("Bone Hierarchy")) return "🦴 Bone Hierarchy";
+        if (phaseName.Contains("Multi-Texture")) return "🔥 Multi-Texture";
+        if (phaseName.Contains("Adding Materials")) return "✅ Add to Context";
+        return phaseName;
+    }
+    
+    private Color GetPhaseColor(string phaseName)
+    {
+        // Color code phases by type
+        if (phaseName.Contains("Parse")) return new Color(0.2f, 0.8f, 0.2f, 0.7f); // Green for parsing
+        if (phaseName.Contains("Create")) return new Color(0.2f, 0.2f, 0.8f, 0.7f); // Blue for creation
+        if (phaseName.Contains("Build") || phaseName.Contains("Hierarchy")) return new Color(0.8f, 0.6f, 0.2f, 0.7f); // Orange for building
+        if (phaseName.Contains("Animation") || phaseName.Contains("Bone")) return new Color(0.8f, 0.2f, 0.8f, 0.7f); // Purple for animation
+        return new Color(0.6f, 0.6f, 0.6f, 0.7f); // Gray for other
+    }
+    
+    private void CopyPerformanceReportToClipboard()
+    {
+        var report = new System.Text.StringBuilder();
+        report.AppendLine("=== EGG Importer Performance Report ===");
+        report.AppendLine($"Generated: {System.DateTime.Now}");
+        report.AppendLine($"Unity Version: {Application.unityVersion}");
+        report.AppendLine();
+        
+        string fileName = EditorPrefs.GetString("EggImporter_CurrentImport_FileName", "");
+        string timestamp = EditorPrefs.GetString("EggImporter_CurrentImport_Timestamp", "");
+        float totalTime = EditorPrefs.GetFloat("EggImporter_CurrentImport_TotalTime", 0f);
+        int phaseCount = EditorPrefs.GetInt("EggImporter_CurrentImport_PhaseCount", 0);
+        
+        if (string.IsNullOrEmpty(fileName))
+        {
+            report.AppendLine("No timing data available.");
+        }
+        else
+        {
+            report.AppendLine("LATEST IMPORT:");
+            report.AppendLine($"\\nFile: {fileName}");
+            report.AppendLine($"Time: {timestamp}");
+            report.AppendLine($"Total: {totalTime:F2}s");
+            report.AppendLine("Phases:");
+            
+            for (int j = 0; j < phaseCount; j++)
+            {
+                string phaseName = EditorPrefs.GetString($"EggImporter_CurrentImport_Phase_{j}_Name", "");
+                float duration = EditorPrefs.GetFloat($"EggImporter_CurrentImport_Phase_{j}_Duration", 0f);
+                if (!string.IsNullOrEmpty(phaseName))
+                {
+                    report.AppendLine($"  - {FormatPhaseName(phaseName)}: {duration:F1}ms");
+                }
+            }
+        }
+        
+        EditorGUIUtility.systemCopyBuffer = report.ToString();
+        EditorUtility.DisplayDialog("Report Copied", "Performance report has been copied to the clipboard. You can now paste it anywhere for analysis.", "OK");
+        DebugLogger.LogEggImporter("Performance report copied to clipboard.");
+    }
+    
+    private void ClearPerformanceData()
+    {
+        // Clear current import data
+        EditorPrefs.DeleteKey("EggImporter_CurrentImport_FileName");
+        EditorPrefs.DeleteKey("EggImporter_CurrentImport_Timestamp");
+        EditorPrefs.DeleteKey("EggImporter_CurrentImport_TotalTime");
+        
+        int phaseCount = EditorPrefs.GetInt("EggImporter_CurrentImport_PhaseCount", 0);
+        for (int j = 0; j < phaseCount; j++)
+        {
+            EditorPrefs.DeleteKey($"EggImporter_CurrentImport_Phase_{j}_Name");
+            EditorPrefs.DeleteKey($"EggImporter_CurrentImport_Phase_{j}_Duration");
+        }
+        EditorPrefs.DeleteKey("EggImporter_CurrentImport_PhaseCount");
+        
+        // Clear any legacy data
+        int entryCount = EditorPrefs.GetInt("EggImporter_TimingEntryCount", 0);
+        for (int i = 0; i < entryCount; i++)
+        {
+            EditorPrefs.DeleteKey($"EggImporter_TimingEntry_{i}_FileName");
+            EditorPrefs.DeleteKey($"EggImporter_TimingEntry_{i}_Timestamp");
+            EditorPrefs.DeleteKey($"EggImporter_TimingEntry_{i}_TotalTime");
+            
+            int legacyPhaseCount = EditorPrefs.GetInt($"EggImporter_TimingEntry_{i}_PhaseCount", 0);
+            for (int j = 0; j < legacyPhaseCount; j++)
+            {
+                EditorPrefs.DeleteKey($"EggImporter_TimingEntry_{i}_Phase_{j}_Name");
+                EditorPrefs.DeleteKey($"EggImporter_TimingEntry_{i}_Phase_{j}_Duration");
+            }
+            EditorPrefs.DeleteKey($"EggImporter_TimingEntry_{i}_PhaseCount");
+        }
+        EditorPrefs.DeleteKey("EggImporter_TimingEntryCount");
+        
+        DebugLogger.LogEggImporter("Performance data cleared.");
+        EditorUtility.DisplayDialog("Data Cleared", "Performance timing data has been cleared.", "OK");
     }
     
     private void DrawInfoTab()

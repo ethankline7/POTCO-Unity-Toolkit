@@ -10,11 +10,25 @@ namespace WorldDataImporter.Processors
     {
         private static ObjectData currentObjectData;
         private static ImportStatistics currentStats;
+        private static ObjectListInfo cachedObjectListInfo;
+        private static GameObject cachedGameObject;
+
+        private static ObjectListInfo GetCachedObjectListInfo()
+        {
+            return cachedObjectListInfo;
+        }
 
         public static void ProcessProperty(string key, string val, GameObject currentGO, GameObject root, bool useEgg, ObjectData objectData = null, ImportStatistics stats = null, ImportSettings settings = null)
         {
             currentObjectData = objectData;
             currentStats = stats;
+            
+            // Cache ObjectListInfo component lookup for this GameObject
+            if (cachedGameObject != currentGO)
+            {
+                cachedGameObject = currentGO;
+                cachedObjectListInfo = currentGO?.GetComponent<ObjectListInfo>();
+            }
 
             switch (key)
             {
@@ -44,7 +58,7 @@ namespace WorldDataImporter.Processors
                             // Update the existing ObjectListInfo component only if ImportObjectListData is enabled
                             if (settings != null && settings.importObjectListData)
                             {
-                                var typeInfo = currentGO.GetComponent<ObjectListInfo>();
+                                var typeInfo = GetCachedObjectListInfo();
                                 if (typeInfo != null)
                                 {
                                     typeInfo.objectType = objectType;
@@ -54,6 +68,7 @@ namespace WorldDataImporter.Processors
                                     // Fallback: create component if somehow missing
                                     typeInfo = currentGO.AddComponent<ObjectListInfo>();
                                     typeInfo.objectType = objectType;
+                                    cachedObjectListInfo = typeInfo; // Update cache
                                 }
                             }
                         }
@@ -89,7 +104,7 @@ namespace WorldDataImporter.Processors
                         // Update the ObjectListInfo with model path only if ImportObjectListData is enabled
                         if (settings != null && settings.importObjectListData)
                         {
-                            var typeInfo = currentGO.GetComponent<ObjectListInfo>();
+                            var typeInfo = GetCachedObjectListInfo();
                             if (typeInfo != null)
                             {
                                 typeInfo.modelPath = modelPath;
@@ -106,7 +121,7 @@ namespace WorldDataImporter.Processors
                             // Also update parent object name to be more descriptive (only if ImportObjectListData is enabled)
                             if (!string.IsNullOrEmpty(modelName) && settings != null && settings.importObjectListData)
                             {
-                                var typeInfo = currentGO.GetComponent<ObjectListInfo>();
+                                var typeInfo = GetCachedObjectListInfo();
                                 if (typeInfo != null)
                                 {
                                     currentGO.name = typeInfo.GetDisplayName();
@@ -151,7 +166,7 @@ namespace WorldDataImporter.Processors
                         // Store in ObjectListInfo only if ImportObjectListData is enabled
                         if (settings != null && settings.importObjectListData)
                         {
-                            var typeInfo = currentGO.GetComponent<ObjectListInfo>();
+                            var typeInfo = GetCachedObjectListInfo();
                             if (typeInfo != null)
                             {
                                 typeInfo.disableCollision = disableCollision;
@@ -166,7 +181,7 @@ namespace WorldDataImporter.Processors
                     // Store in ObjectListInfo only if ImportObjectListData is enabled
                     if (settings != null && settings.importObjectListData)
                     {
-                        var holidayTypeInfo = currentGO.GetComponent<ObjectListInfo>();
+                        var holidayTypeInfo = GetCachedObjectListInfo();
                         if (holidayTypeInfo != null)
                         {
                             holidayTypeInfo.holiday = holiday;
@@ -181,7 +196,7 @@ namespace WorldDataImporter.Processors
                         // Store in ObjectListInfo only if ImportObjectListData is enabled
                         if (settings != null && settings.importObjectListData)
                         {
-                            var instancedTypeInfo = currentGO.GetComponent<ObjectListInfo>();
+                            var instancedTypeInfo = GetCachedObjectListInfo();
                             if (instancedTypeInfo != null)
                             {
                                 instancedTypeInfo.instanced = instanced;
@@ -196,7 +211,7 @@ namespace WorldDataImporter.Processors
                     // Store in ObjectListInfo only if ImportObjectListData is enabled
                     if (settings != null && settings.importObjectListData)
                     {
-                        var visSizeTypeInfo = currentGO.GetComponent<ObjectListInfo>();
+                        var visSizeTypeInfo = GetCachedObjectListInfo();
                         if (visSizeTypeInfo != null)
                         {
                             visSizeTypeInfo.visSize = visSize;
@@ -215,7 +230,7 @@ namespace WorldDataImporter.Processors
                         // Store color in ObjectListInfo for export only if ImportObjectListData is enabled
                         if (settings != null && settings.importObjectListData)
                         {
-                            var typeInfo = currentGO.GetComponent<ObjectListInfo>();
+                            var typeInfo = GetCachedObjectListInfo();
                             if (typeInfo != null)
                             {
                                 typeInfo.visualColor = color;

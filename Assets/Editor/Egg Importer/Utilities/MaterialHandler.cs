@@ -20,6 +20,10 @@ public class MaterialHandler
     // Cache for default colors to avoid repeated string operations
     private static readonly Dictionary<string, Color> DefaultColorCache = new Dictionary<string, Color>();
     
+    // Static texture cache to avoid expensive AssetDatabase calls
+    private static Dictionary<string, Texture2D> _textureCache;
+    private static bool _textureCacheInitialized = false;
+    
     // New overload that accepts alpha textures specified by .egg files
     public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
     {
@@ -115,26 +119,57 @@ public class MaterialHandler
     
     private Texture2D FindTextureInProject(string textureFileName)
     {
-        string[] guids = AssetDatabase.FindAssets(Path.GetFileNameWithoutExtension(textureFileName) + " t:texture2D");
+        // Initialize texture cache if needed
+        if (!_textureCacheInitialized)
+        {
+            InitializeTextureCache();
+        }
+        
+        // Check cache first
+        string cacheKey = textureFileName.ToLowerInvariant();
+        if (_textureCache.TryGetValue(cacheKey, out Texture2D cachedTexture))
+        {
+            if (cachedTexture != null)
+            {
+                DebugLogger.LogEggImporter($"Found cached texture: {textureFileName}");
+                return cachedTexture;
+            }
+        }
+        
+        DebugLogger.LogWarningEggImporter($"Texture not found in cache: {textureFileName}");
+        return null;
+    }
+    
+    private static void InitializeTextureCache()
+    {
+        // More robust cache validation
+        if (_textureCacheInitialized && _textureCache != null && _textureCache.Count > 0) return;
+        
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        _textureCache = new Dictionary<string, Texture2D>(System.StringComparer.OrdinalIgnoreCase);
+        
+        // Find ALL textures in the project once
+        string[] guids = AssetDatabase.FindAssets("t:texture2D");
+        DebugLogger.LogEggImporter($"Initializing texture cache with {guids.Length} textures...");
         
         foreach (string guid in guids)
         {
             string path = AssetDatabase.GUIDToAssetPath(guid);
-            string foundFileName = Path.GetFileName(path);
+            string fileName = Path.GetFileName(path).ToLowerInvariant();
             
-            if (foundFileName.Equals(textureFileName, System.StringComparison.OrdinalIgnoreCase))
+            if (!_textureCache.ContainsKey(fileName))
             {
                 Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
                 if (texture != null)
                 {
-                    DebugLogger.LogEggImporter($"Found texture at: {path}");
-                    return texture;
+                    _textureCache[fileName] = texture;
                 }
             }
         }
         
-        DebugLogger.LogWarningEggImporter($"Texture not found in project: {textureFileName}");
-        return null;
+        stopwatch.Stop();
+        DebugLogger.LogEggImporter($"Texture cache initialized in {stopwatch.ElapsedMilliseconds}ms with {_textureCache.Count} textures");
+        _textureCacheInitialized = true;
     }
     
     private Color GetDefaultColorForMaterial(string materialName)
@@ -252,13 +287,29 @@ public class MaterialHandler
 
     private static Texture2D LoadTextureByFileName(string fileName)
     {
-        var guids = AssetDatabase.FindAssets($"{Path.GetFileNameWithoutExtension(fileName)} t:Texture2D");
-        foreach (var g in guids)
+        // Initialize texture cache if needed
+        if (!_textureCacheInitialized)
         {
-            var p = AssetDatabase.GUIDToAssetPath(g);
-            if (string.Equals(Path.GetFileName(p), fileName, System.StringComparison.OrdinalIgnoreCase))
-                return AssetDatabase.LoadAssetAtPath<Texture2D>(p);
+            InitializeTextureCache();
         }
+        
+        // Use cache instead of expensive AssetDatabase.FindAssets
+        string cacheKey = fileName.ToLowerInvariant();
+        if (_textureCache.TryGetValue(cacheKey, out Texture2D texture))
+        {
+            return texture;
+        }
+        
         return null;
+    }
+    
+    /// <summary>
+    /// Force refresh of texture cache - call this if textures are added/removed
+    /// </summary>
+    public static void InvalidateTextureCache()
+    {
+        _textureCacheInitialized = false;
+        _textureCache = null;
+        DebugLogger.LogEggImporter("Texture cache invalidated - will rebuild on next access");
     }
 }
