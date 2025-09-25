@@ -18,6 +18,7 @@ namespace POTCO.Editor
         private SerializedProperty instancedProp;
         private SerializedProperty holidayProp;
         private SerializedProperty visSizeProp;
+        private SerializedProperty isGroupProp;
         private SerializedProperty autoDetectOnStartProp;
         private SerializedProperty autoGenerateIdProp;
         
@@ -34,6 +35,7 @@ namespace POTCO.Editor
             instancedProp = serializedObject.FindProperty("instanced");
             holidayProp = serializedObject.FindProperty("holiday");
             visSizeProp = serializedObject.FindProperty("visSize");
+            isGroupProp = serializedObject.FindProperty("isGroup");
             autoDetectOnStartProp = serializedObject.FindProperty("autoDetectOnStart");
             autoGenerateIdProp = serializedObject.FindProperty("autoGenerateId");
             
@@ -226,12 +228,26 @@ namespace POTCO.Editor
             EditorGUILayout.PropertyField(instancedProp, new GUIContent("Instanced"));
             EditorGUILayout.PropertyField(holidayProp, new GUIContent("Holiday"));
             EditorGUILayout.PropertyField(visSizeProp, new GUIContent("Vis Size"));
-            
+
+            EditorGUILayout.Space();
+
+            // Group Settings
+            EditorGUILayout.LabelField("Group Settings", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(isGroupProp, new GUIContent("Group", "Mark as group - only exports position/rotation and holiday/visSize if set"));
+
+            if (isGroupProp.boolValue)
+            {
+                EditorGUILayout.HelpBox("📦 Group Mode: Only position, rotation, holiday, and visSize will be exported.", MessageType.Info);
+            }
+
             EditorGUILayout.Space();
             
             // Export Status
             EditorGUILayout.LabelField("Export Status", EditorStyles.boldLabel);
-            bool readyToExport = !string.IsNullOrEmpty(objectIdProp.stringValue) && !string.IsNullOrEmpty(objectTypeProp.stringValue);
+
+            // Groups only need objectId, regular objects need both objectId and objectType
+            bool readyToExport = !string.IsNullOrEmpty(objectIdProp.stringValue) &&
+                                (isGroupProp.boolValue || !string.IsNullOrEmpty(objectTypeProp.stringValue));
             
             if (readyToExport)
             {
@@ -241,8 +257,8 @@ namespace POTCO.Editor
             {
                 string issues = "";
                 if (string.IsNullOrEmpty(objectIdProp.stringValue)) issues += "• Missing Object ID\n";
-                if (string.IsNullOrEmpty(objectTypeProp.stringValue)) issues += "• Missing Object Type\n";
-                
+                if (!isGroupProp.boolValue && string.IsNullOrEmpty(objectTypeProp.stringValue)) issues += "• Missing Object Type (not required for groups)\n";
+
                 EditorGUILayout.HelpBox($"❌ Cannot export:\n{issues}", MessageType.Warning);
             }
             

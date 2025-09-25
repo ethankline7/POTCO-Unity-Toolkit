@@ -28,6 +28,10 @@ namespace POTCO
         public bool instanced = false;
         public string holiday = "";
         public string visSize = "";
+
+        [Header("Group Settings")]
+        [Tooltip("Mark as group - only exports position/rotation and holiday/visSize if set")]
+        public bool isGroup = false;
         
         [Header("Auto-Detection")]
         [Tooltip("Auto-detect properties from GameObject and ObjectList")]

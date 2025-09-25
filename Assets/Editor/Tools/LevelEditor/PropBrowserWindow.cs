@@ -25,6 +25,13 @@ namespace POTCO.Editor
             public string searchableText;
             public bool thumbnailRequested; // New: track thumbnail requests
             public string objectType; // New: from ObjectList.py
+
+            // Group-specific properties
+            public bool isGroup;
+            public List<GroupCreationDialog.GroupItem> groupItems;
+            public string customThumbnailPath;
+            public GroupCreationDialog.PivotType pivotType = GroupCreationDialog.PivotType.Bottom;
+            public Vector3 customPivotOffset;
         }
 
         private class CategoryData
@@ -603,14 +610,22 @@ namespace POTCO.Editor
 
             // Name and favorite button
             EditorGUILayout.BeginHorizontal();
-            
+
             string displayName = prop.name;
             if (displayName.Length > 12)
             {
                 displayName = displayName.Substring(0, 9) + "...";
             }
-            
+
+            // Add group indicator
+            if (prop.isGroup)
+            {
+                displayName = "📦 " + displayName;
+                GUI.backgroundColor = new Color(0.8f, 0.9f, 1f, 0.8f); // More visible blue tint
+            }
+
             GUILayout.Label(displayName, EditorStyles.miniLabel);
+            GUI.backgroundColor = Color.white;
             
             // Favorite toggle
             bool wasFavorite = prop.isFavorite;
@@ -672,7 +687,7 @@ namespace POTCO.Editor
                     if (prop.prefab != null)
                     {
                         // Always use custom thumbnail generation
-                        Texture2D customThumbnail = GenerateCustomThumbnail(prop.prefab);
+                        Texture2D customThumbnail = PropBrowserWindow.GenerateCustomThumbnail(prop.prefab);
                         if (customThumbnail != null)
                         {
                             prop.thumbnail = customThumbnail;
@@ -695,7 +710,7 @@ namespace POTCO.Editor
         /// <summary>
         /// Generate custom thumbnail using Unity's exact default settings but with custom camera angle
         /// </summary>
-        private Texture2D GenerateCustomThumbnail(GameObject prefab)
+        public static Texture2D GenerateCustomThumbnail(GameObject prefab)
         {
             if (prefab == null) return null;
 
@@ -831,6 +846,7 @@ namespace POTCO.Editor
             }
         }
 
+
         /// <summary>
         /// Calculate the bounds of an object including all child renderers
         /// </summary>
@@ -917,6 +933,9 @@ namespace POTCO.Editor
             allProps.Clear();
             categoryData.Clear();
             thumbnailCache.Clear();
+
+            // Load saved groups first
+            LoadSavedGroups();
 
             if (showEggFiles)
             {
@@ -1364,54 +1383,45 @@ namespace POTCO.Editor
         {
             if (SurfacePlacementTool.IsEnabled)
             {
-                // Use surface placement tool for interactive placement
+                // Use surface placement tool for interactive placement (works for both props and groups!)
                 SurfacePlacementTool.StartPlacement(prop.prefab);
-                
+
                 prop.useCount++;
                 propUsageCounts[prop.path] = prop.useCount;
                 SavePreferences();
-                
-                DebugLogger.LogAlways($"🎯 Started surface placement for prop '{prop.name}'");
+
+                DebugLogger.LogAlways($"🎯 Started surface placement for {(prop.isGroup ? "group" : "prop")} '{prop.name}'");
             }
             else
             {
-                // Standard placement logic
-                Vector3 position = Vector3.zero;
-                
-                if (Selection.activeTransform != null)
-                {
-                    position = Selection.activeTransform.position + Vector3.up * 2;
-                }
-                else if (SceneView.lastActiveSceneView != null)
-                {
-                    position = SceneView.lastActiveSceneView.camera.transform.position + 
-                              SceneView.lastActiveSceneView.camera.transform.forward * 5;
-                }
+                // Standard placement logic (works for both props and groups!)
+                Vector3 position = GetPlacementPosition();
 
                 GameObject instance = PrefabUtility.InstantiatePrefab(prop.prefab) as GameObject;
                 instance.transform.position = position;
-                
-                if (instance.GetComponent<ObjectListInfo>() == null)
+
+                // For single props, add ObjectListInfo
+                if (!prop.isGroup)
                 {
-                    var objectListInfo = instance.AddComponent<ObjectListInfo>();
-                    objectListInfo.modelPath = ExtractModelPath(prop.path);
-                    objectListInfo.objectType = prop.objectType;
+                    SetupObjectListInfo(instance, prop.path, prop.objectType);
                 }
+                // Groups already have ObjectListInfo in their prefab
 
                 Selection.activeGameObject = instance;
-                
+
                 if (SceneView.lastActiveSceneView != null)
                 {
                     SceneView.lastActiveSceneView.FrameSelected();
                 }
-                
+
                 prop.useCount++;
                 propUsageCounts[prop.path] = prop.useCount;
                 SavePreferences();
 
-                DebugLogger.LogAlways($"🎯 Placed prop '{prop.name}' in scene at {position}");
+                DebugLogger.LogAlways($"🎯 Placed {(prop.isGroup ? "group" : "prop")} '{prop.name}' in scene at {position}");
             }
         }
+
 
         private string ExtractModelPath(string assetPath)
         {
@@ -1419,23 +1429,79 @@ namespace POTCO.Editor
             return path;
         }
 
+        /// <summary>
+        /// Utility method to add ObjectListInfo component to instantiated objects - REUSE THIS!
+        /// </summary>
+        public static void SetupObjectListInfo(GameObject instance, string prefabPath, string objectType)
+        {
+            if (instance.GetComponent<ObjectListInfo>() == null)
+            {
+                var objectListInfo = instance.AddComponent<ObjectListInfo>();
+                objectListInfo.modelPath = prefabPath.Replace("Assets/Resources/", "").Replace(".prefab", "");
+                objectListInfo.objectType = objectType;
+            }
+        }
+
+        /// <summary>
+        /// Calculate placement position - either near selected object or in front of scene camera - REUSE THIS!
+        /// </summary>
+        public static Vector3 GetPlacementPosition()
+        {
+            if (Selection.activeTransform != null)
+            {
+                return Selection.activeTransform.position + Vector3.up * 2;
+            }
+            else if (SceneView.lastActiveSceneView != null)
+            {
+                return SceneView.lastActiveSceneView.camera.transform.position +
+                       SceneView.lastActiveSceneView.camera.transform.forward * 5;
+            }
+            return Vector3.zero;
+        }
+
+
         private void ShowPropContextMenu(PropAsset prop)
         {
             GenericMenu menu = new GenericMenu();
-            
-            menu.AddItem(new GUIContent("Place in Scene"), false, () => PlacePropInScene(prop));
+
+            // Check if multiple GameObjects are selected in the scene
+            if (Selection.gameObjects != null && Selection.gameObjects.Length > 1)
+            {
+                menu.AddItem(new GUIContent("📦 Save Selection as Group"), false, () => SaveSelectionAsGroup());
+                menu.AddSeparator("");
+            }
+
+            if (prop.isGroup)
+            {
+                menu.AddItem(new GUIContent("📝 Edit Group"), false, () => EditGroup(prop));
+            }
+            else
+            {
+                menu.AddItem(new GUIContent("Place in Scene"), false, () => PlacePropInScene(prop));
+            }
+
             menu.AddSeparator("");
-            
+
             for (int i = 1; i <= 9; i++)
             {
                 int slotIndex = i;
                 menu.AddItem(new GUIContent($"Send to Quick Slot {slotIndex}"), false, () => SendToQuickSlot(prop, slotIndex));
             }
-            
+
             menu.AddSeparator("");
             menu.AddItem(new GUIContent(prop.isFavorite ? "Remove from Favorites" : "Add to Favorites"), false, () => ToggleFavorite(prop));
-            menu.AddItem(new GUIContent("Show in Project"), false, () => EditorGUIUtility.PingObject(prop.prefab));
-            
+
+            if (!prop.isGroup && prop.prefab != null)
+            {
+                menu.AddItem(new GUIContent("Show in Project"), false, () => EditorGUIUtility.PingObject(prop.prefab));
+            }
+
+            if (prop.isGroup)
+            {
+                menu.AddSeparator("");
+                menu.AddItem(new GUIContent("🗑️ Delete Group"), false, () => DeleteGroup(prop));
+            }
+
             menu.ShowAsContext();
         }
         
@@ -1528,6 +1594,359 @@ namespace POTCO.Editor
             // Category style is now always tabbed - no need to save to preferences
             EditorPrefs.SetString("PropBrowser_ExpandedCategories", string.Join("|", expandedCategories));
         }
+
+        #region Group Management Methods
+
+        private void SaveSelectionAsGroup()
+        {
+            if (Selection.gameObjects == null || Selection.gameObjects.Length < 2)
+            {
+                EditorUtility.DisplayDialog("Invalid Selection", "Please select 2 or more objects in the scene to create a group.", "OK");
+                return;
+            }
+
+            GroupCreationDialog.ShowDialog(Selection.gameObjects, OnGroupCreated);
+        }
+
+        private void OnGroupCreated(GroupCreationDialog.GroupData groupData)
+        {
+            if (groupData == null || string.IsNullOrEmpty(groupData.name))
+            {
+                return;
+            }
+
+            // Create PropAsset for the group
+            PropAsset groupProp = CreateGroupAsset(groupData);
+
+            // Add to prop list
+            allProps.Add(groupProp);
+
+            // Organize into categories
+            OrganizePropIntoCategories(groupProp);
+
+            // Refresh display
+            needsFilterRefresh = true;
+
+            // Save group data to disk
+            SaveGroupToDisk(groupProp, groupData);
+
+            DebugLogger.LogAlways($"📦 Created group '{groupData.name}' with {groupData.items.Count} objects");
+        }
+
+        private PropAsset CreateGroupAsset(GroupCreationDialog.GroupData groupData)
+        {
+            var groupProp = new PropAsset
+            {
+                name = groupData.name,
+                path = $"Groups/{groupData.name}",
+                category = groupData.category,
+                subcategory = "Custom Groups",
+                prefab = null, // Will be set after prefab is created in SaveGroupToDisk
+                isFavorite = false,
+                useCount = 0,
+                thumbnailRequested = false,
+                thumbnail = null, // Let the existing thumbnail system handle it
+                objectType = "GROUP",
+                isGroup = true,
+                groupItems = groupData.items, // Still needed during creation process
+                customThumbnailPath = "",
+                pivotType = groupData.pivotType,
+                customPivotOffset = groupData.customPivotOffset
+            };
+
+            // Create searchable text with null checks
+            var itemNames = groupData.items?.Where(item => !string.IsNullOrEmpty(item.prefabPath))
+                                         .Select(item => Path.GetFileNameWithoutExtension(item.prefabPath)) ?? new string[0];
+            groupProp.searchableText = (groupProp.name + " " + groupProp.category + " " +
+                                      string.Join(" ", itemNames) + " group").ToLower();
+
+            return groupProp;
+        }
+
+        private void SaveGroupToDisk(PropAsset groupProp, GroupCreationDialog.GroupData groupData)
+        {
+            string groupsFolder = "Assets/Resources/Groups";
+
+            // Create folder if it doesn't exist
+            if (!Directory.Exists(groupsFolder))
+            {
+                Directory.CreateDirectory(groupsFolder);
+                AssetDatabase.Refresh();
+            }
+
+            // Create a temporary group GameObject with all the objects as children
+            GameObject tempGroupParent = new GameObject(groupData.name);
+
+            try
+            {
+                // Calculate pivot offset - always use bottom pivot
+                Vector3 pivotOffset = Vector3.zero;
+                float lowestY = float.MaxValue;
+                foreach (var item in groupData.items)
+                {
+                    if (item.localPosition.y < lowestY)
+                    {
+                        lowestY = item.localPosition.y;
+                    }
+                }
+                pivotOffset = new Vector3(0, -lowestY, 0);
+
+                // Add all group objects as children
+                foreach (var item in groupData.items)
+                {
+                    if (!string.IsNullOrEmpty(item.prefabPath))
+                    {
+                        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(item.prefabPath);
+                        if (prefab != null)
+                        {
+                            GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+                            instance.transform.SetParent(tempGroupParent.transform);
+                            instance.transform.localPosition = item.localPosition + pivotOffset;
+                            instance.transform.localRotation = item.localRotation;
+                            instance.transform.localScale = item.localScale;
+
+                            // Ensure each prop has ObjectListInfo component
+                            if (instance.GetComponent<ObjectListInfo>() == null)
+                            {
+                                var propInfo = instance.AddComponent<ObjectListInfo>();
+
+                                // Clean model path - remove extensions and phase prefix, keep only models/props/modelname
+                                string cleanModelPath = item.prefabPath.Replace("Assets/Resources/", "");
+                                cleanModelPath = cleanModelPath.Replace(".prefab", "");
+                                cleanModelPath = cleanModelPath.Replace(".egg", "");
+
+                                // Remove phase_# prefix if present (e.g., "phase_4/models/props/chest" -> "models/props/chest")
+                                if (cleanModelPath.StartsWith("phase_"))
+                                {
+                                    int slashIndex = cleanModelPath.IndexOf('/');
+                                    if (slashIndex > 0)
+                                    {
+                                        cleanModelPath = cleanModelPath.Substring(slashIndex + 1);
+                                    }
+                                }
+
+                                propInfo.modelPath = cleanModelPath;
+                                propInfo.objectType = item.objectType;
+                                propInfo.autoDetectOnStart = false; // Prevent auto-detection from overriding
+                                propInfo.autoGenerateId = true;
+
+                                // Generate object ID immediately
+                                propInfo.GenerateObjectId();
+                            }
+                        }
+                    }
+                }
+
+                // Add group identifier component to parent
+                var groupInfo = tempGroupParent.AddComponent<ObjectListInfo>();
+                groupInfo.objectType = "GROUP";
+                groupInfo.modelPath = $"Groups/{groupData.name}";
+                groupInfo.isGroup = true; // Mark as group for special export behavior
+
+                // Save as prefab
+                string prefabPath = Path.Combine(groupsFolder, $"{groupData.name}.prefab");
+                GameObject savedPrefab = PrefabUtility.SaveAsPrefabAsset(tempGroupParent, prefabPath);
+
+                // Update the PropAsset to reference the new prefab
+                groupProp.prefab = savedPrefab;
+                groupProp.path = prefabPath.Replace("Assets/Resources/", "").Replace(".prefab", "");
+
+                Debug.Log($"✅ Saved group '{groupData.name}' as prefab: {prefabPath}");
+            }
+            finally
+            {
+                // Clean up temporary object
+                if (tempGroupParent != null)
+                {
+                    DestroyImmediate(tempGroupParent);
+                }
+            }
+
+            AssetDatabase.Refresh();
+        }
+
+        private void LoadSavedGroups()
+        {
+            string groupsFolder = "Assets/Resources/Groups";
+
+            if (!Directory.Exists(groupsFolder))
+            {
+                return;
+            }
+
+            string[] prefabFiles = Directory.GetFiles(groupsFolder, "*.prefab");
+
+            foreach (string prefabPath in prefabFiles)
+            {
+                try
+                {
+                    GameObject groupPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+
+                    if (groupPrefab != null)
+                    {
+                        // Check if it has the ObjectListInfo component that identifies it as a group
+                        var groupInfo = groupPrefab.GetComponent<ObjectListInfo>();
+
+                        if (groupInfo != null && (groupInfo.objectType == "GROUP" || groupInfo.isGroup))
+                        {
+                            // Create PropAsset for this group prefab
+                            PropAsset groupProp = new PropAsset
+                            {
+                                name = groupPrefab.name,
+                                path = prefabPath.Replace("Assets/Resources/", "").Replace(".prefab", ""),
+                                category = "Groups", // All group prefabs go to Groups category
+                                subcategory = "Custom Groups",
+                                prefab = groupPrefab, // Now groups have actual prefabs!
+                                isFavorite = false,
+                                useCount = 0,
+                                thumbnailRequested = false,
+                                thumbnail = null, // Will be generated by existing system
+                                objectType = "GROUP",
+                                isGroup = true,
+                                groupItems = null, // Not needed anymore since it's a prefab
+                                customThumbnailPath = "",
+                                pivotType = GroupCreationDialog.PivotType.Bottom, // Default
+                                customPivotOffset = Vector3.zero
+                            };
+
+                            // Create searchable text
+                            groupProp.searchableText = (groupProp.name + " " + groupProp.category + " group").ToLower();
+
+                            allProps.Add(groupProp);
+                            OrganizePropIntoCategories(groupProp);
+
+                            Debug.Log($"✅ Successfully loaded group prefab '{groupPrefab.name}' from {prefabPath}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Prefab {prefabPath} is not a valid group (missing GROUP ObjectListInfo)");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Could not load prefab at {prefabPath}");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"Failed to load group prefab from {prefabPath}: {ex.Message}");
+                }
+            }
+        }
+
+        private void PlaceGroupExploded(PropAsset groupProp)
+        {
+            if (!groupProp.isGroup || groupProp.prefab == null)
+            {
+                return;
+            }
+
+            Vector3 basePosition = GetPlacementPosition();
+
+            List<GameObject> placedObjects = new List<GameObject>();
+
+            // Get all child objects from the group prefab and place them individually
+            for (int i = 0; i < groupProp.prefab.transform.childCount; i++)
+            {
+                Transform child = groupProp.prefab.transform.GetChild(i);
+
+                // Skip the group's own ObjectListInfo component if any
+                if (child.GetComponent<ObjectListInfo>() != null)
+                {
+                    GameObject instance = PrefabUtility.InstantiatePrefab(child.gameObject) as GameObject;
+                    instance.transform.position = basePosition + child.localPosition;
+                    instance.transform.rotation = child.rotation;
+                    instance.transform.localScale = child.localScale;
+
+                    placedObjects.Add(instance);
+                }
+            }
+
+            if (placedObjects.Count > 0)
+            {
+                Selection.objects = placedObjects.ToArray();
+
+                if (SceneView.lastActiveSceneView != null)
+                {
+                    SceneView.lastActiveSceneView.FrameSelected();
+                }
+
+                groupProp.useCount++;
+                propUsageCounts[groupProp.path] = groupProp.useCount;
+                SavePreferences();
+
+                DebugLogger.LogAlways($"💥 Placed group '{groupProp.name}' exploded with {placedObjects.Count} objects");
+            }
+        }
+
+        private void EditGroup(PropAsset groupProp)
+        {
+            // For now, just show info about the group
+            string message = $"Group: {groupProp.name}\n" +
+                           $"Category: {groupProp.category}\n" +
+                           $"Objects: {groupProp.groupItems?.Count ?? 0}\n" +
+                           $"Pivot: {groupProp.pivotType}";
+
+            if (EditorUtility.DisplayDialog("Edit Group", message + "\n\nGroup editing UI not yet implemented.", "OK", "Delete Group"))
+            {
+                // User clicked OK, do nothing for now
+            }
+            else
+            {
+                // User clicked Delete Group
+                DeleteGroup(groupProp);
+            }
+        }
+
+        private void DeleteGroup(PropAsset groupProp)
+        {
+            if (EditorUtility.DisplayDialog("Delete Group",
+                $"Are you sure you want to delete the group '{groupProp.name}'?\n\nThis action cannot be undone.",
+                "Delete", "Cancel"))
+            {
+                // Remove from lists
+                allProps.Remove(groupProp);
+                filteredProps.Remove(groupProp);
+
+                // Remove from categories
+                if (categoryData.ContainsKey(groupProp.category))
+                {
+                    categoryData[groupProp.category].props.Remove(groupProp);
+
+                    if (!string.IsNullOrEmpty(groupProp.subcategory) &&
+                        categoryData[groupProp.category].subcategories.ContainsKey(groupProp.subcategory))
+                    {
+                        categoryData[groupProp.category].subcategories[groupProp.subcategory].Remove(groupProp);
+                    }
+                }
+
+                // Delete prefab file
+                try
+                {
+                    string prefabPath = AssetDatabase.GetAssetPath(groupProp.prefab);
+
+                    if (!string.IsNullOrEmpty(prefabPath))
+                    {
+                        AssetDatabase.DeleteAsset(prefabPath);
+                        AssetDatabase.Refresh();
+                        Debug.Log($"✅ Deleted group prefab: {prefabPath}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Could not find prefab path for group '{groupProp.name}'");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"Failed to delete group prefab: {ex.Message}");
+                }
+
+                needsFilterRefresh = true;
+                DebugLogger.LogAlways($"🗑️ Deleted group '{groupProp.name}'");
+            }
+        }
+
+        #endregion
     }
 }
 
