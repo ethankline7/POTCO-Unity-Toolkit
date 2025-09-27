@@ -7,36 +7,32 @@ namespace POTCO
     /// <summary>
     /// Enhanced component that stores ObjectList object type information with auto-detection
     /// </summary>
+    [SelectionBase]
     public class ObjectListInfo : MonoBehaviour
     {
-        [Header("ObjectList Object Information")]
         [Tooltip("Select from available ObjectList object types")]
         public string objectType = "MISC_OBJ";
-        
+
         [Tooltip("Auto-generated unique ID (generated on export)")]
         public string objectId;
-        
+
         [Tooltip("Auto-detected model path based on GameObject")]
         public string modelPath;
-        
-        [Header("Visual Properties")]
+
         public bool hasVisualBlock = true;
         public Color? visualColor;
-        
-        [Header("Object Properties")]
+
         public bool disableCollision = false;
         public bool instanced = false;
         public string holiday = "";
         public string visSize = "";
 
-        [Header("Group Settings")]
         [Tooltip("Mark as group - only exports position/rotation and holiday/visSize if set")]
         public bool isGroup = false;
-        
-        [Header("Auto-Detection")]
+
         [Tooltip("Auto-detect properties from GameObject and ObjectList")]
         public bool autoDetectOnStart = true;
-        
+
         [Tooltip("Generate new object ID automatically")]
         public bool autoGenerateId = true;
         
@@ -522,6 +518,51 @@ namespace POTCO
         {
             CheckAndFixDuplicateObjectId();
             LogAutoObjectList($"Checked for duplicate IDs on '{gameObject.name}' - Current ID: {objectId}");
+        }
+
+        /// <summary>
+        /// Update the visual color on the object's renderer using MaterialPropertyBlock to avoid material leaks
+        /// </summary>
+        public void UpdateVisualColor()
+        {
+            MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
+
+            if (visualColor.HasValue)
+            {
+                // Set the color property in the MaterialPropertyBlock
+                propertyBlock.SetColor("_Color", visualColor.Value);
+                propertyBlock.SetColor("_BaseColor", visualColor.Value); // For URP materials
+            }
+
+            var renderer = GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                if (visualColor.HasValue)
+                {
+                    renderer.SetPropertyBlock(propertyBlock);
+                }
+                else
+                {
+                    renderer.SetPropertyBlock(null); // Clear property block to restore original material
+                }
+            }
+
+            // Also update child renderers
+            var childRenderers = GetComponentsInChildren<Renderer>();
+            foreach (var childRenderer in childRenderers)
+            {
+                if (childRenderer != renderer)
+                {
+                    if (visualColor.HasValue)
+                    {
+                        childRenderer.SetPropertyBlock(propertyBlock);
+                    }
+                    else
+                    {
+                        childRenderer.SetPropertyBlock(null); // Clear property block to restore original material
+                    }
+                }
+            }
         }
     }
 }

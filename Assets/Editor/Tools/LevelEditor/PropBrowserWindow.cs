@@ -928,6 +928,15 @@ namespace POTCO.Editor
             EditorGUILayout.EndHorizontal();
         }
 
+        /// <summary>
+        /// Public method to force refresh the prop list (for external calls like GroupEditDialog)
+        /// </summary>
+        public void ForceRefreshPropList()
+        {
+            RefreshPropList();
+            needsFilterRefresh = true;
+        }
+
         private void RefreshPropList()
         {
             allProps.Clear();
@@ -1881,21 +1890,8 @@ namespace POTCO.Editor
 
         private void EditGroup(PropAsset groupProp)
         {
-            // For now, just show info about the group
-            string message = $"Group: {groupProp.name}\n" +
-                           $"Category: {groupProp.category}\n" +
-                           $"Objects: {groupProp.groupItems?.Count ?? 0}\n" +
-                           $"Pivot: {groupProp.pivotType}";
-
-            if (EditorUtility.DisplayDialog("Edit Group", message + "\n\nGroup editing UI not yet implemented.", "OK", "Delete Group"))
-            {
-                // User clicked OK, do nothing for now
-            }
-            else
-            {
-                // User clicked Delete Group
-                DeleteGroup(groupProp);
-            }
+            // Open the new Group Edit Dialog
+            GroupEditDialog.ShowDialog(groupProp.name, groupProp.category, groupProp.subcategory, groupProp.prefab);
         }
 
         private void DeleteGroup(PropAsset groupProp)

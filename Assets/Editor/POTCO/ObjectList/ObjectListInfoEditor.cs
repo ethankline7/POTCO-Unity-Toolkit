@@ -205,9 +205,11 @@ namespace POTCO.Editor
                 {
                     objectListInfo.visualColor = null;
                 }
+                objectListInfo.UpdateVisualColor();
                 EditorUtility.SetDirty(objectListInfo);
+                SceneView.RepaintAll();
             }
-            
+
             if (newHasColor)
             {
                 Color currentColor = objectListInfo.visualColor ?? Color.white;
@@ -215,7 +217,9 @@ namespace POTCO.Editor
                 if (newColor != currentColor)
                 {
                     objectListInfo.visualColor = newColor;
+                    objectListInfo.UpdateVisualColor();
                     EditorUtility.SetDirty(objectListInfo);
+                    SceneView.RepaintAll();
                 }
             }
             EditorGUILayout.EndHorizontal();
