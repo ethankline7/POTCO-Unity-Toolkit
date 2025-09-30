@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 using WorldDataImporter.Data;
+using POTCO;
 using POTCO.Editor;
 
 namespace WorldDataImporter.Utilities
@@ -60,29 +61,6 @@ namespace WorldDataImporter.Utilities
             return null;
         }
 
-        public static void ApplyColorOverride(GameObject obj, Color color, ImportStatistics stats = null)
-        {
-            var renderers = obj.GetComponentsInChildren<Renderer>();
-            foreach (var renderer in renderers)
-            {
-                // Use sharedMaterials to avoid creating instances in edit mode
-                var sharedMaterials = renderer.sharedMaterials;
-                var newMaterials = new Material[sharedMaterials.Length];
-                
-                for (int i = 0; i < sharedMaterials.Length; i++)
-                {
-                    if (sharedMaterials[i] != null)
-                    {
-                        newMaterials[i] = new Material(sharedMaterials[i]);
-                        newMaterials[i].color = color;
-                    }
-                }
-                renderer.sharedMaterials = newMaterials;
-            }
-            
-            // Only increment stats if we actually applied color overrides
-            if (stats != null && renderers.Length > 0) stats.colorOverrides++;
-        }
 
         public static void SetCollisionEnabled(GameObject obj, bool enabled, ImportStatistics stats = null)
         {
@@ -199,9 +177,34 @@ namespace WorldDataImporter.Utilities
                 }
             }
 
+            // Always set visual color for lights to match light color
+            ObjectListInfo objInfo = obj.GetComponent<ObjectListInfo>();
+            if (objInfo == null)
+            {
+                objInfo = obj.AddComponent<ObjectListInfo>();
+            }
+            objInfo.visualColor = unityLight.color;
+            objInfo.objectType = "Light - Dynamic";
+
+            // Add VisualColorHandler to apply the color
+            VisualColorHandler colorHandler = obj.GetComponent<VisualColorHandler>();
+            if (colorHandler == null)
+            {
+                colorHandler = obj.AddComponent<VisualColorHandler>();
+            }
+            colorHandler.RefreshVisualColor();
+
+            // Add LightVisualColorSync to keep colors in sync
+            LightVisualColorSync syncComponent = obj.GetComponent<LightVisualColorSync>();
+            if (syncComponent == null)
+            {
+                syncComponent = obj.AddComponent<LightVisualColorSync>();
+            }
+            syncComponent.SyncColors();
+
             if (stats != null) stats.lightsCreated++;
-            
-            DebugLogger.LogWorldImporter($"💡 Created {lightData.lightType} light: {obj.name} (Intensity: {unityLight.intensity}, Range: {unityLight.range})");
+
+            DebugLogger.LogWorldImporter($"💡 Created {lightData.lightType} light: {obj.name} (Intensity: {unityLight.intensity}, Range: {unityLight.range}, Visual Color: {unityLight.color})");
         }
     }
 }

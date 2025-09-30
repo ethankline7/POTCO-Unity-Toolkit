@@ -116,12 +116,28 @@ namespace POTCO.Editor
             newObject.transform.position = finalPosition;
             newObject.transform.rotation = finalRotation;
 
-            // Add ObjectListInfo if it doesn't exist
-            if (newObject.GetComponent<ObjectListInfo>() == null)
+            // Handle ObjectListInfo components
+            var rootInfo = newObject.GetComponent<ObjectListInfo>();
+            if (rootInfo != null && rootInfo.isGroup)
             {
+                // This is a group - regenerate all child object IDs
+                RegenerateGroupObjectIds(newObject);
+            }
+            else if (rootInfo == null)
+            {
+                // Single prop without ObjectListInfo - add it
                 var objectInfo = newObject.AddComponent<ObjectListInfo>();
                 objectInfo.modelPath = $"models/props/{prefab.name}";
                 objectInfo.objectType = "MISC_OBJ";
+                objectInfo.GenerateObjectId();
+            }
+            else
+            {
+                // Single prop with ObjectListInfo - just regenerate its ID
+                if (rootInfo.autoGenerateId)
+                {
+                    rootInfo.GenerateObjectId();
+                }
             }
 
             // Add colliders if needed for surface detection
@@ -279,12 +295,28 @@ namespace POTCO.Editor
                             newObject.transform.position = targetPosition;
                             newObject.transform.rotation = targetRotation;
 
-                            // Add ObjectListInfo if it doesn't exist
-                            if (newObject.GetComponent<ObjectListInfo>() == null)
+                            // Handle ObjectListInfo components
+                            var rootInfo = newObject.GetComponent<ObjectListInfo>();
+                            if (rootInfo != null && rootInfo.isGroup)
                             {
+                                // This is a group - regenerate all child object IDs
+                                RegenerateGroupObjectIds(newObject);
+                            }
+                            else if (rootInfo == null)
+                            {
+                                // Single prop without ObjectListInfo - add it
                                 var objectInfo = newObject.AddComponent<ObjectListInfo>();
                                 objectInfo.modelPath = $"models/props/{originalPrefab.name}";
                                 objectInfo.objectType = "MISC_OBJ";
+                                objectInfo.GenerateObjectId();
+                            }
+                            else
+                            {
+                                // Single prop with ObjectListInfo - just regenerate its ID
+                                if (rootInfo.autoGenerateId)
+                                {
+                                    rootInfo.GenerateObjectId();
+                                }
                             }
 
                             // Add colliders if needed for surface detection
@@ -321,10 +353,24 @@ namespace POTCO.Editor
         private static void CreatePreview(GameObject prefab)
         {
             ClearPreview();
-            
+
             previewObject = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
             previewObject.name = "[SURFACE_PREVIEW] " + previewObject.name;
             previewObject.hideFlags = HideFlags.HideAndDontSave;
+
+            // Remove ObjectListInfo and VisualColorHandler components from preview to prevent lag
+            // These will be properly set up when the object is actually placed
+            var objectListInfos = previewObject.GetComponentsInChildren<ObjectListInfo>();
+            foreach (var info in objectListInfos)
+            {
+                Object.DestroyImmediate(info);
+            }
+
+            var colorHandlers = previewObject.GetComponentsInChildren<VisualColorHandler>();
+            foreach (var handler in colorHandlers)
+            {
+                Object.DestroyImmediate(handler);
+            }
 
             // Disable colliders and make semi-transparent
             var renderers = previewObject.GetComponentsInChildren<Renderer>();
@@ -535,6 +581,44 @@ namespace POTCO.Editor
             {
                 if (isEnabled) Disable();
                 else Enable();
+            }
+        }
+
+        /// <summary>
+        /// Regenerates object IDs for all ObjectListInfo components in a group
+        /// </summary>
+        private static void RegenerateGroupObjectIds(GameObject groupInstance)
+        {
+            if (groupInstance == null) return;
+
+            // Get all ObjectListInfo components in the group (parent and children)
+            ObjectListInfo[] allInfos = groupInstance.GetComponentsInChildren<ObjectListInfo>();
+
+            int regeneratedCount = 0;
+            foreach (var info in allInfos)
+            {
+                if (info != null && info.autoGenerateId)
+                {
+                    // Generate new unique ID for each instance
+                    info.GenerateObjectId();
+                    regeneratedCount++;
+
+                    // If there's a visual color, ensure the handler is set up
+                    if (info.visualColor.HasValue)
+                    {
+                        VisualColorHandler handler = info.GetComponent<VisualColorHandler>();
+                        if (handler == null)
+                        {
+                            handler = info.gameObject.AddComponent<VisualColorHandler>();
+                        }
+                        handler.RefreshVisualColor();
+                    }
+                }
+            }
+
+            if (regeneratedCount > 0)
+            {
+                Debug.Log($"🔄 Regenerated {regeneratedCount} object IDs for group '{groupInstance.name}'");
             }
         }
     }

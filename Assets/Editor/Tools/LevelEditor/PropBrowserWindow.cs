@@ -75,6 +75,12 @@ namespace POTCO.Editor
         private bool needsFilterRefresh = true;
         private Dictionary<string, Texture2D> thumbnailCache = new Dictionary<string, Texture2D>();
 
+        // Disk-based thumbnail cache
+        private static readonly string CACHE_FOLDER = "Assets/Cache/ObjectBrowserCache";
+        private static readonly string CACHE_VERSION_FILE = "Assets/Cache/ObjectBrowserCache/version.txt";
+        private static readonly string CURRENT_CACHE_VERSION = "1.0.0";
+        private bool thumbnailCacheLoaded = false;
+
         [MenuItem("POTCO/Level Editor")]
         public static void ShowWindow()
         {
@@ -86,6 +92,7 @@ namespace POTCO.Editor
         private void OnEnable()
         {
             LoadPreferences();
+            LoadCachedThumbnails();
             needsRefresh = true;
         }
 
@@ -206,10 +213,21 @@ namespace POTCO.Editor
                 CalculateVisibleRange();
             }
 
-            // Refresh button
-            if (GUILayout.Button("🔄", EditorStyles.toolbarButton, GUILayout.Width(25)))
+            // Refresh thumbnails button
+            if (GUILayout.Button(new GUIContent("🔄", "Refresh all thumbnails"), EditorStyles.toolbarButton, GUILayout.Width(25)))
             {
-                RefreshPropList();
+                if (Event.current.shift)
+                {
+                    // Shift+Click = Clear cache and regenerate all thumbnails
+                    ClearThumbnailCache();
+                    RefreshPropList();
+                    EditorUtility.DisplayDialog("Thumbnail Cache Cleared",
+                        "All thumbnails will be regenerated. This may take a moment.", "OK");
+                }
+                else
+                {
+                    RefreshPropList();
+                }
             }
 
             EditorGUILayout.EndHorizontal();
@@ -673,17 +691,28 @@ namespace POTCO.Editor
             const int maxProcessPerFrame = 3;
             int processed = 0;
             bool needsRepaint = false;
-            
+
             foreach (var prop in filteredProps)
             {
                 if (processed >= maxProcessPerFrame) break;
-                
+
                 // Skip if already has thumbnail or is cached
                 if (prop.thumbnail != null || thumbnailCache.ContainsKey(prop.path)) continue;
-                
+
                 if (!prop.thumbnailRequested)
                 {
-                    // Request thumbnail generation
+                    // First check disk cache
+                    Texture2D cachedTexture = LoadCachedThumbnail(prop.path);
+                    if (cachedTexture != null)
+                    {
+                        prop.thumbnail = cachedTexture;
+                        thumbnailCache[prop.path] = cachedTexture;
+                        prop.thumbnailRequested = true;
+                        needsRepaint = true;
+                        continue;
+                    }
+
+                    // Request thumbnail generation if not cached
                     if (prop.prefab != null)
                     {
                         // Always use custom thumbnail generation
@@ -692,6 +721,8 @@ namespace POTCO.Editor
                         {
                             prop.thumbnail = customThumbnail;
                             thumbnailCache[prop.path] = customThumbnail;
+                            // Save to disk cache
+                            SaveThumbnailToCache(prop.path, customThumbnail);
                         }
                         prop.thumbnailRequested = true;
                         processed++;
@@ -1414,7 +1445,11 @@ namespace POTCO.Editor
                 {
                     SetupObjectListInfo(instance, prop.path, prop.objectType);
                 }
-                // Groups already have ObjectListInfo in their prefab
+                else
+                {
+                    // For groups, regenerate object IDs for all children
+                    RegenerateGroupObjectIds(instance);
+                }
 
                 Selection.activeGameObject = instance;
 
@@ -1703,22 +1738,107 @@ namespace POTCO.Editor
                 // Add all group objects as children
                 foreach (var item in groupData.items)
                 {
+                    GameObject instance = null;
+
+                    // Handle prefab objects
                     if (!string.IsNullOrEmpty(item.prefabPath))
                     {
                         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(item.prefabPath);
                         if (prefab != null)
                         {
-                            GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
-                            instance.transform.SetParent(tempGroupParent.transform);
-                            instance.transform.localPosition = item.localPosition + pivotOffset;
-                            instance.transform.localRotation = item.localRotation;
-                            instance.transform.localScale = item.localScale;
+                            instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+                        }
+                    }
+                    // Handle non-prefab objects like lights
+                    else if (item.sourceObject != null)
+                    {
+                        // Check if this is a light
+                        Light sourceLight = item.sourceObject.GetComponent<Light>();
+                        if (sourceLight != null)
+                        {
+                            // Create a new light object
+                            instance = new GameObject($"Light_{item.objectType}");
+                            Light newLight = instance.AddComponent<Light>();
 
-                            // Ensure each prop has ObjectListInfo component
-                            if (instance.GetComponent<ObjectListInfo>() == null)
+                            // Copy light properties
+                            newLight.type = sourceLight.type;
+                            newLight.color = sourceLight.color;
+                            newLight.intensity = sourceLight.intensity;
+                            newLight.range = sourceLight.range;
+                            newLight.spotAngle = sourceLight.spotAngle;
+                            newLight.innerSpotAngle = sourceLight.innerSpotAngle;
+                            newLight.cookieSize = sourceLight.cookieSize;
+                            newLight.shadows = sourceLight.shadows;
+                            newLight.renderMode = sourceLight.renderMode;
+                            newLight.cullingMask = sourceLight.cullingMask;
+                        }
+                        else
+                        {
+                            // For other non-prefab objects, try to duplicate them
+                            instance = GameObject.Instantiate(item.sourceObject);
+                            instance.name = item.sourceObject.name; // Remove (Clone) suffix
+                        }
+                    }
+
+                    if (instance != null)
+                    {
+                        instance.transform.SetParent(tempGroupParent.transform);
+                        instance.transform.localPosition = item.localPosition + pivotOffset;
+                        instance.transform.localRotation = item.localRotation;
+                        instance.transform.localScale = item.localScale;
+
+                            // Check if source object had ObjectListInfo and preserve its settings
+                            ObjectListInfo sourceInfo = null;
+                            if (item.sourceObject != null)
                             {
-                                var propInfo = instance.AddComponent<ObjectListInfo>();
+                                sourceInfo = item.sourceObject.GetComponent<ObjectListInfo>();
+                            }
 
+                            // Get or add ObjectListInfo component
+                            ObjectListInfo propInfo = instance.GetComponent<ObjectListInfo>();
+                            if (propInfo == null)
+                            {
+                                propInfo = instance.AddComponent<ObjectListInfo>();
+                            }
+
+                            if (sourceInfo != null)
+                            {
+                                // Preserve all settings from source EXCEPT objectId
+                                propInfo.objectType = sourceInfo.objectType;
+                                propInfo.modelPath = sourceInfo.modelPath;
+                                propInfo.hasVisualBlock = sourceInfo.hasVisualBlock;
+                                propInfo.visualColor = sourceInfo.visualColor;
+                                propInfo.disableCollision = sourceInfo.disableCollision;
+                                propInfo.instanced = sourceInfo.instanced;
+                                propInfo.holiday = sourceInfo.holiday;
+                                propInfo.visSize = sourceInfo.visSize;
+                                propInfo.isGroup = sourceInfo.isGroup;
+                                propInfo.groupCategory = sourceInfo.groupCategory;
+                                propInfo.groupSubcategory = sourceInfo.groupSubcategory;
+                                propInfo.autoDetectOnStart = sourceInfo.autoDetectOnStart;
+                                propInfo.autoGenerateId = sourceInfo.autoGenerateId;
+
+                                // Also preserve VisualColorHandler if there was one
+                                if (sourceInfo.visualColor.HasValue)
+                                {
+                                    VisualColorHandler sourceHandler = item.sourceObject.GetComponent<VisualColorHandler>();
+                                    if (sourceHandler != null)
+                                    {
+                                        VisualColorHandler newHandler = instance.GetComponent<VisualColorHandler>();
+                                        if (newHandler == null)
+                                        {
+                                            newHandler = instance.AddComponent<VisualColorHandler>();
+                                        }
+                                        // The handler will automatically apply the color from ObjectListInfo
+                                        newHandler.RefreshVisualColor();
+                                    }
+                                }
+
+                                DebugLogger.LogAlways($"📋 Preserved ObjectListInfo settings from source object for '{instance.name}'");
+                            }
+                            else
+                            {
+                                // No source info, use defaults
                                 // Clean model path - remove extensions and phase prefix, keep only models/props/modelname
                                 string cleanModelPath = item.prefabPath.Replace("Assets/Resources/", "");
                                 cleanModelPath = cleanModelPath.Replace(".prefab", "");
@@ -1738,13 +1858,39 @@ namespace POTCO.Editor
                                 propInfo.objectType = item.objectType;
                                 propInfo.autoDetectOnStart = false; // Prevent auto-detection from overriding
                                 propInfo.autoGenerateId = true;
+                            }
 
-                                // Generate object ID immediately
-                                propInfo.GenerateObjectId();
+                            // Always generate a new unique object ID for each instance
+                            propInfo.GenerateObjectId();
+
+                            // Special handling for lights - always set visual color to match light color
+                            Light lightComponent = instance.GetComponent<Light>();
+                            if (lightComponent != null)
+                            {
+                                // Always enable visual color for lights
+                                propInfo.visualColor = lightComponent.color;
+                                propInfo.objectType = "Light - Dynamic"; // Ensure correct type
+
+                                // Add or update VisualColorHandler
+                                VisualColorHandler colorHandler = instance.GetComponent<VisualColorHandler>();
+                                if (colorHandler == null)
+                                {
+                                    colorHandler = instance.AddComponent<VisualColorHandler>();
+                                }
+                                colorHandler.RefreshVisualColor();
+
+                                // Add LightVisualColorSync to keep colors in sync
+                                LightVisualColorSync syncComponent = instance.GetComponent<LightVisualColorSync>();
+                                if (syncComponent == null)
+                                {
+                                    syncComponent = instance.AddComponent<LightVisualColorSync>();
+                                }
+                                syncComponent.SyncColors();
+
+                                DebugLogger.LogAlways($"💡 Set Visual Color for light '{instance.name}' to match light color: {lightComponent.color}");
                             }
                         }
                     }
-                }
 
                 // Add group identifier component to parent
                 var groupInfo = tempGroupParent.AddComponent<ObjectListInfo>();
@@ -1840,6 +1986,44 @@ namespace POTCO.Editor
                 {
                     Debug.LogError($"Failed to load group prefab from {prefabPath}: {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Regenerates object IDs for all ObjectListInfo components in a group
+        /// </summary>
+        private void RegenerateGroupObjectIds(GameObject groupInstance)
+        {
+            if (groupInstance == null) return;
+
+            // Get all ObjectListInfo components in the group (parent and children)
+            ObjectListInfo[] allInfos = groupInstance.GetComponentsInChildren<ObjectListInfo>();
+
+            int regeneratedCount = 0;
+            foreach (var info in allInfos)
+            {
+                if (info != null && info.autoGenerateId)
+                {
+                    // Generate new unique ID for each instance
+                    info.GenerateObjectId();
+                    regeneratedCount++;
+
+                    // If there's a visual color, ensure the handler is set up
+                    if (info.visualColor.HasValue)
+                    {
+                        VisualColorHandler handler = info.GetComponent<VisualColorHandler>();
+                        if (handler == null)
+                        {
+                            handler = info.gameObject.AddComponent<VisualColorHandler>();
+                        }
+                        handler.RefreshVisualColor();
+                    }
+                }
+            }
+
+            if (regeneratedCount > 0)
+            {
+                DebugLogger.LogAlways($"🔄 Regenerated {regeneratedCount} object IDs for group '{groupInstance.name}'");
             }
         }
 
@@ -1943,24 +2127,227 @@ namespace POTCO.Editor
         }
 
         #endregion
-    }
-}
 
-// Extension method for string formatting
-public static class StringExtensions
-{
-    public static string ToTitleCase(this string input)
+        #region Thumbnail Cache Management
+
+    /// <summary>
+    /// Load all cached thumbnails from disk on startup
+    /// </summary>
+    private void LoadCachedThumbnails()
     {
-        if (string.IsNullOrEmpty(input)) return input;
-        
-        var words = input.Split(' ', '_', '-');
-        for (int i = 0; i < words.Length; i++)
+        if (thumbnailCacheLoaded) return;
+
+        try
         {
-            if (words[i].Length > 0)
+            // Ensure cache directory exists
+            if (!Directory.Exists(CACHE_FOLDER))
             {
-                words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1).ToLower();
+                Directory.CreateDirectory(CACHE_FOLDER);
+                AssetDatabase.Refresh();
+                thumbnailCacheLoaded = true;
+                return;
+            }
+
+            // Check cache version
+            if (!IsValidCacheVersion())
+            {
+                ClearThumbnailCache();
+                thumbnailCacheLoaded = true;
+                return;
+            }
+
+            thumbnailCacheLoaded = true;
+            Debug.Log($"📷 Object Browser thumbnail cache ready at: {CACHE_FOLDER}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to load thumbnail cache: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Load a single thumbnail from disk cache
+    /// </summary>
+    private Texture2D LoadCachedThumbnail(string propPath)
+    {
+        try
+        {
+            string safeName = GetSafeFileName(propPath);
+            string cachePath = Path.Combine(CACHE_FOLDER, safeName + ".png");
+
+            if (File.Exists(cachePath))
+            {
+                byte[] imageData = File.ReadAllBytes(cachePath);
+                Texture2D texture = new Texture2D(2, 2);
+                if (texture.LoadImage(imageData))
+                {
+                    return texture;
+                }
             }
         }
-        return string.Join(" ", words);
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"Failed to load cached thumbnail for {propPath}: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Save a thumbnail to disk cache
+    /// </summary>
+    private void SaveThumbnailToCache(string propPath, Texture2D thumbnail)
+    {
+        if (thumbnail == null) return;
+
+        try
+        {
+            // Ensure cache directory exists
+            if (!Directory.Exists(CACHE_FOLDER))
+            {
+                Directory.CreateDirectory(CACHE_FOLDER);
+                AssetDatabase.Refresh();
+            }
+
+            string safeName = GetSafeFileName(propPath);
+            string cachePath = Path.Combine(CACHE_FOLDER, safeName + ".png");
+
+            // Convert to PNG and save
+            byte[] imageData = thumbnail.EncodeToPNG();
+            File.WriteAllBytes(cachePath, imageData);
+
+            // Update version file if needed
+            UpdateCacheVersion();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"Failed to save thumbnail to cache for {propPath}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Clear all cached thumbnails
+    /// </summary>
+    private void ClearThumbnailCache()
+    {
+        try
+        {
+            // Clear memory cache
+            thumbnailCache.Clear();
+            foreach (var prop in allProps)
+            {
+                prop.thumbnail = null;
+                prop.thumbnailRequested = false;
+            }
+
+            // Clear disk cache
+            if (Directory.Exists(CACHE_FOLDER))
+            {
+                // Delete all PNG files
+                string[] files = Directory.GetFiles(CACHE_FOLDER, "*.png");
+                foreach (string file in files)
+                {
+                    File.Delete(file);
+                }
+
+                // Update version file
+                UpdateCacheVersion();
+
+                Debug.Log($"🗑️ Cleared {files.Length} thumbnails from cache");
+            }
+
+            thumbnailCacheLoaded = false;
+            AssetDatabase.Refresh();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to clear thumbnail cache: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Get a safe file name from a prop path
+    /// </summary>
+    private string GetSafeFileName(string path)
+    {
+        // Replace invalid characters with underscores
+        string safeName = path.Replace('/', '_')
+                             .Replace('\\', '_')
+                             .Replace(':', '_')
+                             .Replace('*', '_')
+                             .Replace('?', '_')
+                             .Replace('"', '_')
+                             .Replace('<', '_')
+                             .Replace('>', '_')
+                             .Replace('|', '_');
+
+        // Add hash for uniqueness if name is too long
+        if (safeName.Length > 100)
+        {
+            int hash = path.GetHashCode();
+            safeName = safeName.Substring(0, 90) + "_" + hash.ToString("X8");
+        }
+
+        return safeName;
+    }
+
+    /// <summary>
+    /// Check if cache version is valid
+    /// </summary>
+    private bool IsValidCacheVersion()
+    {
+        try
+        {
+            if (File.Exists(CACHE_VERSION_FILE))
+            {
+                string version = File.ReadAllText(CACHE_VERSION_FILE).Trim();
+                return version == CURRENT_CACHE_VERSION;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Update cache version file
+    /// </summary>
+    private void UpdateCacheVersion()
+    {
+        try
+        {
+            if (!Directory.Exists(CACHE_FOLDER))
+            {
+                Directory.CreateDirectory(CACHE_FOLDER);
+            }
+
+            File.WriteAllText(CACHE_VERSION_FILE, CURRENT_CACHE_VERSION);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"Failed to update cache version: {ex.Message}");
+        }
+    }
+
+        #endregion
+    }
+
+    // Extension method for string formatting
+    public static class StringExtensions
+    {
+        public static string ToTitleCase(this string input)
+        {
+            if (string.IsNullOrEmpty(input)) return input;
+
+            var words = input.Split(' ', '_', '-');
+            for (int i = 0; i < words.Length; i++)
+            {
+                if (words[i].Length > 0)
+                {
+                    words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1).ToLower();
+                }
+            }
+            return string.Join(" ", words);
+        }
     }
 }

@@ -38,6 +38,7 @@ namespace WorldDataImporter.Data
         public int collisionDisabled;
         public int collisionRemoved;
         public int lightsCreated;
+        public int visualColorsApplied;
         public Dictionary<string, int> objectTypeCount = new Dictionary<string, int>();
         public List<string> missingModelPaths = new List<string>();
         public float importTime;

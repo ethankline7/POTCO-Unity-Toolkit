@@ -228,7 +228,8 @@ public class WorldSceneBuilderEditor : EditorWindow
             EditorGUILayout.LabelField("Collision Disabled:", lastImportStats.collisionDisabled.ToString());
             EditorGUILayout.LabelField("Collisions Removed:", lastImportStats.collisionRemoved.ToString());
             EditorGUILayout.LabelField("Lights Created:", lastImportStats.lightsCreated.ToString());
-            
+            EditorGUILayout.LabelField("Visual Colors Applied:", lastImportStats.visualColorsApplied.ToString());
+
             if (lastImportStats.objectTypeCount.Count > 0)
             {
                 GUILayout.Space(5);

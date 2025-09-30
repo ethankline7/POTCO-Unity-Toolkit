@@ -20,13 +20,29 @@ namespace POTCO
         public string modelPath;
 
         public bool hasVisualBlock = true;
-        public Color? visualColor;
 
-        // Unity can't serialize Color?, so we store it in these fields for prefabs
-        [HideInInspector]
-        public bool hasStoredVisualColor = false;
-        [HideInInspector]
-        public Color storedVisualColor = Color.white;
+        [SerializeField]
+        private bool _hasVisualColor = false;
+        [SerializeField]
+        private Color _visualColorValue = Color.white;
+
+        public Color? visualColor
+        {
+            get => _hasVisualColor ? (Color?)_visualColorValue : null;
+            set
+            {
+                if (value.HasValue)
+                {
+                    _hasVisualColor = true;
+                    _visualColorValue = value.Value;
+                }
+                else
+                {
+                    _hasVisualColor = false;
+                    _visualColorValue = Color.white;
+                }
+            }
+        }
 
         public bool disableCollision = false;
         public bool instanced = false;
@@ -107,13 +123,6 @@ namespace POTCO
         
         private void Start()
         {
-            // Restore visual color from serialized fields if needed
-            if (hasStoredVisualColor && !visualColor.HasValue)
-            {
-                visualColor = storedVisualColor;
-                UpdateVisualColor();
-            }
-
             if (autoDetectOnStart)
             {
                 AutoDetectProperties();
@@ -539,49 +548,5 @@ namespace POTCO
             LogAutoObjectList($"Checked for duplicate IDs on '{gameObject.name}' - Current ID: {objectId}");
         }
 
-        /// <summary>
-        /// Update the visual color on the object's renderer using MaterialPropertyBlock to avoid material leaks
-        /// </summary>
-        public void UpdateVisualColor()
-        {
-            MaterialPropertyBlock propertyBlock = new MaterialPropertyBlock();
-
-            if (visualColor.HasValue)
-            {
-                // Set the color property in the MaterialPropertyBlock
-                propertyBlock.SetColor("_Color", visualColor.Value);
-                propertyBlock.SetColor("_BaseColor", visualColor.Value); // For URP materials
-            }
-
-            var renderer = GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                if (visualColor.HasValue)
-                {
-                    renderer.SetPropertyBlock(propertyBlock);
-                }
-                else
-                {
-                    renderer.SetPropertyBlock(null); // Clear property block to restore original material
-                }
-            }
-
-            // Also update child renderers
-            var childRenderers = GetComponentsInChildren<Renderer>();
-            foreach (var childRenderer in childRenderers)
-            {
-                if (childRenderer != renderer)
-                {
-                    if (visualColor.HasValue)
-                    {
-                        childRenderer.SetPropertyBlock(propertyBlock);
-                    }
-                    else
-                    {
-                        childRenderer.SetPropertyBlock(null); // Clear property block to restore original material
-                    }
-                }
-            }
-        }
     }
 }

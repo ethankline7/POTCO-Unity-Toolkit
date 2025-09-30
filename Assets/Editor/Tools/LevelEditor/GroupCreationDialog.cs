@@ -89,8 +89,17 @@ namespace POTCO.Editor
                     }
                     else
                     {
-                        Debug.LogWarning($"Object '{obj.name}' is not a prefab instance. Groups work best with prefab instances.");
-                        item.prefabPath = ""; // Handle non-prefab objects
+                        // Handle non-prefab objects (like lights)
+                        if (obj.GetComponent<Light>() != null)
+                        {
+                            // For lights, we'll save them differently
+                            item.prefabPath = ""; // No prefab path for lights
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Object '{obj.name}' is not a prefab instance. Groups work best with prefab instances.");
+                            item.prefabPath = "";
+                        }
                     }
 
                     // Calculate relative position from center point

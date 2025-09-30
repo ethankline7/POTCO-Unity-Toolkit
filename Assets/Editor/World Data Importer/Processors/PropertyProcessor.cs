@@ -132,11 +132,6 @@ namespace WorldDataImporter.Processors
                         // Apply any pending visual modifications (only if enabled)
                         if (instance != null && objectData != null)
                         {
-                            if (objectData.visualColor.HasValue && settings?.applyColorOverrides == true)
-                            {
-                                AssetUtilities.ApplyColorOverride(instance, objectData.visualColor.Value, stats);
-                            }
-                            
                             // Handle collision settings
                             if (settings?.importCollisions == false)
                             {
@@ -147,6 +142,36 @@ namespace WorldDataImporter.Processors
                             {
                                 // Disable collisions if this specific object has DisableCollision=True
                                 AssetUtilities.SetCollisionEnabled(instance, false, stats);
+                            }
+
+                            // Apply visual color if it was set (now that the model is instantiated)
+                            if (objectData.visualColor.HasValue && settings?.importObjectListData == true)
+                            {
+                                var typeInfo = GetCachedObjectListInfo();
+                                if (typeInfo != null)
+                                {
+                                    // Ensure the color is set on ObjectListInfo
+                                    typeInfo.visualColor = objectData.visualColor.Value;
+
+                                    // Add or get VisualColorHandler
+                                    VisualColorHandler colorHandler = currentGO.GetComponent<VisualColorHandler>();
+                                    if (colorHandler == null)
+                                    {
+                                        colorHandler = currentGO.AddComponent<VisualColorHandler>();
+                                    }
+
+                                    // Apply color immediately to the newly instantiated model
+                                    colorHandler.ApplyVisualColor(objectData.visualColor.Value);
+
+                                    // Mark dirty for serialization
+                                    UnityEditor.EditorUtility.SetDirty(currentGO);
+                                    UnityEditor.EditorUtility.SetDirty(typeInfo);
+                                    UnityEditor.EditorUtility.SetDirty(colorHandler);
+
+                                    DebugLogger.LogWorldImporter($"🎨 Applied Visual color to model {modelPath}: {objectData.visualColor.Value}");
+
+                                    if (stats != null) stats.visualColorsApplied++;
+                                }
                             }
                         }
                     }
@@ -222,25 +247,24 @@ namespace WorldDataImporter.Processors
                     // Handle nested Visual properties - will be processed by lines following this
                     break;
                 case "Color":
-                    // This handles Visual.Color (only if color overrides are enabled)
-                    if (ParsingUtilities.ParseColor(val, out Color color) && objectData != null)
+                    // Parse Visual color from POTCO format and store it
+                    // It will be applied after the Model is instantiated
+                    if (ParsingUtilities.ParseColor(val, out Color visualColor))
                     {
-                        objectData.visualColor = color;
-                        
-                        // Store color in ObjectListInfo for export only if ImportObjectListData is enabled
+                        if (objectData != null)
+                        {
+                            objectData.visualColor = visualColor;
+                            DebugLogger.LogWorldImporter($"🎨 Stored Visual color for {currentGO.name}: {visualColor}");
+                        }
+
+                        // Also store in ObjectListInfo if it exists
                         if (settings != null && settings.importObjectListData)
                         {
                             var typeInfo = GetCachedObjectListInfo();
                             if (typeInfo != null)
                             {
-                                typeInfo.visualColor = color;
+                                typeInfo.visualColor = visualColor;
                             }
-                        }
-                        
-                        // Only apply color overrides if setting is enabled
-                        if (settings?.applyColorOverrides != true)
-                        {
-                            DebugLogger.LogWorldImporter($"📝 Stored color for export but not applying override: {color}");
                         }
                     }
                     break;

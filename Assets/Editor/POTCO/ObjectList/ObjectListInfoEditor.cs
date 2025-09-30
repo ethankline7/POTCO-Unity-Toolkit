@@ -21,6 +21,8 @@ namespace POTCO.Editor
         private SerializedProperty isGroupProp;
         private SerializedProperty autoDetectOnStartProp;
         private SerializedProperty autoGenerateIdProp;
+        private SerializedProperty hasVisualColorProp;
+        private SerializedProperty visualColorValueProp;
         
         private List<string> availableObjectTypes;
         private int selectedTypeIndex = 0;
@@ -38,6 +40,8 @@ namespace POTCO.Editor
             isGroupProp = serializedObject.FindProperty("isGroup");
             autoDetectOnStartProp = serializedObject.FindProperty("autoDetectOnStart");
             autoGenerateIdProp = serializedObject.FindProperty("autoGenerateId");
+            hasVisualColorProp = serializedObject.FindProperty("_hasVisualColor");
+            visualColorValueProp = serializedObject.FindProperty("_visualColorValue");
             
             LoadAvailableObjectTypes();
         }
@@ -217,112 +221,114 @@ namespace POTCO.Editor
             }
 
             EditorGUILayout.Space();
-            
+
             // Visual Properties (supports multi-editing)
             EditorGUILayout.LabelField("Visual Properties", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(hasVisualBlockProp, new GUIContent("Has Visual Block"));
 
-            // Handle nullable Color manually for multi-object editing
-            EditorGUILayout.BeginHorizontal();
-            bool hasColor = objectListInfo.visualColor.HasValue;
+            // Check if this is a light
+            Light lightComponent = objectListInfo.GetComponent<Light>();
+            bool isLight = lightComponent != null;
 
-            // For multi-selection, show mixed value state if colors differ
-            bool mixedValues = false;
-            if (isMultiSelection)
+            // Enhanced visual color field with VisualColorHandler management
+            EditorGUILayout.BeginHorizontal();
+
+            if (isLight)
             {
-                bool? firstHasColor = ((ObjectListInfo)targets[0]).visualColor.HasValue;
-                foreach (ObjectListInfo target in targets)
+                // For lights, visual color is always enabled and matches light color
+                GUI.enabled = false; // Disable toggle for lights
+                EditorGUILayout.Toggle("Use Visual Color", true);
+                GUI.enabled = true;
+
+                // Show light color (synced with visual color)
+                GUI.enabled = false;
+                EditorGUILayout.ColorField(lightComponent.color);
+                GUI.enabled = true;
+            }
+            else
+            {
+                // Normal visual color editing for non-lights
+                EditorGUI.BeginChangeCheck();
+                bool newHasColor = EditorGUILayout.Toggle("Use Visual Color", hasVisualColorProp.boolValue);
+
+                if (EditorGUI.EndChangeCheck())
+            {
+                hasVisualColorProp.boolValue = newHasColor;
+                if (!newHasColor)
                 {
-                    if (target.visualColor.HasValue != firstHasColor)
-                    {
-                        mixedValues = true;
-                        break;
-                    }
+                    visualColorValueProp.colorValue = Color.white;
+                }
+
+                serializedObject.ApplyModifiedProperties();
+
+                // Update all selected objects
+                foreach (ObjectListInfo t in targets)
+                {
+                    ManageVisualColorHandler(t);
+                    EditorUtility.SetDirty(t);
                 }
             }
 
-            EditorGUI.showMixedValue = mixedValues;
-            bool newHasColor = EditorGUILayout.Toggle("Use Visual Color", hasColor);
-            EditorGUI.showMixedValue = false;
-
-            if (newHasColor != hasColor || mixedValues)
+            if (hasVisualColorProp.boolValue)
             {
-                if (isMultiSelection)
+                EditorGUI.BeginChangeCheck();
+                Color newColor = EditorGUILayout.ColorField(visualColorValueProp.colorValue);
+
+                if (EditorGUI.EndChangeCheck())
                 {
-                    foreach (ObjectListInfo target in targets)
+                    visualColorValueProp.colorValue = newColor;
+                    serializedObject.ApplyModifiedProperties();
+
+                    // Update all selected objects
+                    foreach (ObjectListInfo t in targets)
                     {
-                        if (newHasColor)
-                        {
-                            target.visualColor = Color.white;
-                        }
-                        else
-                        {
-                            target.visualColor = null;
-                        }
-                        target.UpdateVisualColor();
-                        EditorUtility.SetDirty(target);
+                        RefreshVisualColorHandler(t);
+                        EditorUtility.SetDirty(t);
                     }
+                }
+            }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // Special handling for lights
+            if (isLight)
+            {
+                // Ensure sync component exists
+                LightVisualColorSync syncComponent = objectListInfo.GetComponent<LightVisualColorSync>();
+                if (syncComponent == null)
+                {
+                    syncComponent = objectListInfo.gameObject.AddComponent<LightVisualColorSync>();
+                    syncComponent.SyncColors();
+                    EditorUtility.SetDirty(objectListInfo.gameObject);
+                }
+
+                // Force sync colors
+                hasVisualColorProp.boolValue = true;
+                visualColorValueProp.colorValue = lightComponent.color;
+                serializedObject.ApplyModifiedProperties();
+
+                // Ensure handlers are set up
+                ManageVisualColorHandler(objectListInfo);
+
+                EditorGUILayout.HelpBox("💡 Visual color automatically syncs with light color", MessageType.Info);
+            }
+
+            // Show info about VisualColorHandler
+            if (hasVisualColorProp.boolValue && !isLight)
+            {
+                VisualColorHandler handler = objectListInfo.GetComponent<VisualColorHandler>();
+                if (handler != null)
+                {
+                    EditorGUILayout.HelpBox("🎨 Visual color is being applied via MaterialPropertyBlock (preserves across play mode)", MessageType.Info);
                 }
                 else
                 {
-                    if (newHasColor)
+                    if (GUILayout.Button("Add Visual Color Handler"))
                     {
-                        objectListInfo.visualColor = Color.white;
+                        ManageVisualColorHandler(objectListInfo);
                     }
-                    else
-                    {
-                        objectListInfo.visualColor = null;
-                    }
-                    objectListInfo.UpdateVisualColor();
-                    EditorUtility.SetDirty(objectListInfo);
-                }
-                SceneView.RepaintAll();
-            }
-
-            if (newHasColor)
-            {
-                Color currentColor = objectListInfo.visualColor ?? Color.white;
-
-                // Check for mixed color values in multi-selection
-                bool colorMixedValues = false;
-                if (isMultiSelection)
-                {
-                    Color? firstColor = ((ObjectListInfo)targets[0]).visualColor;
-                    foreach (ObjectListInfo target in targets)
-                    {
-                        if (target.visualColor != firstColor)
-                        {
-                            colorMixedValues = true;
-                            break;
-                        }
-                    }
-                }
-
-                EditorGUI.showMixedValue = colorMixedValues;
-                Color newColor = EditorGUILayout.ColorField(currentColor);
-                EditorGUI.showMixedValue = false;
-
-                if (newColor != currentColor || colorMixedValues)
-                {
-                    if (isMultiSelection)
-                    {
-                        foreach (ObjectListInfo target in targets)
-                        {
-                            target.visualColor = newColor;
-                            target.UpdateVisualColor();
-                            EditorUtility.SetDirty(target);
-                        }
-                    }
-                    else
-                    {
-                        objectListInfo.visualColor = newColor;
-                        objectListInfo.UpdateVisualColor();
-                        EditorUtility.SetDirty(objectListInfo);
-                    }
-                    SceneView.RepaintAll();
                 }
             }
-            EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space();
             
@@ -411,6 +417,57 @@ namespace POTCO.Editor
             }
             
             serializedObject.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// Manages the VisualColorHandler component based on whether visual color is set
+        /// </summary>
+        private void ManageVisualColorHandler(ObjectListInfo info)
+        {
+            if (info == null) return;
+
+            VisualColorHandler handler = info.GetComponent<VisualColorHandler>();
+
+            if (info.visualColor.HasValue)
+            {
+                // Add handler if missing
+                if (handler == null)
+                {
+                    handler = info.gameObject.AddComponent<VisualColorHandler>();
+                    EditorUtility.SetDirty(info.gameObject);
+                }
+                // Refresh the color application
+                handler.RefreshVisualColor();
+            }
+            else
+            {
+                // Remove handler if no color is set
+                if (handler != null)
+                {
+                    DestroyImmediate(handler);
+                    EditorUtility.SetDirty(info.gameObject);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the VisualColorHandler to apply the new color
+        /// </summary>
+        private void RefreshVisualColorHandler(ObjectListInfo info)
+        {
+            if (info == null) return;
+
+            VisualColorHandler handler = info.GetComponent<VisualColorHandler>();
+            if (handler == null && info.visualColor.HasValue)
+            {
+                handler = info.gameObject.AddComponent<VisualColorHandler>();
+                EditorUtility.SetDirty(info.gameObject);
+            }
+
+            if (handler != null)
+            {
+                handler.RefreshVisualColor();
+            }
         }
     }
 }
