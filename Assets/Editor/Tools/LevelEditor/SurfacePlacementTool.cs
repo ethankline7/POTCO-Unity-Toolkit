@@ -99,7 +99,7 @@ namespace POTCO.Editor
                     
                     if (alignToSurfaceNormal)
                     {
-                        finalRotation = Quaternion.FromToRotation(Vector3.up, hitInfo.Value.normal) * prefab.transform.rotation;
+                        finalRotation = Quaternion.FromToRotation(Vector3.up, hitInfo.Value.normal);
                     }
                 }
             }
@@ -252,7 +252,7 @@ namespace POTCO.Editor
                         
                         if (alignToSurfaceNormal)
                         {
-                            targetRotation = Quaternion.FromToRotation(Vector3.up, hitInfo.Value.normal) * previewObject.transform.rotation;
+                            targetRotation = Quaternion.FromToRotation(Vector3.up, hitInfo.Value.normal);
                         }
                     }
                 }
@@ -270,11 +270,34 @@ namespace POTCO.Editor
                 {
                     if (!hasOverlap)
                     {
-                        // Place the object
+                        // Place the object using already calculated position and rotation
                         var originalPrefab = GetOriginalPrefab(previewObject);
                         if (originalPrefab != null)
                         {
-                            PlaceAtPosition(originalPrefab, targetPosition, false); // Already calculated position
+                            // Create the object directly with calculated position and rotation
+                            GameObject newObject = PrefabUtility.InstantiatePrefab(originalPrefab) as GameObject;
+                            newObject.transform.position = targetPosition;
+                            newObject.transform.rotation = targetRotation;
+
+                            // Add ObjectListInfo if it doesn't exist
+                            if (newObject.GetComponent<ObjectListInfo>() == null)
+                            {
+                                var objectInfo = newObject.AddComponent<ObjectListInfo>();
+                                objectInfo.modelPath = $"models/props/{originalPrefab.name}";
+                                objectInfo.objectType = "MISC_OBJ";
+                            }
+
+                            // Add colliders if needed for surface detection
+                            if (autoAddColliders)
+                            {
+                                EnsureObjectHasCollider(newObject);
+                            }
+
+                            // Record undo
+                            Undo.RegisterCreatedObjectUndo(newObject, $"Place {originalPrefab.name}");
+
+                            // Select the new object
+                            Selection.activeGameObject = newObject;
                         }
                     }
                     
@@ -462,8 +485,8 @@ namespace POTCO.Editor
                 // Skip very small or simple meshes (likely UI elements)
                 if (meshFilter.sharedMesh.vertexCount < 4) continue;
 
-                // Add a MeshCollider
-                var meshCollider = renderer.gameObject.AddComponent<MeshCollider>();
+                // Add a MeshCollider with undo support
+                var meshCollider = Undo.AddComponent<MeshCollider>(renderer.gameObject);
                 meshCollider.sharedMesh = meshFilter.sharedMesh;
                 meshCollider.convex = false; // Non-convex for better surface detection
                 

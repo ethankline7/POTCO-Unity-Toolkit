@@ -13,6 +13,8 @@ public class EggImportStartupPrompt
     static EggImportStartupPrompt()
     {
         EditorApplication.delayCall += ShowStartupPrompt;
+        EditorApplication.delayCall += LoadToolkitLayout;
+        EditorApplication.delayCall += LoadDefaultScene;
     }
     
     private static void ShowStartupPrompt()
@@ -43,7 +45,76 @@ public class EggImportStartupPrompt
         // Show the enhanced startup prompt window
         EggImportStartupWindow.ShowWindow(eggFileCount);
     }
-    
+
+    private static void LoadToolkitLayout()
+    {
+        // Check if layout should be loaded automatically
+        bool layoutLoadEnabled = EditorPrefs.GetBool("POTCO_AutoLoadLayout", true);
+        if (!layoutLoadEnabled) return;
+
+        // Try to load the toolkit layout
+        string layoutPath = System.IO.Path.Combine(Application.dataPath, "Editor/Layout/Toolkit_Layout.wlt");
+        if (System.IO.File.Exists(layoutPath))
+        {
+            try
+            {
+                // Load the layout using Unity's WindowLayout utility
+                var windowLayoutType = typeof(EditorWindow).Assembly.GetType("UnityEditor.WindowLayout");
+                if (windowLayoutType != null)
+                {
+                    var loadWindowLayoutMethod = windowLayoutType.GetMethod("LoadWindowLayout",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
+                        null, new System.Type[] { typeof(string), typeof(bool) }, null);
+
+                    if (loadWindowLayoutMethod != null)
+                    {
+                        loadWindowLayoutMethod.Invoke(null, new object[] { layoutPath, true });
+                        DebugLogger.LogAlways("✅ Toolkit layout loaded successfully");
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogAlways($"⚠️ Failed to load toolkit layout: {ex.Message}");
+            }
+        }
+        else
+        {
+            DebugLogger.LogAlways($"⚠️ Toolkit layout not found at: {layoutPath}");
+        }
+    }
+
+    private static void LoadDefaultScene()
+    {
+        // Check if we should load the default scene on startup
+        bool loadSceneOnStartup = EditorPrefs.GetBool("POTCO_LoadDefaultScene", true);
+        if (!loadSceneOnStartup) return;
+
+        // Check if this is the first time loading Unity (no scene loaded)
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == string.Empty ||
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Untitled")
+        {
+            // Load the tombofbladesandgold scene
+            string scenePath = "Assets/tombofbladesandgold.unity";
+            if (System.IO.File.Exists(System.IO.Path.Combine(Application.dataPath, "../", scenePath)))
+            {
+                try
+                {
+                    UnityEditor.SceneManagement.EditorSceneManager.OpenScene(scenePath);
+                    DebugLogger.LogAlways("✅ Loaded default scene: tombofbladesandgold");
+                }
+                catch (System.Exception ex)
+                {
+                    DebugLogger.LogAlways($"⚠️ Failed to load default scene: {ex.Message}");
+                }
+            }
+            else
+            {
+                DebugLogger.LogAlways($"⚠️ Default scene not found at: {scenePath}");
+            }
+        }
+    }
+
     private static void ImportAllEggFilesWithProgress(int totalFiles)
     {
         string[] eggFiles = Directory.GetFiles(Application.dataPath, "*.egg", SearchOption.AllDirectories);

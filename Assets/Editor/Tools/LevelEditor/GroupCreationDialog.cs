@@ -33,6 +33,7 @@ namespace POTCO.Editor
         {
             public string name;
             public string category;
+            public string subcategory;
             public List<GroupItem> items;
             public PivotType pivotType = PivotType.Bottom;
             public Vector3 customPivotOffset;
@@ -66,6 +67,7 @@ namespace POTCO.Editor
             groupData = new GroupData();
             groupData.name = "New Group";
             groupData.category = "Groups";
+            groupData.subcategory = "Custom Groups";
             groupData.items = new List<GroupItem>();
 
             if (selectedObjects != null && selectedObjects.Length > 0)
@@ -182,6 +184,7 @@ namespace POTCO.Editor
 
             groupData.name = EditorGUILayout.TextField("Group Name", groupData.name);
             groupData.category = EditorGUILayout.TextField("Category", groupData.category);
+            groupData.subcategory = EditorGUILayout.TextField("Subcategory", groupData.subcategory);
 
             EditorGUILayout.EndVertical();
         }

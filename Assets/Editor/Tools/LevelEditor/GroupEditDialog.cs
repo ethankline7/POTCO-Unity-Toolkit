@@ -22,8 +22,6 @@ namespace POTCO.Editor
 
         private GroupEditData editData;
         private Vector2 scrollPosition;
-        private List<string> availableCategories = new List<string>();
-        private int selectedCategoryIndex = 0;
 
         public static void ShowDialog(string name, string category, string subcategory, GameObject prefab)
         {
@@ -31,7 +29,6 @@ namespace POTCO.Editor
             window.minSize = new Vector2(400, 300);
             window.maxSize = new Vector2(400, 500);
             window.InitializeEditData(name, category, subcategory, prefab);
-            window.LoadAvailableCategories();
             window.Show();
         }
 
@@ -40,41 +37,33 @@ namespace POTCO.Editor
             editData = new GroupEditData();
             editData.originalName = name;
             editData.newName = name;
-            editData.newCategory = category;
-            editData.newSubcategory = subcategory;
             editData.prefab = prefab;
 
             if (editData.prefab != null)
             {
                 editData.groupInfo = editData.prefab.GetComponent<ObjectListInfo>();
+
+                // Load category and subcategory from the ObjectListInfo component if available
+                if (editData.groupInfo != null)
+                {
+                    editData.newCategory = editData.groupInfo.groupCategory ?? "Groups";
+                    editData.newSubcategory = editData.groupInfo.groupSubcategory ?? "Custom Groups";
+                }
+                else
+                {
+                    // Fallback to provided values
+                    editData.newCategory = category ?? "Groups";
+                    editData.newSubcategory = subcategory ?? "Custom Groups";
+                }
+            }
+            else
+            {
+                // Fallback to provided values
+                editData.newCategory = category ?? "Groups";
+                editData.newSubcategory = subcategory ?? "Custom Groups";
             }
         }
 
-        private void LoadAvailableCategories()
-        {
-            // Get existing categories from the PropBrowserWindow
-            availableCategories = new List<string>
-            {
-                "Groups",
-                "Buildings",
-                "Ships",
-                "Weapons",
-                "Characters",
-                "Caves",
-                "Effects",
-                "Environment",
-                "Props",
-                "Furniture",
-                "Treasure"
-            };
-
-            // Find current category index
-            selectedCategoryIndex = availableCategories.IndexOf(editData.newCategory);
-            if (selectedCategoryIndex < 0)
-            {
-                selectedCategoryIndex = 0; // Default to first category
-            }
-        }
 
         private void OnGUI()
         {
@@ -119,23 +108,8 @@ namespace POTCO.Editor
                 editData.newName = ValidateFileName(editData.newName);
             }
 
-            // Category dropdown
-            EditorGUI.BeginChangeCheck();
-            selectedCategoryIndex = EditorGUILayout.Popup("Category", selectedCategoryIndex, availableCategories.ToArray());
-            if (EditorGUI.EndChangeCheck())
-            {
-                editData.newCategory = availableCategories[selectedCategoryIndex];
-
-                // Auto-set subcategory based on category
-                if (editData.newCategory == "Groups")
-                {
-                    editData.newSubcategory = "Custom Groups";
-                }
-                else
-                {
-                    editData.newSubcategory = editData.newCategory; // Default subcategory
-                }
-            }
+            // Category text field (changed from dropdown to allow custom categories)
+            editData.newCategory = EditorGUILayout.TextField("Category", editData.newCategory);
 
             // Subcategory
             editData.newSubcategory = EditorGUILayout.TextField("Subcategory", editData.newSubcategory);
@@ -236,17 +210,21 @@ namespace POTCO.Editor
 
         private string GetOriginalCategory()
         {
-            // Get the original category from the PropAsset - we'll need to get this from the groupInfo
+            // Get the original category from the ObjectListInfo component
             if (editData.groupInfo != null)
             {
-                // For now, assume Groups category is the original
-                return "Groups";
+                return editData.groupInfo.groupCategory ?? "Groups";
             }
             return "Groups";
         }
 
         private string GetOriginalSubcategory()
         {
+            // Get the original subcategory from the ObjectListInfo component
+            if (editData.groupInfo != null)
+            {
+                return editData.groupInfo.groupSubcategory ?? "Custom Groups";
+            }
             return "Custom Groups";
         }
 
@@ -291,6 +269,9 @@ namespace POTCO.Editor
                 if (editData.groupInfo != null)
                 {
                     editData.groupInfo.modelPath = $"Groups/{editData.newName}";
+                    editData.groupInfo.groupCategory = editData.newCategory;
+                    editData.groupInfo.groupSubcategory = editData.newSubcategory;
+                    editData.groupInfo.isGroup = true; // Ensure it's marked as a group
                     EditorUtility.SetDirty(editData.groupInfo);
                 }
 

@@ -30,6 +30,7 @@ namespace POTCO.Editor
         private bool snapToGrid = true;
         private float gridSize = 1.0f;
         private bool alignToSurface = true;
+        private bool alignRotationToSurface = true;
         private bool randomRotation = false;
         private Vector2 rotationRange = new Vector2(0, 360);
 
@@ -165,9 +166,11 @@ namespace POTCO.Editor
         private void DrawPlacementSettings()
         {
             EditorGUILayout.LabelField("Placement Settings", EditorStyles.boldLabel);
-            
+
             EditorGUILayout.BeginVertical("box");
-            
+
+            alignRotationToSurface = EditorGUILayout.Toggle("Align Rotation to Surface", alignRotationToSurface);
+
             snapToGrid = EditorGUILayout.Toggle("Snap to Grid", snapToGrid);
             if (snapToGrid)
             {
@@ -197,6 +200,7 @@ namespace POTCO.Editor
             EditorGUILayout.LabelField("• Drag prefabs into slots 1-9", EditorStyles.miniLabel);
             EditorGUILayout.LabelField("• Press keys 1-9 to place objects", EditorStyles.miniLabel);
             EditorGUILayout.LabelField("• Hold Shift + key for placement mode", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("• Objects rotate to match surface normals", EditorStyles.miniLabel);
             EditorGUILayout.LabelField("• Mouse position determines placement", EditorStyles.miniLabel);
             
             if (isPlacementMode)
@@ -257,38 +261,49 @@ namespace POTCO.Editor
             // Update preview object position
             Vector3 mousePosition = evt.mousePosition;
             Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
-            
+
             Vector3 targetPosition = ray.origin + ray.direction * 10f;
-            
-            // Raycast to find surface
-            if (alignToSurface && Physics.Raycast(ray, out RaycastHit hit))
+            Quaternion targetRotation = Quaternion.identity;
+
+            // Always raycast to find surface for positioning
+            if (Physics.Raycast(ray, out RaycastHit hit))
             {
                 targetPosition = hit.point;
+
+                // Calculate rotation to align with surface normal (only if both settings enabled)
+                if (alignToSurface && alignRotationToSurface)
+                {
+                    targetRotation = Quaternion.FromToRotation(Vector3.up, hit.normal);
+                }
             }
-            
+
             // Apply grid snapping
             if (snapToGrid)
             {
                 targetPosition = SnapToGrid(targetPosition);
             }
-            
+
             // Update preview
             if (previewObject != null)
             {
                 previewObject.transform.position = targetPosition;
-                
+
                 if (randomRotation)
                 {
-                    // Show potential random rotation
+                    // Apply random Y rotation on top of surface alignment
                     float randomY = Random.Range(rotationRange.x, rotationRange.y);
-                    previewObject.transform.rotation = Quaternion.Euler(0, randomY, 0);
+                    previewObject.transform.rotation = targetRotation * Quaternion.Euler(0, randomY, 0);
+                }
+                else
+                {
+                    previewObject.transform.rotation = targetRotation;
                 }
             }
             
             // Handle placement click
             if (evt.type == EventType.MouseDown && evt.button == 0)
             {
-                PlaceObjectAtPosition(targetPosition);
+                PlaceObjectAtPosition(targetPosition, null, targetRotation);
                 evt.Use();
             }
             
@@ -361,23 +376,29 @@ namespace POTCO.Editor
         private void PlaceObjectAtCursor(QuickSlot slot)
         {
             if (slot?.prefab == null) return;
-            
+
             // Get mouse position in scene
             Vector2 mousePos = Event.current.mousePosition;
             Ray ray = HandleUtility.GUIPointToWorldRay(mousePos);
-            
+
             Vector3 position = ray.origin + ray.direction * 10f;
-            
-            // Try to place on surface
-            if (alignToSurface && Physics.Raycast(ray, out RaycastHit hit))
+            Quaternion rotation = Quaternion.identity;
+
+            // Always try to place on surface
+            if (Physics.Raycast(ray, out RaycastHit hit))
             {
                 position = hit.point;
+                // Calculate rotation to align with surface normal (only if both settings enabled)
+                if (alignToSurface && alignRotationToSurface)
+                {
+                    rotation = Quaternion.FromToRotation(Vector3.up, hit.normal);
+                }
             }
-            
-            PlaceObjectAtPosition(position, slot);
+
+            PlaceObjectAtPosition(position, slot, rotation);
         }
 
-        private void PlaceObjectAtPosition(Vector3 position, QuickSlot slot = null)
+        private void PlaceObjectAtPosition(Vector3 position, QuickSlot slot = null, Quaternion rotation = default)
         {
             // Find the current slot if not provided
             if (slot == null && previewObject != null)
@@ -385,24 +406,33 @@ namespace POTCO.Editor
                 string prefabName = previewObject.name.Replace("[PREVIEW] ", "");
                 slot = quickSlots.FirstOrDefault(s => s?.prefab?.name == prefabName);
             }
-            
+
             if (slot?.prefab == null) return;
-            
+
             // Apply grid snapping
             if (snapToGrid)
             {
                 position = SnapToGrid(position);
             }
-            
+
             // Create the object
             GameObject newObj = PrefabUtility.InstantiatePrefab(slot.prefab) as GameObject;
             newObj.transform.position = position;
-            
-            // Apply random rotation
+
+            // Apply rotation (surface alignment + random rotation)
+            if (rotation == default)
+            {
+                rotation = Quaternion.identity;
+            }
+
             if (randomRotation)
             {
                 float randomY = Random.Range(rotationRange.x, rotationRange.y);
-                newObj.transform.rotation = Quaternion.Euler(0, randomY, 0);
+                newObj.transform.rotation = rotation * Quaternion.Euler(0, randomY, 0);
+            }
+            else
+            {
+                newObj.transform.rotation = rotation;
             }
             
             // Add ObjectListInfo if needed

@@ -22,6 +22,12 @@ namespace POTCO
         public bool hasVisualBlock = true;
         public Color? visualColor;
 
+        // Unity can't serialize Color?, so we store it in these fields for prefabs
+        [HideInInspector]
+        public bool hasStoredVisualColor = false;
+        [HideInInspector]
+        public Color storedVisualColor = Color.white;
+
         public bool disableCollision = false;
         public bool instanced = false;
         public string holiday = "";
@@ -29,6 +35,12 @@ namespace POTCO
 
         [Tooltip("Mark as group - only exports position/rotation and holiday/visSize if set")]
         public bool isGroup = false;
+
+        [Tooltip("Category for group objects")]
+        public string groupCategory = "";
+
+        [Tooltip("Subcategory for group objects")]
+        public string groupSubcategory = "";
 
         [Tooltip("Auto-detect properties from GameObject and ObjectList")]
         public bool autoDetectOnStart = true;
@@ -95,6 +107,13 @@ namespace POTCO
         
         private void Start()
         {
+            // Restore visual color from serialized fields if needed
+            if (hasStoredVisualColor && !visualColor.HasValue)
+            {
+                visualColor = storedVisualColor;
+                UpdateVisualColor();
+            }
+
             if (autoDetectOnStart)
             {
                 AutoDetectProperties();

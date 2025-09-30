@@ -163,11 +163,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3fb1661d9b691d544bcb0a4dd8008efe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  walkSpeed: 13.03
+  walkSpeed: 17.9
   runSpeed: 26.7
   mouseSensitivity: 2
   jumpHeight: 8
-  gravity: -32.44
+  gravity: -38.9
   groundCheck: {fileID: 0}
   groundDistance: 0.4
   groundMask:
