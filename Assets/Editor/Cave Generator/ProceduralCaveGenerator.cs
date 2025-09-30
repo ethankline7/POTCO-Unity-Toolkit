@@ -53,6 +53,7 @@ public class ProceduralCaveGenerator : EditorWindow
     
     // UI State
     int currentIndex = 1;
+    Vector2 mainScrollPosition;
     Vector2 prefabScroll;
     Vector2 statsScroll;
     bool showAdvanced = false;
@@ -250,11 +251,14 @@ public class ProceduralCaveGenerator : EditorWindow
     void OnGUI()
     {
         GUILayout.Label("Advanced Procedural Cave Generator", EditorStyles.boldLabel);
-        
+
         // Tab selection
         selectedTab = GUILayout.Toolbar(selectedTab, tabNames);
         GUILayout.Space(10);
-        
+
+        // Start scroll view for all content
+        mainScrollPosition = EditorGUILayout.BeginScrollView(mainScrollPosition);
+
         switch (selectedTab)
         {
             case 0: DrawGenerationTab(); break;
@@ -263,6 +267,8 @@ public class ProceduralCaveGenerator : EditorWindow
             case 3: DrawStatisticsTab(); break;
             case 4: DrawDebugTab(); break;
         }
+
+        EditorGUILayout.EndScrollView();
     }
     
     void DrawGenerationTab()
@@ -775,30 +781,41 @@ public class ProceduralCaveGenerator : EditorWindow
         return false;
     }
     
-    CavePieceNode ConnectCavePiece(GameObject prefab, Transform fromConnector, int depth, int remainingPieces = 0)
+    CavePieceNode ConnectCavePiece(GameObject prefab, Transform fromConnector, int depth, int remainingPieces = 0, int connectorIndex = -1)
     {
-        DebugLogger.LogProceduralGeneration($"🔗 ATTEMPTING CONNECTION: Prefab={prefab.name}, FromConnector={fromConnector.name}, Depth={depth}");
+        DebugLogger.LogProceduralGeneration($"🔗 ATTEMPTING CONNECTION: Prefab={prefab.name}, FromConnector={fromConnector.name}, Depth={depth}, ConnectorIndex={connectorIndex}");
         DebugLogger.LogProceduralGeneration($"   FromConnector position: {fromConnector.position}, direction: {fromConnector.forward}");
-        
+
         // Create temporary instance to get a connector from the new piece
         var tempInstance = InstantiateCavePiece(prefab, null);
         DebugLogger.LogProceduralGeneration($"   Created temp instance: {tempInstance.name}");
-        
+
         var availableConnectors = tempInstance.GetComponentsInChildren<Transform>()
             .Where(t => t.name.StartsWith("cave_connector_"))
+            .OrderBy(t => t.name) // Sort for consistency
             .ToList();
-            
+
         DebugLogger.LogProceduralGeneration($"   Found {availableConnectors.Count} connectors on temp instance");
-        
+
         if (availableConnectors.Count == 0)
         {
             DestroyImmediate(tempInstance);
             DebugLogger.LogWarningProceduralGeneration($"❌ Prefab {prefab.name} has no connectors!");
             return null;
         }
-        
-        // Choose a random connector from the new piece
-        var toConnector = availableConnectors[Random.Range(0, availableConnectors.Count)];
+
+        // Choose connector: use specified index if provided, otherwise random
+        Transform toConnector;
+        if (connectorIndex >= 0 && connectorIndex < availableConnectors.Count)
+        {
+            toConnector = availableConnectors[connectorIndex];
+            DebugLogger.LogProceduralGeneration($"   Using specified connector index {connectorIndex}: {toConnector.name}");
+        }
+        else
+        {
+            toConnector = availableConnectors[Random.Range(0, availableConnectors.Count)];
+            DebugLogger.LogProceduralGeneration($"   Using random connector: {toConnector.name}");
+        }
         
         // Calculate the position and rotation to align the connectors
         var wrapper = new GameObject($"{prefab.name}");
@@ -928,6 +945,17 @@ public class ProceduralCaveGenerator : EditorWindow
         return node;
     }
 
+    int GetConnectorCount(GameObject prefab)
+    {
+        var tempInstance = Instantiate(prefab);
+        var connectors = tempInstance.GetComponentsInChildren<Transform>()
+            .Where(t => t.name.StartsWith("cave_connector_"))
+            .ToList();
+        int count = connectors.Count;
+        DestroyImmediate(tempInstance);
+        return count;
+    }
+
     CavePieceNode TryConnectWithRetries(Transform fromConnector, List<GameObject> prefabsToChooseFrom, int depth, int remainingPieces = 0)
     {
         if (!settings.enableBacktracking || prefabsToChooseFrom.Count == 0)
@@ -938,7 +966,7 @@ public class ProceduralCaveGenerator : EditorWindow
         }
 
         int maxAttempts = Mathf.Min(settings.maxPrefabRetries, prefabsToChooseFrom.Count);
-        DebugLogger.LogProceduralGeneration($"🔄 Attempting connection with up to {maxAttempts} different prefabs");
+        DebugLogger.LogProceduralGeneration($"🔄 Attempting connection with up to {maxAttempts} different prefabs, trying ALL connectors on each");
 
         // Try multiple prefabs
         var triedPrefabs = new HashSet<GameObject>();
@@ -956,16 +984,27 @@ public class ProceduralCaveGenerator : EditorWindow
             if (chosenPrefab == null) continue;
 
             triedPrefabs.Add(chosenPrefab);
-            DebugLogger.LogProceduralGeneration($"🎲 Retry attempt {attempt + 1}/{maxAttempts}: Trying prefab {chosenPrefab.name}");
 
-            var node = ConnectCavePiece(chosenPrefab, fromConnector, depth, remainingPieces);
-            if (node != null)
+            // Get connector count for this prefab
+            int connectorCount = GetConnectorCount(chosenPrefab);
+            DebugLogger.LogProceduralGeneration($"🎲 Prefab attempt {attempt + 1}/{maxAttempts}: {chosenPrefab.name} ({connectorCount} connectors)");
+
+            // Try ALL connectors on this prefab before moving to next prefab
+            for (int connectorIdx = 0; connectorIdx < connectorCount; connectorIdx++)
             {
-                DebugLogger.LogProceduralGeneration($"✅ Successfully connected on attempt {attempt + 1}");
-                return node;
+                DebugLogger.LogProceduralGeneration($"   🔌 Trying connector {connectorIdx + 1}/{connectorCount}");
+
+                var node = ConnectCavePiece(chosenPrefab, fromConnector, depth, remainingPieces, connectorIdx);
+                if (node != null)
+                {
+                    DebugLogger.LogProceduralGeneration($"✅ Successfully connected {chosenPrefab.name} using connector {connectorIdx + 1}/{connectorCount} (prefab attempt {attempt + 1}/{maxAttempts})");
+                    return node;
+                }
+
+                DebugLogger.LogProceduralGeneration($"   ❌ Connector {connectorIdx + 1}/{connectorCount} failed");
             }
 
-            DebugLogger.LogWarningProceduralGeneration($"⚠️ Attempt {attempt + 1} failed, trying next prefab...");
+            DebugLogger.LogWarningProceduralGeneration($"⚠️ All {connectorCount} connectors failed on {chosenPrefab.name}, trying next prefab...");
         }
 
         DebugLogger.LogWarningProceduralGeneration($"❌ All retry attempts failed for connector {fromConnector.name}");

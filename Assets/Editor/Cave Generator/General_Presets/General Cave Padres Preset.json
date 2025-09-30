@@ -15,7 +15,7 @@
         "visualizeConnectors": false,
         "realtimePreview": true,
         "enableOverlapDetection": true,
-        "overlapTolerance": 0.14000000059604646,
+        "overlapTolerance": 0.0,
         "enableBacktracking": true,
         "maxPrefabRetries": 10,
         "maxBacktrackSteps": 5
@@ -54,7 +54,7 @@
         {
             "modelName": "pir_m_are_cav_curveWide_lava",
             "isEnabled": true,
-            "likelihood": 5
+            "likelihood": 20
         },
         {
             "modelName": "pir_m_are_cav_curveWide_ravine",
@@ -239,17 +239,17 @@
         {
             "modelName": "pir_m_are_cav_hallWideAscend",
             "isEnabled": true,
-            "likelihood": 100
+            "likelihood": 20
         },
         {
             "modelName": "pir_m_are_cav_hallWideAscend_lava",
             "isEnabled": true,
-            "likelihood": 20
+            "likelihood": 10
         },
         {
             "modelName": "pir_m_are_cav_hallWideDescend",
             "isEnabled": true,
-            "likelihood": 100
+            "likelihood": 20
         },
         {
             "modelName": "pir_m_are_cav_threeway100",
@@ -274,7 +274,7 @@
         {
             "modelName": "pir_m_are_cav_threeway200_lava",
             "isEnabled": true,
-            "likelihood": 5
+            "likelihood": 10
         },
         {
             "modelName": "pir_m_are_cav_threeway200_water",

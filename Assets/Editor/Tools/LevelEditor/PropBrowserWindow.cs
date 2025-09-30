@@ -5,6 +5,7 @@ using System.Linq;
 using System.IO;
 using POTCO;
 using WorldDataExporter.Utilities;
+using CaveGenerator;
 
 namespace POTCO.Editor
 {
@@ -1421,6 +1422,17 @@ namespace POTCO.Editor
 
         private void PlacePropInScene(PropAsset prop)
         {
+            // Check if we're placing a cave piece with a connector selected
+            bool isCavePiece = prop.name.Contains("pir_m_are_cav") || prop.name.Contains("cave");
+            bool hasConnectorSelected = CaveConnectorSelector.HasSelection;
+
+            if (hasConnectorSelected && isCavePiece)
+            {
+                // Use connector-based placement
+                PlaceCavePieceAtConnector(prop);
+                return;
+            }
+
             if (SurfacePlacementTool.IsEnabled)
             {
                 // Use surface placement tool for interactive placement (works for both props and groups!)
@@ -1464,6 +1476,70 @@ namespace POTCO.Editor
 
                 DebugLogger.LogAlways($"🎯 Placed {(prop.isGroup ? "group" : "prop")} '{prop.name}' in scene at {position}");
             }
+        }
+
+        private void PlaceCavePieceAtConnector(PropAsset prop)
+        {
+            Transform selectedConnector = CaveConnectorSelector.SelectedConnector;
+            if (selectedConnector == null)
+            {
+                Debug.LogWarning("No connector selected!");
+                return;
+            }
+
+            // Create temporary instance to get a connector from the new piece
+            GameObject tempInstance = PrefabUtility.InstantiatePrefab(prop.prefab) as GameObject;
+
+            var availableConnectors = tempInstance.GetComponentsInChildren<Transform>()
+                .Where(t => t.name.StartsWith("cave_connector_"))
+                .ToList();
+
+            if (availableConnectors.Count == 0)
+            {
+                Debug.LogWarning($"Cave piece '{prop.name}' has no connectors!");
+                DestroyImmediate(tempInstance);
+                return;
+            }
+
+            // Choose a random connector from the new piece to attach
+            var newPieceConnector = availableConnectors[Random.Range(0, availableConnectors.Count)];
+
+            // Calculate alignment to connect the pieces
+            AlignCavePieceToConnector(tempInstance, selectedConnector, newPieceConnector);
+
+            // Add ObjectListInfo
+            SetupObjectListInfo(tempInstance, prop.path, prop.objectType);
+
+            Selection.activeGameObject = tempInstance;
+
+            if (SceneView.lastActiveSceneView != null)
+            {
+                SceneView.lastActiveSceneView.FrameSelected();
+            }
+
+            prop.useCount++;
+            propUsageCounts[prop.path] = prop.useCount;
+            SavePreferences();
+
+            DebugLogger.LogAlways($"🔗 Connected cave piece '{prop.name}' to connector {selectedConnector.name}");
+
+            // Clear selection after successful placement
+            CaveConnectorSelector.ClearSelection();
+        }
+
+        private void AlignCavePieceToConnector(GameObject newPiece, Transform targetConnector, Transform newConnector)
+        {
+            // Step 1: Calculate rotation to face opposite direction
+            Quaternion targetRotation = Quaternion.LookRotation(-targetConnector.forward, Vector3.up);
+            Quaternion connectorRotation = Quaternion.LookRotation(newConnector.forward, Vector3.up);
+            Quaternion requiredRotation = targetRotation * Quaternion.Inverse(connectorRotation);
+
+            // Step 2: Apply rotation to piece
+            newPiece.transform.rotation = requiredRotation * newPiece.transform.rotation;
+
+            // Step 3: Position piece so connectors align
+            Vector3 offset = targetConnector.position - newConnector.position;
+            newPiece.transform.position += offset;
         }
 
 
