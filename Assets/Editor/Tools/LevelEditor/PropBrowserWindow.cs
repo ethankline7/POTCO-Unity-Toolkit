@@ -1746,7 +1746,10 @@ namespace POTCO.Editor
                         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(item.prefabPath);
                         if (prefab != null)
                         {
-                            instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+                            // Use Instantiate instead of InstantiatePrefab to break prefab connection
+                            // This makes the group self-contained and portable across different PCs
+                            instance = GameObject.Instantiate(prefab);
+                            instance.name = prefab.name; // Remove (Clone) suffix
                         }
                     }
                     // Handle non-prefab objects like lights
