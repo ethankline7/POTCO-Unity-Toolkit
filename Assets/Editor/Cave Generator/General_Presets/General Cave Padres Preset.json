@@ -3,18 +3,22 @@
         "caveLength": 20,
         "generationDelay": 0.004999999888241291,
         "capOpenEnds": true,
+        "forceCapOpenEnds": true,
         "useEggFiles": true,
-        "preventOverlaps": false,
-        "overlapCheckRadius": 40.0,
-        "maxBranches": 2,
-        "branchProbability": 0.30000001192092898,
+        "maxBranches": 7,
+        "branchProbability": 1.0,
         "enableBranching": true,
         "maxDepth": 8,
-        "allowLoops": false,
-        "forceCaveLength": true,
+        "allowLoops": true,
+        "forceCaveLength": false,
         "seed": -1,
         "visualizeConnectors": false,
-        "realtimePreview": true
+        "realtimePreview": true,
+        "enableOverlapDetection": true,
+        "overlapTolerance": 0.14000000059604646,
+        "enableBacktracking": true,
+        "maxPrefabRetries": 10,
+        "maxBacktrackSteps": 5
     },
     "selections": [
         {
@@ -99,8 +103,8 @@
         },
         {
             "modelName": "pir_m_are_cav_deadend150_lava",
-            "isEnabled": false,
-            "likelihood": 100
+            "isEnabled": true,
+            "likelihood": 10
         },
         {
             "modelName": "pir_m_are_cav_deadend150_water",

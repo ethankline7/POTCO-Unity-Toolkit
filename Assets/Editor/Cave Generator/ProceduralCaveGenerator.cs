@@ -19,9 +19,8 @@ public class ProceduralCaveGenerator : EditorWindow
         public int caveLength = 10;
         public float generationDelay = 0.1f;
         public bool capOpenEnds = true;
+        public bool forceCapOpenEnds = false;
         public bool useEggFiles = true;
-        public bool preventOverlaps = true;
-        public float overlapCheckRadius = 5f;
         public int maxBranches = 3;
         public float branchProbability = 0.3f;
         public bool enableBranching = true;
@@ -31,6 +30,11 @@ public class ProceduralCaveGenerator : EditorWindow
         public int seed = -1; // -1 for random
         public bool visualizeConnectors = false;
         public bool realtimePreview = true;
+        public bool enableOverlapDetection = true;
+        public float overlapTolerance = 0.5f; // Allow slight overlap for seamless mesh touching
+        public bool enableBacktracking = true;
+        public int maxPrefabRetries = 5; // Try multiple prefabs per connector before giving up
+        public int maxBacktrackSteps = 3; // How many pieces to backtrack when stuck
     }
     
     GenerationSettings settings = new GenerationSettings();
@@ -44,7 +48,6 @@ public class ProceduralCaveGenerator : EditorWindow
     
     // Enhanced tracking
     List<Transform> openConnectors = new();
-    HashSet<Vector3> occupiedPositions = new();
     Dictionary<Transform, ConnectorInfo> connectorData = new();
     List<CavePieceNode> generatedPieces = new();
     
@@ -312,7 +315,17 @@ public class ProceduralCaveGenerator : EditorWindow
         settings.caveLength = Mathf.Max(1, settings.caveLength); // Ensure minimum of 1
         settings.generationDelay = EditorGUILayout.Slider("Generation Delay", settings.generationDelay, 0f, 1f);
         settings.capOpenEnds = EditorGUILayout.Toggle("Cap Open Ends", settings.capOpenEnds);
-        
+        if (settings.capOpenEnds)
+        {
+            EditorGUI.indentLevel++;
+            settings.forceCapOpenEnds = EditorGUILayout.Toggle("Force Cap Open Ends", settings.forceCapOpenEnds);
+            if (settings.forceCapOpenEnds)
+            {
+                EditorGUILayout.HelpBox("Will retry multiple end caps and use backtracking to ensure all connectors are capped (respects overlap detection).", MessageType.Info);
+            }
+            EditorGUI.indentLevel--;
+        }
+
         EditorGUILayout.Space();
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label("Model Source:", GUILayout.Width(100));
@@ -334,13 +347,6 @@ public class ProceduralCaveGenerator : EditorWindow
         if (showAdvanced)
         {
             EditorGUILayout.BeginVertical("box");
-            settings.preventOverlaps = EditorGUILayout.Toggle("Prevent Overlaps", settings.preventOverlaps);
-            if (settings.preventOverlaps)
-            {
-                settings.overlapCheckRadius = EditorGUILayout.FloatField("Overlap Check Radius", settings.overlapCheckRadius);
-                settings.overlapCheckRadius = Mathf.Max(0.1f, settings.overlapCheckRadius); // Ensure minimum of 0.1
-            }
-            
             settings.enableBranching = EditorGUILayout.Toggle("Enable Branching", settings.enableBranching);
             if (settings.enableBranching)
             {
@@ -352,7 +358,26 @@ public class ProceduralCaveGenerator : EditorWindow
             }
             settings.allowLoops = EditorGUILayout.Toggle("Allow Loops", settings.allowLoops);
             settings.forceCaveLength = EditorGUILayout.Toggle("Force Cave Length", settings.forceCaveLength);
-            
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Overlap Detection", EditorStyles.boldLabel);
+            settings.enableOverlapDetection = EditorGUILayout.Toggle("Enable Overlap Detection", settings.enableOverlapDetection);
+            if (settings.enableOverlapDetection)
+            {
+                settings.overlapTolerance = EditorGUILayout.Slider("Overlap Tolerance", settings.overlapTolerance, 0f, 2f);
+                EditorGUILayout.HelpBox("Tolerance allows slight overlap for seamless mesh touching. Higher values = more lenient (0.5m recommended).", MessageType.Info);
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Backtracking", EditorStyles.boldLabel);
+            settings.enableBacktracking = EditorGUILayout.Toggle("Enable Backtracking", settings.enableBacktracking);
+            if (settings.enableBacktracking)
+            {
+                settings.maxPrefabRetries = EditorGUILayout.IntSlider("Max Prefab Retries", settings.maxPrefabRetries, 1, 10);
+                settings.maxBacktrackSteps = EditorGUILayout.IntSlider("Max Backtrack Steps", settings.maxBacktrackSteps, 1, 5);
+                EditorGUILayout.HelpBox("Backtracking helps reach target cave length by:\n• Trying multiple prefabs per connector\n• Removing recent pieces and trying alternatives when stuck", MessageType.Info);
+            }
+
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Generation Control", EditorStyles.boldLabel);
             settings.seed = EditorGUILayout.IntField("Seed (-1 for random)", settings.seed);
@@ -557,7 +582,6 @@ public class ProceduralCaveGenerator : EditorWindow
         // Initialize
         root = new GameObject("GeneratedCaveSystem");
         openConnectors.Clear();
-        occupiedPositions.Clear();
         connectorData.Clear();
         generatedPieces.Clear();
         currentIndex = 1;
@@ -614,13 +638,6 @@ public class ProceduralCaveGenerator : EditorWindow
     
     CavePieceNode PlaceCavePiece(GameObject prefab, Vector3 position, Quaternion rotation, int depth)
     {
-        // Check for overlaps if enabled
-        if (settings.preventOverlaps && CheckForOverlap(position, settings.overlapCheckRadius))
-        {
-            DebugLogger.LogProceduralGeneration($"Prevented overlap at {position}");
-            return null;
-        }
-        
         // Create wrapper and instance
         var wrapper = new GameObject($"{prefab.name}");
         wrapper.transform.SetParent(root.transform);
@@ -646,8 +663,7 @@ public class ProceduralCaveGenerator : EditorWindow
         };
         
         generatedPieces.Add(node);
-        occupiedPositions.Add(position);
-        
+
         // Add connectors to open list (only unused ones)
         foreach (var connector in node.connectors)
         {
@@ -668,32 +684,6 @@ public class ProceduralCaveGenerator : EditorWindow
         
         currentIndex++;
         return node;
-    }
-    
-    bool CheckForOverlap(Vector3 position, float radius)
-    {
-        return occupiedPositions.Any(pos => Vector3.Distance(pos, position) < radius);
-    }
-    
-    bool CheckForOverlapExcluding(Vector3 position, float radius, Transform excludeConnector)
-    {
-        // Get the piece that contains the exclude connector
-        GameObject excludePiece = GetCavePieceFromConnector(excludeConnector)?.gameObject;
-        Vector3? excludePosition = excludePiece?.transform.position;
-        
-        foreach (var pos in occupiedPositions)
-        {
-            // Skip the position of the piece we're connecting to
-            if (excludePosition.HasValue && Vector3.Distance(pos, excludePosition.Value) < 0.1f)
-                continue;
-                
-            if (Vector3.Distance(pos, position) < radius)
-            {
-                DebugLogger.LogProceduralGeneration($"Overlap detected: New position {position} is {Vector3.Distance(pos, position):F2}m from existing position {pos} (threshold: {radius}m)");
-                return true;
-            }
-        }
-        return false;
     }
     
     bool IsConnectorOccupied(Transform connector)
@@ -722,7 +712,7 @@ public class ProceduralCaveGenerator : EditorWindow
         
         // Check if the new piece position would be too close to any existing piece
         // that could potentially create a loop back to the source piece
-        float loopDetectionRadius = settings.overlapCheckRadius * 1.5f;
+        float loopDetectionRadius = 7.5f;
         
         foreach (var existingNode in generatedPieces)
         {
@@ -865,19 +855,24 @@ public class ProceduralCaveGenerator : EditorWindow
         {
             DebugLogger.LogWarningProceduralGeneration($"🔄 Loop allowed to force cave length (Remaining: {remainingPieces})");
         }
-        
-        // Check for overlaps after alignment (but be more lenient when forcing cave length)
-        if (settings.preventOverlaps && !needToForceConnection && CheckForOverlapExcluding(wrapper.transform.position, settings.overlapCheckRadius, fromConnector))
+
+        // Check for overlaps if overlap detection is enabled (but skip if forcing cave length)
+        if (settings.enableOverlapDetection && !needToForceConnection)
         {
-            DebugLogger.LogProceduralGeneration($"Prevented overlap after alignment at {wrapper.transform.position}");
-            DestroyImmediate(wrapper);
-            return null;
+            var existingPieceWrappers = generatedPieces.Select(n => n.piece).ToList();
+            string overlapReason;
+            if (!CaveGenerator.Algorithms.CaveValidationAlgorithm.CheckOverlap(wrapper, existingPieceWrappers, settings.overlapTolerance, out overlapReason))
+            {
+                DebugLogger.LogWarningProceduralGeneration($"🚫 Overlap detection: Rejected connection - {overlapReason}");
+                DestroyImmediate(wrapper);
+                return null;
+            }
         }
-        else if (settings.preventOverlaps && needToForceConnection && CheckForOverlapExcluding(wrapper.transform.position, settings.overlapCheckRadius, fromConnector))
+        else if (settings.enableOverlapDetection && needToForceConnection)
         {
-            DebugLogger.LogWarningProceduralGeneration($"⚠️ Overlap allowed to force cave length (Remaining: {remainingPieces})");
+            DebugLogger.LogWarningProceduralGeneration($"⚠️ Overlap check skipped to force cave length (Remaining: {remainingPieces})");
         }
-        
+
         // Create the node
         var node = new CavePieceNode
         {
@@ -892,8 +887,7 @@ public class ProceduralCaveGenerator : EditorWindow
         };
         
         generatedPieces.Add(node);
-        occupiedPositions.Add(wrapper.transform.position);
-        
+
         // CRITICAL FIX: Properly establish bidirectional connection between connectors
         // Mark fromConnector as used and connected to toConnector
         if (connectorData.ContainsKey(fromConnector))
@@ -933,7 +927,123 @@ public class ProceduralCaveGenerator : EditorWindow
         
         return node;
     }
-    
+
+    CavePieceNode TryConnectWithRetries(Transform fromConnector, List<GameObject> prefabsToChooseFrom, int depth, int remainingPieces = 0)
+    {
+        if (!settings.enableBacktracking || prefabsToChooseFrom.Count == 0)
+        {
+            // Fallback to original single-try behavior
+            var chosenPrefab = GetWeightedRandomPrefab(prefabsToChooseFrom);
+            return chosenPrefab != null ? ConnectCavePiece(chosenPrefab, fromConnector, depth, remainingPieces) : null;
+        }
+
+        int maxAttempts = Mathf.Min(settings.maxPrefabRetries, prefabsToChooseFrom.Count);
+        DebugLogger.LogProceduralGeneration($"🔄 Attempting connection with up to {maxAttempts} different prefabs");
+
+        // Try multiple prefabs
+        var triedPrefabs = new HashSet<GameObject>();
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            // Get a weighted random prefab that we haven't tried yet
+            var availablePrefabs = prefabsToChooseFrom.Where(p => !triedPrefabs.Contains(p)).ToList();
+            if (availablePrefabs.Count == 0)
+            {
+                DebugLogger.LogWarningProceduralGeneration($"❌ Exhausted all available prefabs ({triedPrefabs.Count} tried)");
+                break;
+            }
+
+            var chosenPrefab = GetWeightedRandomPrefab(availablePrefabs);
+            if (chosenPrefab == null) continue;
+
+            triedPrefabs.Add(chosenPrefab);
+            DebugLogger.LogProceduralGeneration($"🎲 Retry attempt {attempt + 1}/{maxAttempts}: Trying prefab {chosenPrefab.name}");
+
+            var node = ConnectCavePiece(chosenPrefab, fromConnector, depth, remainingPieces);
+            if (node != null)
+            {
+                DebugLogger.LogProceduralGeneration($"✅ Successfully connected on attempt {attempt + 1}");
+                return node;
+            }
+
+            DebugLogger.LogWarningProceduralGeneration($"⚠️ Attempt {attempt + 1} failed, trying next prefab...");
+        }
+
+        DebugLogger.LogWarningProceduralGeneration($"❌ All retry attempts failed for connector {fromConnector.name}");
+        return null;
+    }
+
+    List<Transform> BacktrackPieces(int stepCount)
+    {
+        if (generatedPieces.Count == 0)
+        {
+            DebugLogger.LogWarningProceduralGeneration("❌ Cannot backtrack - no pieces to remove");
+            return new List<Transform>();
+        }
+
+        int piecesToRemove = Mathf.Min(stepCount, generatedPieces.Count - 1); // Keep at least the first piece
+        DebugLogger.LogProceduralGeneration($"⏪ BACKTRACKING: Removing last {piecesToRemove} piece(s)");
+
+        var recoverableConnectors = new List<Transform>();
+
+        for (int i = 0; i < piecesToRemove; i++)
+        {
+            var lastPiece = generatedPieces[generatedPieces.Count - 1];
+            generatedPieces.RemoveAt(generatedPieces.Count - 1);
+
+            DebugLogger.LogProceduralGeneration($"   🗑️ Removing piece: {lastPiece.piece.name}");
+
+            // Find the connector that was used to attach this piece
+            Transform attachConnector = null;
+            foreach (var connector in lastPiece.connectors)
+            {
+                if (connector != null && connectorData.ContainsKey(connector) && connectorData[connector].isUsed && connectorData[connector].connectedTo != null)
+                {
+                    // This connector was used to attach this piece to a previous piece
+                    var parentConnector = connectorData[connector].connectedTo;
+
+                    // Mark the parent connector as available again (if it still exists)
+                    if (parentConnector != null && connectorData.ContainsKey(parentConnector))
+                    {
+                        connectorData[parentConnector].isUsed = false;
+                        connectorData[parentConnector].connectedTo = null;
+                        recoverableConnectors.Add(parentConnector);
+                        DebugLogger.LogProceduralGeneration($"   ♻️ Freed parent connector: {parentConnector.name}");
+                    }
+
+                    attachConnector = connector;
+                    break;
+                }
+            }
+
+            // Remove all connectors from this piece from our tracking
+            foreach (var connector in lastPiece.connectors)
+            {
+                if (connector != null)
+                {
+                    if (openConnectors.Contains(connector))
+                    {
+                        openConnectors.Remove(connector);
+                    }
+                    if (connectorData.ContainsKey(connector))
+                    {
+                        connectorData.Remove(connector);
+                    }
+                }
+            }
+
+            // Destroy the piece
+            if (lastPiece.piece != null)
+            {
+                DestroyImmediate(lastPiece.piece);
+            }
+
+            currentIndex--;
+        }
+
+        DebugLogger.LogProceduralGeneration($"✅ Backtracking complete. Freed {recoverableConnectors.Count} connector(s) for retry");
+        return recoverableConnectors;
+    }
+
     void AlignCavePieces(GameObject wrapper, Transform fromConnector, Transform toConnector)
     {
         DebugLogger.LogProceduralGeneration($"🔧 ALIGNING: {wrapper.name} to connect {fromConnector.name}[{fromConnector.position}] ↔ {toConnector.name}[{toConnector.position}]");
@@ -1028,11 +1138,19 @@ public class ProceduralCaveGenerator : EditorWindow
         }
         
         int piecesGenerated = 1; // First piece already placed
-        
+        int consecutiveFailures = 0; // Track consecutive connection failures
+
         while (piecesGenerated < settings.caveLength && generationQueue.Count > 0)
         {
             var (fromConnector, depth) = generationQueue.Dequeue();
-            
+
+            // Skip if connector has been destroyed (can happen after backtracking)
+            if (fromConnector == null)
+            {
+                DebugLogger.LogProceduralGeneration($"⏭️ Skipping null connector - was destroyed during backtracking");
+                continue;
+            }
+
             // Skip if this connector is already used or depth is too high
             if (connectorData.ContainsKey(fromConnector) && connectorData[fromConnector].isUsed)
             {
@@ -1101,39 +1219,31 @@ public class ProceduralCaveGenerator : EditorWindow
                 continue;
             }
             
-            var chosenPrefab = GetWeightedRandomPrefab(prefabsToChooseFrom);
-            if (chosenPrefab == null) 
-            {
-                DebugLogger.LogWarningProceduralGeneration("❌ GetWeightedRandomPrefab returned null!");
-                continue;
-            }
-            
-            DebugLogger.LogProceduralGeneration($"🎲 Chosen prefab: {chosenPrefab.name}");
-            
             // Mark this connector as used BEFORE attempting connection
             if (connectorData.ContainsKey(fromConnector))
             {
                 connectorData[fromConnector].isUsed = true;
             }
-            
-            // Create and align the new piece
+
+            // Try connecting with retries enabled
             int remainingPieces = settings.caveLength - piecesGenerated;
-            var newNode = ConnectCavePiece(chosenPrefab, fromConnector, depth, remainingPieces);
+            var newNode = TryConnectWithRetries(fromConnector, prefabsToChooseFrom, depth, remainingPieces);
             
             if (newNode != null)
             {
                 piecesGenerated++;
+                consecutiveFailures = 0; // Reset failure counter on success
                 DebugLogger.LogProceduralGeneration($"✅ Successfully connected piece {piecesGenerated} at depth {depth}");
-                
+
                 // Add new connectors to queue (except the one we just used)
                 foreach (var connector in newNode.connectors)
                 {
-                    if (connectorData.ContainsKey(connector) && !connectorData[connector].isUsed)
+                    if (connector != null && connectorData.ContainsKey(connector) && !connectorData[connector].isUsed)
                     {
                         generationQueue.Enqueue((connector, depth + 1));
                     }
                 }
-                
+
                 if (settings.realtimePreview && settings.generationDelay > 0)
                 {
                     yield return new EditorWaitForSeconds(settings.generationDelay);
@@ -1141,15 +1251,67 @@ public class ProceduralCaveGenerator : EditorWindow
             }
             else
             {
-                DebugLogger.LogErrorProceduralGeneration($"❌ DETAILED FAILURE: ConnectCavePiece returned null for prefab {chosenPrefab.name} at connector {fromConnector.name} (depth {depth})");
+                consecutiveFailures++; // Increment failure counter
+                DebugLogger.LogErrorProceduralGeneration($"❌ All connection attempts failed for connector {fromConnector.name} (depth {depth}) - Failure #{consecutiveFailures}");
                 DebugLogger.LogErrorProceduralGeneration($"   - Connector position: {fromConnector.position}");
                 DebugLogger.LogErrorProceduralGeneration($"   - Connector direction: {fromConnector.forward}");
-                DebugLogger.LogErrorProceduralGeneration($"   - Check previous logs for specific failure reason (validation, overlap, etc.)");
-                
+
                 // If connection failed, mark connector as unused again
                 if (connectorData.ContainsKey(fromConnector))
                 {
                     connectorData[fromConnector].isUsed = false;
+                }
+
+                // If backtracking is enabled and we haven't reached target length, try backtracking
+                if (settings.enableBacktracking && piecesGenerated < settings.caveLength)
+                {
+                    // Check if we have more unused connectors in queue (filter out destroyed connectors)
+                    int unusedConnectorsInQueue = generationQueue.Count(item =>
+                        item.connector != null && connectorData.ContainsKey(item.connector) && !connectorData[item.connector].isUsed);
+
+                    // Backtrack if: queue is running low OR we've had multiple consecutive failures
+                    bool shouldBacktrack = (unusedConnectorsInQueue <= 2) || (consecutiveFailures >= 3);
+
+                    if (shouldBacktrack)
+                    {
+                        string reason = unusedConnectorsInQueue <= 2 ?
+                            $"queue running low ({unusedConnectorsInQueue} connectors)" :
+                            $"{consecutiveFailures} consecutive failures";
+                        DebugLogger.LogProceduralGeneration($"⏪ Backtracking triggered: {reason} ({settings.caveLength - piecesGenerated} pieces remaining)");
+
+                        var freedConnectors = BacktrackPieces(settings.maxBacktrackSteps);
+                        consecutiveFailures = 0; // Reset failure counter after backtrack
+
+                        // Add freed connectors back to the queue
+                        foreach (var connector in freedConnectors)
+                        {
+                            if (connector != null && connectorData.ContainsKey(connector))
+                            {
+                                var pieceDepth = 1; // Default depth
+                                // Try to determine the depth from the piece this connector belongs to
+                                var piece = GetCavePieceFromConnector(connector);
+                                if (piece != null)
+                                {
+                                    var pieceNode = generatedPieces.FirstOrDefault(n => n.piece.transform == piece);
+                                    if (pieceNode != null)
+                                    {
+                                        pieceDepth = pieceNode.depth;
+                                    }
+                                }
+                                generationQueue.Enqueue((connector, pieceDepth));
+                                DebugLogger.LogProceduralGeneration($"   🔁 Re-queued connector {connector.name} at depth {pieceDepth}");
+                            }
+                        }
+
+                        if (freedConnectors.Count == 0)
+                        {
+                            DebugLogger.LogWarningProceduralGeneration("⚠️ Backtracking failed to free any connectors. Generation may be stuck.");
+                        }
+                    }
+                    else
+                    {
+                        DebugLogger.LogProceduralGeneration($"ℹ️ Still have {unusedConnectorsInQueue} unused connectors in queue and only {consecutiveFailures} failures, continuing...");
+                    }
                 }
             }
         }
@@ -1160,21 +1322,29 @@ public class ProceduralCaveGenerator : EditorWindow
     IEnumerator GenerateLinearCave()
     {
         DebugLogger.LogProceduralGeneration("🚶 Generating LINEAR cave (no branching)");
-        
+
         int piecesGenerated = 1; // First piece already placed
+        int consecutiveFailures = 0; // Track consecutive connection failures
         Transform currentConnector = null;
-        
+
         // Pick a random starting connector from the first piece
-        var availableConnectors = openConnectors.Where(c => 
+        var availableConnectors = openConnectors.Where(c =>
             connectorData.ContainsKey(c) && !connectorData[c].isUsed).ToList();
-        
+
         if (availableConnectors.Count > 0)
         {
             currentConnector = availableConnectors[Random.Range(0, availableConnectors.Count)];
         }
-        
+
         while (piecesGenerated < settings.caveLength && currentConnector != null)
         {
+            // Safety check - connector might have been destroyed
+            if (currentConnector == null)
+            {
+                DebugLogger.LogWarningProceduralGeneration("⚠️ Current connector was destroyed, ending linear generation");
+                break;
+            }
+
             DebugLogger.LogProceduralGeneration($"🔗 Linear connection {piecesGenerated + 1} from connector {currentConnector.name}");
             
             // Choose piece type - prefer tunnel pieces for continuation
@@ -1206,34 +1376,26 @@ public class ProceduralCaveGenerator : EditorWindow
                 break;
             }
             
-            var chosenPrefab = GetWeightedRandomPrefab(prefabsToChooseFrom);
-            if (chosenPrefab == null) 
-            {
-                DebugLogger.LogWarningProceduralGeneration("❌ GetWeightedRandomPrefab returned null!");
-                break;
-            }
-            
-            DebugLogger.LogProceduralGeneration($"🎲 Linear chosen prefab: {chosenPrefab.name}");
-            
             // Mark current connector as used
             if (connectorData.ContainsKey(currentConnector))
             {
                 connectorData[currentConnector].isUsed = true;
             }
-            
-            // Create and align the new piece
+
+            // Try connecting with retries enabled
             int remainingPieces = settings.caveLength - piecesGenerated;
-            var newNode = ConnectCavePiece(chosenPrefab, currentConnector, piecesGenerated, remainingPieces);
+            var newNode = TryConnectWithRetries(currentConnector, prefabsToChooseFrom, piecesGenerated, remainingPieces);
             
             if (newNode != null)
             {
                 piecesGenerated++;
+                consecutiveFailures = 0; // Reset failure counter on success
                 DebugLogger.LogProceduralGeneration($"✅ Linear piece {piecesGenerated} connected successfully");
-                
+
                 // For linear caves, pick ONE random unused connector from the new piece
-                var newConnectors = newNode.connectors.Where(c => 
-                    connectorData.ContainsKey(c) && !connectorData[c].isUsed).ToList();
-                
+                var newConnectors = newNode.connectors.Where(c =>
+                    c != null && connectorData.ContainsKey(c) && !connectorData[c].isUsed).ToList();
+
                 if (newConnectors.Count > 0)
                 {
                     currentConnector = newConnectors[Random.Range(0, newConnectors.Count)];
@@ -1244,7 +1406,7 @@ public class ProceduralCaveGenerator : EditorWindow
                     currentConnector = null; // No more connectors, end generation
                     DebugLogger.LogProceduralGeneration("🛑 No more available connectors, ending linear generation");
                 }
-                
+
                 if (settings.realtimePreview && settings.generationDelay > 0)
                 {
                     yield return new EditorWaitForSeconds(settings.generationDelay);
@@ -1252,13 +1414,44 @@ public class ProceduralCaveGenerator : EditorWindow
             }
             else
             {
-                DebugLogger.LogErrorProceduralGeneration($"❌ Linear connection failed for {chosenPrefab.name}");
+                consecutiveFailures++; // Increment failure counter
+                DebugLogger.LogErrorProceduralGeneration($"❌ All linear connection attempts failed for connector {currentConnector.name} - Failure #{consecutiveFailures}");
+
                 // If connection failed, mark connector as unused again
                 if (connectorData.ContainsKey(currentConnector))
                 {
                     connectorData[currentConnector].isUsed = false;
                 }
-                break;
+
+                // Try backtracking if enabled and we haven't reached target length
+                if (settings.enableBacktracking && piecesGenerated < settings.caveLength && consecutiveFailures >= 2)
+                {
+                    DebugLogger.LogProceduralGeneration($"⏪ Linear generation stuck ({consecutiveFailures} failures), initiating backtrack ({settings.caveLength - piecesGenerated} pieces remaining)");
+
+                    var freedConnectors = BacktrackPieces(settings.maxBacktrackSteps);
+                    consecutiveFailures = 0; // Reset failure counter after backtrack
+
+                    if (freedConnectors.Count > 0)
+                    {
+                        // Pick one of the freed connectors to continue from
+                        currentConnector = freedConnectors[Random.Range(0, freedConnectors.Count)];
+                        DebugLogger.LogProceduralGeneration($"   🔁 Continuing from freed connector: {currentConnector.name}");
+                    }
+                    else
+                    {
+                        DebugLogger.LogWarningProceduralGeneration("⚠️ Backtracking failed to free any connectors. Ending linear generation.");
+                        break;
+                    }
+                }
+                else if (!settings.enableBacktracking || consecutiveFailures < 2)
+                {
+                    DebugLogger.LogProceduralGeneration($"ℹ️ Only {consecutiveFailures} failure(s), trying next available connector if any...");
+                    break;
+                }
+                else
+                {
+                    break;
+                }
             }
         }
         
@@ -1270,38 +1463,18 @@ public class ProceduralCaveGenerator : EditorWindow
         // Cap remaining open ends if enabled
         if (settings.capOpenEnds)
         {
-            // Find all unused connectors across all pieces
-            var connectorsToCap = new List<Transform>();
-            foreach (var connector in connectorData.Keys)
+            if (settings.forceCapOpenEnds)
             {
-                if (!connectorData[connector].isUsed)
-                {
-                    connectorsToCap.Add(connector);
-                }
+                piecesGenerated = ForceCapAllOpenEnds(piecesGenerated);
             }
-            
-            DebugLogger.LogProceduralGeneration($"🧢 Capping {connectorsToCap.Count} unused connectors");
-            
-            foreach (var connector in connectorsToCap)
+            else
             {
-                if (deadEnds.Count > 0)
-                {
-                    var deadEndPrefab = GetWeightedRandomPrefab(deadEnds);
-                    if (deadEndPrefab != null)
-                    {
-                        DebugLogger.LogProceduralGeneration($"🧢 Adding end cap to unused connector {connector.name} at {connector.position}");
-                        var newNode = ConnectCavePiece(deadEndPrefab, connector, 0, 0);
-                        if (newNode != null)
-                        {
-                            piecesGenerated++;
-                        }
-                    }
-                }
+                piecesGenerated = CapOpenEndsNormal(piecesGenerated);
             }
         }
-        
+
         DebugLogger.LogProceduralGeneration($"✅ Cave generation complete! Generated {piecesGenerated} pieces with seed: {lastGenerationSeed}");
-        
+
         // Auto-record debug snapshot if enabled
         if (autoRecordOnGeneration)
         {
@@ -1310,6 +1483,154 @@ public class ProceduralCaveGenerator : EditorWindow
             originalGenerationSnapshot = currentSnapshot;
             DebugLogger.LogProceduralGeneration("💾 Saved original generation snapshot for debugging comparisons");
         }
+    }
+
+    int CapOpenEndsNormal(int piecesGenerated)
+    {
+        // Find all unused connectors across all pieces
+        var connectorsToCap = new List<Transform>();
+        foreach (var connector in connectorData.Keys)
+        {
+            if (connector != null && !connectorData[connector].isUsed)
+            {
+                connectorsToCap.Add(connector);
+            }
+        }
+
+        DebugLogger.LogProceduralGeneration($"🧢 Capping {connectorsToCap.Count} unused connectors (normal mode)");
+
+        foreach (var connector in connectorsToCap)
+        {
+            if (connector == null) continue;
+
+            if (deadEnds.Count > 0)
+            {
+                var deadEndPrefab = GetWeightedRandomPrefab(deadEnds);
+                if (deadEndPrefab != null)
+                {
+                    DebugLogger.LogProceduralGeneration($"🧢 Adding end cap to unused connector {connector.name} at {connector.position}");
+                    var newNode = ConnectCavePiece(deadEndPrefab, connector, 0, 0);
+                    if (newNode != null)
+                    {
+                        piecesGenerated++;
+                    }
+                }
+            }
+        }
+
+        return piecesGenerated;
+    }
+
+    int ForceCapAllOpenEnds(int piecesGenerated)
+    {
+        DebugLogger.LogProceduralGeneration($"🔨 FORCE CAPPING mode enabled - will retry with backtracking until all connectors are capped");
+
+        int maxAttempts = 10; // Prevent infinite loops
+        int attempt = 0;
+
+        while (attempt < maxAttempts)
+        {
+            attempt++;
+
+            // Find all unused connectors
+            var connectorsToCap = new List<Transform>();
+            foreach (var connector in connectorData.Keys)
+            {
+                if (connector != null && !connectorData[connector].isUsed)
+                {
+                    connectorsToCap.Add(connector);
+                }
+            }
+
+            if (connectorsToCap.Count == 0)
+            {
+                DebugLogger.LogProceduralGeneration($"✅ All connectors successfully capped!");
+                break;
+            }
+
+            DebugLogger.LogProceduralGeneration($"🧢 Attempt {attempt}/{maxAttempts}: Capping {connectorsToCap.Count} unused connector(s)");
+
+            int successfulCaps = 0;
+            var failedConnectors = new List<Transform>();
+
+            foreach (var connector in connectorsToCap)
+            {
+                if (connector == null) continue;
+
+                if (deadEnds.Count > 0)
+                {
+                    DebugLogger.LogProceduralGeneration($"🧢 Attempting to cap connector {connector.name} with retries");
+
+                    // Use retry logic to try multiple end cap prefabs
+                    var newNode = TryConnectWithRetries(connector, deadEnds, 0, 0);
+
+                    if (newNode != null)
+                    {
+                        piecesGenerated++;
+                        successfulCaps++;
+                        DebugLogger.LogProceduralGeneration($"✅ Successfully capped connector {connector.name}");
+                    }
+                    else
+                    {
+                        failedConnectors.Add(connector);
+                        DebugLogger.LogWarningProceduralGeneration($"❌ Failed to cap connector {connector.name} - will try backtracking");
+                    }
+                }
+            }
+
+            // If we capped some but not all, continue to next iteration
+            if (successfulCaps > 0 && failedConnectors.Count == 0)
+            {
+                DebugLogger.LogProceduralGeneration($"✅ Successfully capped all {successfulCaps} connector(s) on attempt {attempt}");
+                break;
+            }
+
+            // If we have failed connectors and backtracking is enabled, try backtracking
+            if (failedConnectors.Count > 0 && settings.enableBacktracking)
+            {
+                DebugLogger.LogProceduralGeneration($"⏪ {failedConnectors.Count} connector(s) failed to cap, attempting backtrack to create space");
+
+                // Find pieces near the failed connectors and backtrack
+                var piecesToBacktrack = Mathf.Min(settings.maxBacktrackSteps, generatedPieces.Count - 1);
+
+                if (piecesToBacktrack > 0)
+                {
+                    var freedConnectors = BacktrackPieces(piecesToBacktrack);
+                    DebugLogger.LogProceduralGeneration($"♻️ Backtracked {piecesToBacktrack} piece(s), freed {freedConnectors.Count} connector(s)");
+
+                    // Continue to next iteration to try capping again
+                    continue;
+                }
+                else
+                {
+                    DebugLogger.LogWarningProceduralGeneration("⚠️ Cannot backtrack further - only starting piece remains");
+                    break;
+                }
+            }
+
+            // If we made progress this iteration, keep trying
+            if (successfulCaps > 0)
+            {
+                DebugLogger.LogProceduralGeneration($"ℹ️ Made progress: capped {successfulCaps} connector(s), {failedConnectors.Count} remaining");
+                continue;
+            }
+
+            // No progress made
+            DebugLogger.LogWarningProceduralGeneration($"⚠️ No progress made on attempt {attempt}, trying again...");
+        }
+
+        // Final check
+        var remainingUncapped = connectorData.Keys.Count(c => c != null && !connectorData[c].isUsed);
+        if (remainingUncapped > 0)
+        {
+            DebugLogger.LogWarningProceduralGeneration($"⚠️ Force capping completed with {remainingUncapped} connector(s) remaining uncapped after {attempt} attempts");
+        }
+        else
+        {
+            DebugLogger.LogProceduralGeneration($"✅ Force capping succeeded! All connectors capped after {attempt} attempt(s)");
+        }
+
+        return piecesGenerated;
     }
     
     // Keep essential methods from original implementation
@@ -1368,7 +1689,6 @@ public class ProceduralCaveGenerator : EditorWindow
         }
         
         openConnectors.Clear();
-        occupiedPositions.Clear();
         connectorData.Clear();
         generatedPieces.Clear();
         currentIndex = 1;

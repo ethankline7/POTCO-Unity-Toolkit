@@ -7,32 +7,6 @@ namespace CaveGenerator.Algorithms
 {
     public static class CaveValidationAlgorithm
     {
-        public static bool CheckForOverlap(Vector3 position, float radius, HashSet<Vector3> occupiedPositions)
-        {
-            return occupiedPositions.Any(pos => Vector3.Distance(pos, position) < radius);
-        }
-        
-        public static bool CheckForOverlapExcluding(Vector3 position, float radius, Transform excludeConnector, HashSet<Vector3> occupiedPositions)
-        {
-            // Get the piece that contains the exclude connector
-            GameObject excludePiece = GetCavePieceFromConnector(excludeConnector)?.gameObject;
-            Vector3? excludePosition = excludePiece?.transform.position;
-            
-            foreach (var pos in occupiedPositions)
-            {
-                // Skip the position of the piece we're connecting to
-                if (excludePosition.HasValue && Vector3.Distance(pos, excludePosition.Value) < 0.1f)
-                    continue;
-                    
-                if (Vector3.Distance(pos, position) < radius)
-                {
-                    DebugLogger.LogProceduralGeneration($"Overlap detected: New position {position} is {Vector3.Distance(pos, position):F2}m from existing position {pos} (threshold: {radius}m)");
-                    return true;
-                }
-            }
-            return false;
-        }
-        
         public static Transform GetCavePieceFromConnector(Transform connector)
         {
             // Walk up the hierarchy to find the CavePiece_ wrapper
@@ -67,6 +41,79 @@ namespace CaveGenerator.Algorithms
             }
             
             return true;
+        }
+
+        public static bool CheckOverlap(GameObject newPiece, List<GameObject> existingPieces, float tolerance, out string reason)
+        {
+            reason = "";
+
+            // Get all renderers from the new piece to calculate bounds
+            var newRenderers = newPiece.GetComponentsInChildren<Renderer>();
+            if (newRenderers.Length == 0)
+            {
+                reason = "New piece has no renderers to calculate bounds";
+                return true; // Allow if no renderers (can't calculate bounds)
+            }
+
+            // Calculate bounds of the new piece
+            Bounds newBounds = newRenderers[0].bounds;
+            foreach (var renderer in newRenderers)
+            {
+                newBounds.Encapsulate(renderer.bounds);
+            }
+
+            // Calculate acceptable overlap percentage based on tolerance
+            // tolerance=0.5 allows ~15% overlap, tolerance=1.0 allows ~25%, tolerance=2.0 allows ~40%
+            float maxAllowedOverlapPercent = 10f + (tolerance * 15f);
+
+            DebugLogger.LogProceduralGeneration($"🔍 Overlap Check: New piece bounds center={newBounds.center}, size={newBounds.size}");
+            DebugLogger.LogProceduralGeneration($"   Tolerance={tolerance}m allows up to {maxAllowedOverlapPercent:F1}% overlap");
+
+            // Check against all existing pieces
+            foreach (var existingPiece in existingPieces)
+            {
+                if (existingPiece == null) continue;
+
+                var existingRenderers = existingPiece.GetComponentsInChildren<Renderer>();
+                if (existingRenderers.Length == 0) continue;
+
+                // Calculate bounds of existing piece
+                Bounds existingBounds = existingRenderers[0].bounds;
+                foreach (var renderer in existingRenderers)
+                {
+                    existingBounds.Encapsulate(renderer.bounds);
+                }
+
+                // Check if bounds intersect
+                if (newBounds.Intersects(existingBounds))
+                {
+                    // Calculate overlap volume to determine severity
+                    Vector3 overlapMin = Vector3.Max(newBounds.min, existingBounds.min);
+                    Vector3 overlapMax = Vector3.Min(newBounds.max, existingBounds.max);
+                    Vector3 overlapSize = overlapMax - overlapMin;
+                    float overlapVolume = overlapSize.x * overlapSize.y * overlapSize.z;
+
+                    float newVolume = newBounds.size.x * newBounds.size.y * newBounds.size.z;
+                    float overlapPercentage = (overlapVolume / newVolume) * 100f;
+
+                    // Only reject if overlap exceeds the tolerance threshold
+                    if (overlapPercentage > maxAllowedOverlapPercent)
+                    {
+                        reason = $"Overlaps with {existingPiece.name}: {overlapPercentage:F1}% overlap (max allowed: {maxAllowedOverlapPercent:F1}%)";
+                        DebugLogger.LogWarningProceduralGeneration($"❌ {reason}");
+                        DebugLogger.LogWarningProceduralGeneration($"   New bounds: {newBounds.center}, size={newBounds.size}");
+                        DebugLogger.LogWarningProceduralGeneration($"   Existing bounds: {existingBounds.center}, size={existingBounds.size}");
+                        return false; // Reject excessive overlap
+                    }
+                    else
+                    {
+                        DebugLogger.LogProceduralGeneration($"✅ Acceptable overlap with {existingPiece.name}: {overlapPercentage:F1}% (within {maxAllowedOverlapPercent:F1}% tolerance)");
+                    }
+                }
+            }
+
+            DebugLogger.LogProceduralGeneration($"✅ No significant overlaps detected");
+            return true; // No overlap detected
         }
     }
 }
