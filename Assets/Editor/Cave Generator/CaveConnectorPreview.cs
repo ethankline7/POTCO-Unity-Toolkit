@@ -265,14 +265,19 @@ namespace CaveGenerator
             // Create actual instance
             GameObject instance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
 
-            // Find connector on new piece
-            var availableConnectors = instance.GetComponentsInChildren<Transform>()
+            // Find connectors on new piece (sort same way as preview for consistency)
+            var instanceConnectors = instance.GetComponentsInChildren<Transform>()
                 .Where(t => t.name.StartsWith("cave_connector_"))
+                .OrderBy(t => t.name) // Sort by name for consistency with preview
                 .ToList();
 
-            if (availableConnectors.Count > 0)
+            if (instanceConnectors.Count > 0)
             {
-                var instanceConnector = availableConnectors[Random.Range(0, availableConnectors.Count)];
+                // Use the SAME connector index that was selected in the preview
+                int connectorIdx = Mathf.Clamp(currentConnectorIndex, 0, instanceConnectors.Count - 1);
+                var instanceConnector = instanceConnectors[connectorIdx];
+
+                Debug.Log($"📌 Placing with connector {connectorIdx + 1}/{instanceConnectors.Count}: {instanceConnector.name}");
                 AlignPreviewToConnector(instance, targetConnector, instanceConnector);
             }
 
