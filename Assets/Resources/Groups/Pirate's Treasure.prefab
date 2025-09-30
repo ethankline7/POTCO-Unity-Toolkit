@@ -1037,7 +1037,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.65unity72
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -1398,7 +1398,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.68unity83
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -2822,7 +2822,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.57unity95
   modelPath: models/props/treasureTrough_single
   hasVisualBlock: 1
@@ -6201,7 +6201,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.67unity21
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -7797,7 +7797,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.64unity36
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -8562,7 +8562,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.61unity27
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -10673,7 +10673,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.62unity62
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -10799,7 +10799,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.65unity97
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -11781,7 +11781,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.62unity45
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -12027,7 +12027,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.63unity33
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -12120,7 +12120,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.68unity87
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -13749,7 +13749,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.65unity45
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -13847,7 +13847,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.64unity85
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -17082,7 +17082,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Furniture
   objectId: 1758863857.56unity29
   modelPath: models/props/table_barber_tools1
   hasVisualBlock: 1
@@ -18296,7 +18296,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Interior_furnishings
   objectId: 1758863857.69unity27
   modelPath: models/props/shop_weapons_grenade
   hasVisualBlock: 1
@@ -18443,7 +18443,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.66unity96
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -20154,7 +20154,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.64unity15
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -21641,7 +21641,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.63unity18
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -21799,7 +21799,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.66unity68
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -22567,7 +22567,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.63unity28
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -22865,7 +22865,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.62unity88
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -23403,7 +23403,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.66unity19
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -27821,7 +27821,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.61unity28
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -29347,7 +29347,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.61unity50
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -30414,7 +30414,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.67unity86
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -32137,7 +32137,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.56unity90
   modelPath: models/props/prop_coinstack_large
   hasVisualBlock: 1
@@ -33483,7 +33483,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.68unity28
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -35153,7 +35153,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Enemy_Props
   objectId: 1758863857.55unity20
   modelPath: models/props/pir_m_prp_bon_body_A
   hasVisualBlock: 1
@@ -35797,7 +35797,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.60unity93
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -36072,7 +36072,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.64unity18
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1
@@ -36812,7 +36812,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Tools
   objectId: 1758863857.59unity17
   modelPath: models/props/prop_keys_dog
   hasVisualBlock: 1
@@ -36909,7 +36909,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Interactive Prop
   objectId: 1758863857.55unity93
   modelPath: models/props/chair_fancy
   hasVisualBlock: 1
@@ -37121,7 +37121,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 05e81b9556ee67d4f97f74f4172c68bd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  objectType: MISC_OBJ
+  objectType: Treasure Chest
   objectId: 1758863857.67unity79
   modelPath: models/props/prop_coinstack_small
   hasVisualBlock: 1

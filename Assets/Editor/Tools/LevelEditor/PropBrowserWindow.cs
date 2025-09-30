@@ -1746,10 +1746,15 @@ namespace POTCO.Editor
                         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(item.prefabPath);
                         if (prefab != null)
                         {
-                            // Use Instantiate instead of InstantiatePrefab to break prefab connection
-                            // This makes the group self-contained and portable across different PCs
-                            instance = GameObject.Instantiate(prefab);
-                            instance.name = prefab.name; // Remove (Clone) suffix
+                            // First instantiate as prefab instance to get all nested data
+                            GameObject tempInstance = PrefabUtility.InstantiatePrefab(prefab) as GameObject;
+
+                            // Completely unpack to break all prefab connections and make self-contained
+                            PrefabUtility.UnpackPrefabInstance(tempInstance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+
+                            // Now this instance has all mesh data and no prefab references
+                            instance = tempInstance;
+                            instance.name = prefab.name; // Remove any (Clone) or unpacking artifacts
                         }
                     }
                     // Handle non-prefab objects like lights

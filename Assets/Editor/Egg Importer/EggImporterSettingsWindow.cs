@@ -521,7 +521,20 @@ public class EggImporterSettingsWindow : EditorWindow
         
         EditorGUILayout.HelpBox("💡 Tip: Select .egg files in the Project window before using 'Import Selected EGG Files'.", MessageType.Info);
         EditorGUILayout.EndVertical();
-        
+
+        // Group Management
+        EditorGUILayout.BeginVertical(sectionStyle);
+        GUILayout.Label("📦 Group Management", EditorStyles.boldLabel);
+        GUILayout.Space(10);
+
+        if (GUILayout.Button("🔄 Rebuild All Group Prefabs", buttonStyle))
+        {
+            RebuildAllGroups();
+        }
+
+        EditorGUILayout.HelpBox("🔄 Rebuilds group prefabs by replacing empty GameObjects with actual meshes from their modelPath.", MessageType.Info);
+        EditorGUILayout.EndVertical();
+
         // Startup Prompt Testing
         EditorGUILayout.BeginVertical(sectionStyle);
         GUILayout.Label("🧪 Testing & Utilities", EditorStyles.boldLabel);
@@ -1093,7 +1106,46 @@ public class EggImporterSettingsWindow : EditorWindow
         // Refresh statistics after import
         statisticsCached = false;
     }
-    
+
+    private void RebuildAllGroups()
+    {
+        string groupsFolder = "Assets/Resources/Groups";
+        if (!System.IO.Directory.Exists(groupsFolder))
+        {
+            EditorUtility.DisplayDialog("No Groups Found", "No group prefabs found in Assets/Resources/Groups", "OK");
+            return;
+        }
+
+        string[] groupPrefabPaths = System.IO.Directory.GetFiles(groupsFolder, "*.prefab", SearchOption.AllDirectories);
+        if (groupPrefabPaths.Length == 0)
+        {
+            EditorUtility.DisplayDialog("No Groups Found", "No group prefabs found in Assets/Resources/Groups", "OK");
+            return;
+        }
+
+        bool proceed = EditorUtility.DisplayDialog("Rebuild Group Prefabs",
+            $"Found {groupPrefabPaths.Length} group prefabs. This will replace empty GameObjects with actual meshes. Continue?", "Yes", "Cancel");
+
+        if (!proceed) return;
+
+        // Call the static method from EggImportStartupPrompt
+        var promptType = System.Type.GetType("EggImportStartupPrompt");
+        if (promptType != null)
+        {
+            var rebuildMethod = promptType.GetMethod("RebuildAllGroups",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+            if (rebuildMethod != null)
+            {
+                rebuildMethod.Invoke(null, null);
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("Error", "Could not find RebuildAllGroups method.", "OK");
+            }
+        }
+    }
+
     private void ForceImportEggFile(string assetPath)
     {
         DebugLogger.LogEggImporter($"Force importing: {assetPath}");
