@@ -43,21 +43,17 @@ public class MaterialHandler
             string alphaPath = alphaPaths.TryGetValue(materialName, out string alpha) ? alpha : null;
 
             Material mat;
-            string textureFileName = Path.GetFileName(texturePath);
-            Texture2D colorTex = FindTextureInProject(textureFileName);
-            if (!colorTex) colorTex = LoadTextureByFileName(textureFileName);
+            Texture2D colorTex = FindTextureInProject(texturePath);
 
             Texture2D alphaTex = null;
             if (!string.IsNullOrEmpty(alphaPath))
             {
-                string alphaFileName = Path.GetFileName(alphaPath);
-                alphaTex = FindTextureInProject(alphaFileName);
-                if (!alphaTex) alphaTex = LoadTextureByFileName(alphaFileName);
+                alphaTex = FindTextureInProject(alphaPath);
 
                 if (alphaTex)
-                    DebugLogger.LogEggImporter($"[AlphaMask] Found alpha texture for {materialName}: {alphaFileName}");
+                    DebugLogger.LogEggImporter($"[AlphaMask] Found alpha texture for {materialName}: {alphaPath}");
                 else
-                    DebugLogger.LogWarningEggImporter($"[AlphaMask] Could not load alpha texture: {alphaFileName}");
+                    DebugLogger.LogWarningEggImporter($"[AlphaMask] Could not load alpha texture: {alphaPath}");
             }
 
             // Always use the unified vertex color material
@@ -66,11 +62,11 @@ public class MaterialHandler
             if (colorTex)
             {
                 mat.mainTexture = colorTex;
-                DebugLogger.LogEggImporter($"Assigned texture {textureFileName} to material {materialName}");
+                DebugLogger.LogEggImporter($"Assigned texture {texturePath} to material {materialName}");
             }
             else
             {
-                DebugLogger.LogWarningEggImporter($"Could not find texture: {textureFileName}");
+                DebugLogger.LogWarningEggImporter($"Could not find texture: {texturePath}");
                 mat.color = GetDefaultColorForMaterial(materialName);
             }
 
@@ -136,16 +132,12 @@ public class MaterialHandler
 
                     if (texturePaths.TryGetValue(texNames[0], out string basePath))
                     {
-                        string baseFileName = Path.GetFileName(basePath);
-                        baseTex = FindTextureInProject(baseFileName);
-                        if (!baseTex) baseTex = LoadTextureByFileName(baseFileName);
+                        baseTex = FindTextureInProject(basePath);
                     }
 
                     if (texNames.Length > 1 && texturePaths.TryGetValue(texNames[1], out string overlayPath))
                     {
-                        string overlayFileName = Path.GetFileName(overlayPath);
-                        overlayTex = FindTextureInProject(overlayFileName);
-                        if (!overlayTex) overlayTex = LoadTextureByFileName(overlayFileName);
+                        overlayTex = FindTextureInProject(overlayPath);
                     }
 
                     // Create material with VertexColorTexture shader
@@ -178,26 +170,42 @@ public class MaterialHandler
         return CreateMaterials(texturePaths, new Dictionary<string, string>(), rootGO);
     }
     
-    private Texture2D FindTextureInProject(string textureFileName)
+    private Texture2D FindTextureInProject(string texturePath)
     {
         // Initialize texture cache if needed
         if (!_textureCacheInitialized)
         {
             InitializeTextureCache();
         }
-        
-        // Check cache first
-        string cacheKey = textureFileName.ToLowerInvariant();
-        if (_textureCache.TryGetValue(cacheKey, out Texture2D cachedTexture))
+
+        // Normalize path: remove extension and convert to lowercase
+        string normalizedPath = texturePath.Replace("\\", "/").ToLowerInvariant();
+        int extIndex = normalizedPath.LastIndexOf('.');
+        if (extIndex > 0)
+            normalizedPath = normalizedPath.Substring(0, extIndex);
+
+        // Try to find with full path first
+        if (_textureCache.TryGetValue(normalizedPath, out Texture2D cachedTexture))
         {
             if (cachedTexture != null)
             {
-                DebugLogger.LogEggImporter($"Found cached texture: {textureFileName}");
+                DebugLogger.LogEggImporter($"Found cached texture: {texturePath}");
                 return cachedTexture;
             }
         }
-        
-        DebugLogger.LogWarningEggImporter($"Texture not found in cache: {textureFileName}");
+
+        // Fallback: try just filename
+        string fileName = Path.GetFileNameWithoutExtension(texturePath).ToLowerInvariant();
+        if (_textureCache.TryGetValue(fileName, out cachedTexture))
+        {
+            if (cachedTexture != null)
+            {
+                DebugLogger.LogEggImporter($"Found cached texture by filename: {fileName}");
+                return cachedTexture;
+            }
+        }
+
+        DebugLogger.LogWarningEggImporter($"Texture not found in cache: {texturePath}");
         return null;
     }
     
@@ -205,31 +213,50 @@ public class MaterialHandler
     {
         // More robust cache validation
         if (_textureCacheInitialized && _textureCache != null && _textureCache.Count > 0) return;
-        
+
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         _textureCache = new Dictionary<string, Texture2D>(System.StringComparer.OrdinalIgnoreCase);
-        
+
         // Find ALL textures in the project once
         string[] guids = AssetDatabase.FindAssets("t:texture2D");
         DebugLogger.LogEggImporter($"Initializing texture cache with {guids.Length} textures...");
-        
+
         foreach (string guid in guids)
         {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            string fileName = Path.GetFileName(path).ToLowerInvariant();
-            
-            if (!_textureCache.ContainsKey(fileName))
+            string fullPath = AssetDatabase.GUIDToAssetPath(guid);
+            Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(fullPath);
+            if (texture == null) continue;
+
+            // Extract relative path from Resources folder (e.g., "phase_3/maps/texture")
+            int resourcesIndex = fullPath.IndexOf("/Resources/", System.StringComparison.OrdinalIgnoreCase);
+            if (resourcesIndex >= 0)
             {
-                Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                if (texture != null)
+                string relativePath = fullPath.Substring(resourcesIndex + "/Resources/".Length);
+
+                // Remove extension
+                int extIndex = relativePath.LastIndexOf('.');
+                if (extIndex > 0)
+                    relativePath = relativePath.Substring(0, extIndex);
+
+                string normalizedPath = relativePath.Replace("\\", "/").ToLowerInvariant();
+
+                // Store by full relative path (e.g., "phase_3/maps/texture")
+                if (!_textureCache.ContainsKey(normalizedPath))
                 {
-                    _textureCache[fileName] = texture;
+                    _textureCache[normalizedPath] = texture;
                 }
             }
+
+            // Also store by filename only for fallback
+            string fileName = Path.GetFileNameWithoutExtension(fullPath).ToLowerInvariant();
+            if (!_textureCache.ContainsKey(fileName))
+            {
+                _textureCache[fileName] = texture;
+            }
         }
-        
+
         stopwatch.Stop();
-        DebugLogger.LogEggImporter($"Texture cache initialized in {stopwatch.ElapsedMilliseconds}ms with {_textureCache.Count} textures");
+        DebugLogger.LogEggImporter($"Texture cache initialized in {stopwatch.ElapsedMilliseconds}ms with {_textureCache.Count} entries");
         _textureCacheInitialized = true;
     }
     
