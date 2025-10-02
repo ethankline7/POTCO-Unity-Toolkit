@@ -12,6 +12,7 @@ namespace POTCO.ShipBuilder
 
         // Build options
         public bool generateCollisions = true;
+        public bool addShipController = false;
 
         // Component mappings: locator name -> component name
         public Dictionary<string, string> masts = new Dictionary<string, string>();

@@ -136,6 +136,11 @@ namespace POTCO.ShipBuilder
 
             currentShip.generateCollisions = EditorGUILayout.Toggle("Generate Mesh Collisions", currentShip.generateCollisions);
             EditorGUILayout.HelpBox("Adds MeshCollider components to all ship parts for physics interactions.", MessageType.Info);
+
+            EditorGUILayout.Space(5);
+
+            currentShip.addShipController = EditorGUILayout.Toggle("Add Ship Controller", currentShip.addShipController);
+            EditorGUILayout.HelpBox("Adds a ShipController component that allows you to pilot the ship. Press Shift near the wheel to enter control mode.", MessageType.Info);
         }
 
         private void DrawComponentCustomization()

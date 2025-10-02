@@ -114,6 +114,13 @@ namespace POTCO.ShipBuilder
             // Clean up logic object (we only needed it for the transforms)
             Object.DestroyImmediate(logicObject);
 
+            // Add ship controller if requested
+            if (config.addShipController)
+            {
+                var controller = shipRoot.AddComponent<POTCO.ShipController>();
+                Debug.Log("Added ShipController component");
+            }
+
             Debug.Log($"Ship assembled successfully: {shipName}");
             return shipRoot;
         }
@@ -160,6 +167,20 @@ namespace POTCO.ShipBuilder
                 if (config.generateCollisions)
                 {
                     AddMeshCollidersRecursive(component.transform);
+                }
+
+                // If this is a mast, add MastTypeInfo component and set double-sided materials
+                if (categoryName == "Masts" && componentName.Contains("pir_r_shp_mst_") && !componentName.EndsWith("_skeleton"))
+                {
+                    // Extract mast type from component name
+                    // e.g., "pir_r_shp_mst_main_tri" -> "main_tri"
+                    string mastType = ExtractMastType(componentName);
+                    var mastInfo = component.AddComponent<POTCO.MastTypeInfo>();
+                    mastInfo.mastType = mastType;
+                    Debug.Log($"Added MastTypeInfo to {locatorName}: {mastType}");
+
+                    // Set all materials to double-sided for mast visibility
+                    SetMaterialsDoubleSided(component);
                 }
 
                 // Track which locator this component was attached to
@@ -272,6 +293,61 @@ namespace POTCO.ShipBuilder
                     return found;
             }
             return null;
+        }
+
+        private string ExtractMastType(string componentName)
+        {
+            // Extract mast type from component name
+            // e.g., "pir_r_shp_mst_main_tri" -> "main_tri"
+            if (componentName.Contains("pir_r_shp_mst_"))
+            {
+                int startIndex = componentName.IndexOf("pir_r_shp_mst_") + "pir_r_shp_mst_".Length;
+                string remainder = componentName.Substring(startIndex);
+
+                // Split and take first two parts (e.g., "main_tri")
+                string[] parts = remainder.Split('_');
+                if (parts.Length >= 2)
+                {
+                    return parts[0] + "_" + parts[1];
+                }
+
+                return remainder; // Fallback to whole remainder
+            }
+
+            return "unknown";
+        }
+
+        private void SetMaterialsDoubleSided(GameObject obj)
+        {
+            // Get all renderers (both MeshRenderer and SkinnedMeshRenderer)
+            var meshRenderers = obj.GetComponentsInChildren<MeshRenderer>(true);
+            var skinnedRenderers = obj.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+
+            // Process MeshRenderers
+            foreach (var renderer in meshRenderers)
+            {
+                foreach (var material in renderer.sharedMaterials)
+                {
+                    if (material != null)
+                    {
+                        material.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                    }
+                }
+            }
+
+            // Process SkinnedMeshRenderers
+            foreach (var renderer in skinnedRenderers)
+            {
+                foreach (var material in renderer.sharedMaterials)
+                {
+                    if (material != null)
+                    {
+                        material.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                    }
+                }
+            }
+
+            Debug.Log($"Set all materials to double-sided for {obj.name}");
         }
     }
 }

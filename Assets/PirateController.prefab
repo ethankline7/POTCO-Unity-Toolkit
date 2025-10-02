@@ -74,7 +74,7 @@ MonoBehaviour:
   walkSpeed: 17.9
   runSpeed: 26.7
   mouseSensitivity: 2
-  jumpHeight: 8
+  jumpHeight: 9.24
   gravity: -38.9
   groundCheck: {fileID: 0}
   groundDistance: 0.4
@@ -110,7 +110,7 @@ Transform:
   m_GameObject: {fileID: 9159594679056732771}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.038, y: 0.57, z: -0.06}
+  m_LocalPosition: {x: -0.038, y: 1.59, z: -0.06}
   m_LocalScale: {x: 0.3245805, y: 0.3245805, z: 0.3245805}
   m_ConstrainProportionsScale: 0
   m_Children: []
