@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEditor;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using POTCO.Editor;
@@ -29,17 +30,18 @@ public class MaterialHandler
     {
         DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths and {alphaPaths.Count} alpha paths");
         var materials = new List<Material>(texturePaths.Count + 1);
-        
+        var createdMaterialNames = new HashSet<string>(); // Track what we've created
+
         foreach (var kvp in texturePaths)
         {
             string materialName = kvp.Key;
             string texturePath = kvp.Value;
-            
+
             DebugLogger.LogEggImporter($"Creating material: {materialName} with texture: {texturePath}");
-            
+
             // Check if this material has an alpha texture specified
             string alphaPath = alphaPaths.TryGetValue(materialName, out string alpha) ? alpha : null;
-            
+
             Material mat;
             string textureFileName = Path.GetFileName(texturePath);
             Texture2D colorTex = FindTextureInProject(textureFileName);
@@ -51,7 +53,7 @@ public class MaterialHandler
                 string alphaFileName = Path.GetFileName(alphaPath);
                 alphaTex = FindTextureInProject(alphaFileName);
                 if (!alphaTex) alphaTex = LoadTextureByFileName(alphaFileName);
-                
+
                 if (alphaTex)
                     DebugLogger.LogEggImporter($"[AlphaMask] Found alpha texture for {materialName}: {alphaFileName}");
                 else
@@ -60,7 +62,7 @@ public class MaterialHandler
 
             // Always use the unified vertex color material
             mat = CreateVertexColorMaterial(materialName);
-            
+
             if (colorTex)
             {
                 mat.mainTexture = colorTex;
@@ -71,7 +73,7 @@ public class MaterialHandler
                 DebugLogger.LogWarningEggImporter($"Could not find texture: {textureFileName}");
                 mat.color = GetDefaultColorForMaterial(materialName);
             }
-            
+
             // Set alpha texture if available
             if (alphaTex)
             {
@@ -89,26 +91,85 @@ public class MaterialHandler
                 mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
                 DebugLogger.LogEggImporter($"[Standard] Material {materialName} set to back-face culling (Cull: Back)");
             }
-            
+
             // Use cached property IDs for better performance
             if (mat.HasProperty(MetallicPropertyId))
                 mat.SetFloat(MetallicPropertyId, 0.0f);
             if (mat.HasProperty(GlossinessPropertyId))
                 mat.SetFloat(GlossinessPropertyId, 0.1f);
-            
+
             materials.Add(mat);
+            createdMaterialNames.Add(materialName);
         }
-        
+
         // Always ensure Default-Material exists
         var defaultMaterial = CreateVertexColorMaterial("Default-Material");
         materials.Add(defaultMaterial);
-        
+        createdMaterialNames.Add("Default-Material");
+
         if (materials.Count == 1)
         {
             DebugLogger.LogEggImporter("No textures found, using default material only");
         }
-        
+
         return materials;
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths)
+    {
+        DebugLogger.LogEggImporter($"[MultiTex] Processing {materialNames.Count} material names for multi-texture support");
+
+        foreach (string matName in materialNames)
+        {
+            if (matName.Contains("||"))
+            {
+                // Multi-texture material like "island_wild_palette_3cmla_1||pir_t_are_isl_multi_dirtRock"
+                var texNames = matName.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (texNames.Length >= 2)
+                {
+                    DebugLogger.LogEggImporter($"[MultiTex] Creating multi-texture material: {matName}");
+
+                    // Load textures
+                    Texture2D baseTex = null;
+                    Texture2D overlayTex = null;
+
+                    if (texturePaths.TryGetValue(texNames[0], out string basePath))
+                    {
+                        string baseFileName = Path.GetFileName(basePath);
+                        baseTex = FindTextureInProject(baseFileName);
+                        if (!baseTex) baseTex = LoadTextureByFileName(baseFileName);
+                    }
+
+                    if (texNames.Length > 1 && texturePaths.TryGetValue(texNames[1], out string overlayPath))
+                    {
+                        string overlayFileName = Path.GetFileName(overlayPath);
+                        overlayTex = FindTextureInProject(overlayFileName);
+                        if (!overlayTex) overlayTex = LoadTextureByFileName(overlayFileName);
+                    }
+
+                    // Create material with VertexColorTexture shader
+                    Shader shader = GetCachedVertexColorShader();
+
+                    Material mat = new Material(shader) { name = matName };
+
+                    if (baseTex)
+                    {
+                        mat.SetTexture("_MainTex", baseTex);
+                        DebugLogger.LogEggImporter($"[MultiTex] Set base texture: {baseTex.name}");
+                    }
+
+                    if (overlayTex)
+                    {
+                        mat.SetTexture("_BlendTex", overlayTex);
+                        DebugLogger.LogEggImporter($"[MultiTex] Set blend texture: {overlayTex.name}");
+                    }
+
+                    mat.SetColor("_Color", Color.white);
+                    materials.Add(mat);
+                }
+            }
+        }
     }
 
     // Legacy overload for backward compatibility

@@ -20,6 +20,7 @@ public class EggImporter : ScriptedImporter
     private Vector3[] _masterVertices;
     private Vector3[] _masterNormals;
     private Vector2[] _masterUVs;
+    private Vector2[] _masterUV2s;
     private Color[] _masterColors;
     private Dictionary<string, EggJoint> _joints;
     private EggJoint _rootJoint;
@@ -90,23 +91,12 @@ public class EggImporter : ScriptedImporter
         RecordTiming("File Analysis Complete");
         DebugLogger.LogEggImporter($"Animation-only file: {isAnimationOnly}");
 
-        // Check if this requires multi-texture processing
-        bool requiresMultiTexture = MultiTextureEggImporter.RequiresMultiTextureProcessing(ctx.assetPath);
-        
         if (isAnimationOnly)
         {
             RecordTiming("Processing Start - Animation Only");
             HandleAnimationOnlyFile(lines, rootGO, ctx);
             RecordTiming("Animation Processing Complete");
             // Don't add rootGO for animation-only files since the AnimationClip is the main object
-        }
-        else if (requiresMultiTexture)
-        {
-            RecordTiming("Processing Start - Multi-Texture");
-            HandleMultiTextureFile(lines, rootGO, ctx);
-            RecordTiming("Multi-Texture Processing Complete");
-            ctx.AddObjectToAsset("main", rootGO);
-            ctx.SetMainObject(rootGO);
         }
         else
         {
@@ -403,7 +393,17 @@ public class EggImporter : ScriptedImporter
         // --- Pass 2.5: Consolidate Parent-Child Geometry ---
         ConsolidateParentChildGeometry(hierarchyMap, geometryMap);
         RecordTiming("Consolidate Geometry");
-        
+
+        // --- Pass 2.75: Create multi-texture materials for || separated material names ---
+        var allMaterialNames = new List<string>();
+        foreach (var geo in geometryMap.Values)
+        {
+            allMaterialNames.AddRange(geo.materialNames);
+        }
+        _materialHandler.CreateMultiTextureMaterials(_materials, allMaterialNames, texturePaths);
+        _materialDict = _materialHandler.CreateMaterialDictionary(_materials); // Rebuild dict with new materials
+        RecordTiming("Create Multi-Texture Materials");
+
         // --- Pass 3: Create Meshes from Mapped Geometry ---
         foreach (var kvp in geometryMap)
         {
@@ -421,75 +421,6 @@ public class EggImporter : ScriptedImporter
         RecordTiming("Parse Animations");
     }
     
-    private void HandleMultiTextureFile(string[] lines, GameObject rootGO, AssetImportContext ctx)
-    {
-        DebugLogger.LogEggImporter("🔥 Processing multi-texture EGG file with specialized pipeline");
-        
-        try
-        {
-            // Use the specialized multi-texture importer directly on the rootGO
-            var multiTextureImporter = new MultiTextureEggImporter();
-            
-            // Import using multi-texture pipeline directly into rootGO
-            multiTextureImporter.ImportEggFile(lines, rootGO, ctx);
-            
-            // Store materials reference for context addition
-            _materials = multiTextureImporter.GetMaterials();
-            
-            DebugLogger.LogEggImporter("✅ Multi-texture processing completed successfully");
-        }
-        catch (System.Exception e)
-        {
-            DebugLogger.LogErrorEggImporter($"Multi-texture processing failed: {e.Message}");
-            DebugLogger.LogWarningEggImporter("Falling back to standard geometry processing");
-            HandleGeometryFile(lines, rootGO, ctx);
-        }
-    }
-    
-    private void CopyGameObjectHierarchy(GameObject source, GameObject destination)
-    {
-        // Copy all components from source to destination (except Transform)
-        var components = source.GetComponents<Component>();
-        foreach (var component in components)
-        {
-            if (component is Transform) continue; // Skip transform
-            
-            UnityEditorInternal.ComponentUtility.CopyComponent(component);
-            UnityEditorInternal.ComponentUtility.PasteComponentAsNew(destination);
-        }
-        
-        // Copy all children
-        var childCount = source.transform.childCount;
-        for (int i = 0; i < childCount; i++)
-        {
-            var sourceChild = source.transform.GetChild(i);
-            var destinationChild = new GameObject(sourceChild.name);
-            destinationChild.transform.SetParent(destination.transform, false);
-            
-            // Copy transform data
-            destinationChild.transform.localPosition = sourceChild.localPosition;
-            destinationChild.transform.localRotation = sourceChild.localRotation;
-            destinationChild.transform.localScale = sourceChild.localScale;
-            
-            // Recursively copy hierarchy
-            CopyGameObjectHierarchy(sourceChild.gameObject, destinationChild);
-        }
-        
-        // Update materials reference for the main importer
-        var renderers = destination.GetComponentsInChildren<MeshRenderer>();
-        if (renderers.Length > 0)
-        {
-            var materials = new List<Material>();
-            foreach (var renderer in renderers)
-            {
-                if (renderer.sharedMaterial != null && !materials.Contains(renderer.sharedMaterial))
-                {
-                    materials.Add(renderer.sharedMaterial);
-                }
-            }
-            _materials = materials;
-        }
-    }
 
     private void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths)
     {
@@ -503,7 +434,7 @@ public class EggImporter : ScriptedImporter
 
     private void CreateMasterVertexBuffer(List<EggVertex> vertexPool)
     {
-        _geometryProcessor.CreateMasterVertexBuffer(vertexPool, out _masterVertices, out _masterNormals, out _masterUVs, out _masterColors);
+        _geometryProcessor.CreateMasterVertexBuffer(vertexPool, out _masterVertices, out _masterNormals, out _masterUVs, out _masterUV2s, out _masterColors);
     }
 
     private void CreateBoneHierarchy(Transform parent, EggJoint joint)
@@ -518,8 +449,8 @@ public class EggImporter : ScriptedImporter
 
     private void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx)
     {
-        _geometryProcessor.CreateMeshForGameObject(go, subMeshes, materialNames, ctx, 
-            _masterVertices, _masterNormals, _masterUVs, _masterColors, _materialDict,
+        _geometryProcessor.CreateMeshForGameObject(go, subMeshes, materialNames, ctx,
+            _masterVertices, _masterNormals, _masterUVs, _masterUV2s, _masterColors, _materialDict,
             _hasSkeletalData, _rootJoint, _rootBoneObject, _joints);
     }
 

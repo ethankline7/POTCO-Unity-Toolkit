@@ -26,8 +26,8 @@ public class GeometryProcessor
         _materialHandler = new MaterialHandler();
     }
 
-    public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx, 
-        Vector3[] masterVertices, Vector3[] masterNormals, Vector2[] masterUVs, Color[] masterColors, 
+    public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx,
+        Vector3[] masterVertices, Vector3[] masterNormals, Vector2[] masterUVs, Vector2[] masterUV2s, Color[] masterColors,
         Dictionary<string, Material> materialDict, bool hasSkeletalData, EggJoint rootJoint, GameObject rootBoneObject, Dictionary<string, EggJoint> joints)
     {
         DebugLogger.LogEggImporter($"Creating mesh for GameObject: {go.name}");
@@ -51,6 +51,7 @@ public class GeometryProcessor
         Vector3[] meshVertices;
         Vector3[] meshNormals;
         Vector2[] meshUVs;
+        Vector2[] meshUV2s;
         Color[] meshColors;
         Dictionary<int, int> globalToLocalMap = null;
         int[] sortedIndices = null;
@@ -61,6 +62,7 @@ public class GeometryProcessor
             meshVertices = masterVertices;
             meshNormals = masterNormals;
             meshUVs = masterUVs;
+            meshUV2s = masterUV2s;
             meshColors = masterColors;
         }
         else
@@ -85,6 +87,7 @@ public class GeometryProcessor
             var localVertices = new Vector3[sortedIndices.Length];
             var localNormals = new Vector3[sortedIndices.Length];
             var localUVs = new Vector2[sortedIndices.Length];
+            var localUV2s = new Vector2[sortedIndices.Length];
             var localColors = new Color[sortedIndices.Length];
 
             // Create mapping from global index to local index
@@ -96,12 +99,14 @@ public class GeometryProcessor
                 localVertices[i] = masterVertices[globalIndex];
                 localNormals[i] = masterNormals[globalIndex];
                 localUVs[i] = masterUVs[globalIndex];
+                localUV2s[i] = (masterUV2s != null && globalIndex < masterUV2s.Length) ? masterUV2s[globalIndex] : Vector2.zero;
                 localColors[i] = masterColors[globalIndex];
             }
 
             meshVertices = localVertices;
             meshNormals = localNormals;
             meshUVs = localUVs;
+            meshUV2s = localUV2s;
             meshColors = localColors;
             DebugLogger.LogEggImporter($"Static mesh uses {meshVertices.Length} vertices out of {masterVertices.Length} total vertices");
         }
@@ -158,6 +163,15 @@ public class GeometryProcessor
         mesh.vertices = meshVertices;
         mesh.normals = meshNormals;
         mesh.uv = meshUVs;
+        if (meshUV2s != null && meshUV2s.Length == meshVertices.Length)
+        {
+            int nonZeroCount = meshUV2s.Count(uv => uv != Vector2.zero);
+            if (nonZeroCount > 0)
+            {
+                mesh.uv2 = meshUV2s;
+                DebugLogger.LogEggImporter($"[UV2] Assigned UV2 channel with {nonZeroCount} non-zero coordinates");
+            }
+        }
         mesh.colors = meshColors;
         mesh.subMeshCount = materialNames.Count;
 
@@ -510,7 +524,26 @@ public class GeometryProcessor
                         if (openBrace == -1 || closeBrace == -1) continue;
                         string valuesString = attributeLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
                         var valueParts = valuesString.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries);
-                        if (attributeLine.StartsWith("<UV>") && !attributeLine.Contains("tattoomap")) { vert.uv = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
+
+                        if (attributeLine.StartsWith("<UV>"))
+                        {
+                            // Parse both primary and named UVs
+                            // Primary: <UV> { 0.5 0.5 }
+                            // Named: <UV> multi { 0.5 0.5 }
+                            string uvPrefix = attributeLine.Substring(0, openBrace).Trim();
+                            if (uvPrefix == "<UV>") // Primary UV
+                            {
+                                vert.uv = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture));
+                            }
+                            else
+                            {
+                                // Named UV channel (e.g., "<UV> multi { ... }")
+                                string uvName = uvPrefix.Substring(4).Trim(); // Remove "<UV>" prefix
+                                Vector2 namedUV = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture));
+                                vert.namedUVs[uvName] = namedUV;
+                                DebugLogger.LogEggImporter($"[UV] Parsed named UV channel '{uvName}': {namedUV}");
+                            }
+                        }
                         else if (attributeLine.StartsWith("<Normal>")) { vert.normal = new Vector3(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[2], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
                         else if (attributeLine.StartsWith("<RGBA>")) { vert.color = new Color(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture), float.Parse(valueParts[2], CultureInfo.InvariantCulture), float.Parse(valueParts[3], CultureInfo.InvariantCulture)); }
                     }
@@ -533,7 +566,7 @@ public class GeometryProcessor
     {
         string polygonTextureRef = "Default-Material";
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
-        
+
         // Check for collision tags - skip collision polygons based on settings
         if (EggImporterSettings.Instance.skipCollisions)
         {
@@ -547,12 +580,33 @@ public class GeometryProcessor
                 }
             }
         }
-        
+
+        // Collect ALL texture references for multi-texture support
+        var textureRefs = new List<string>();
         for (int j = i + 1; j < blockEnd; j++)
         {
             string innerLine = lines[j].Trim();
-            if (innerLine.StartsWith("<TRef>")) { polygonTextureRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim(); break; }
+            if (innerLine.StartsWith("<TRef>"))
+            {
+                string texRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
+                textureRefs.Add(texRef);
+            }
         }
+
+        // Create material name from all texture references
+        if (textureRefs.Count > 1)
+        {
+            // Multiple textures - join with || separator for multi-texture material
+            polygonTextureRef = string.Join("||", textureRefs);
+            DebugLogger.LogEggImporter($"[MultiTex] Polygon uses {textureRefs.Count} textures: {polygonTextureRef}");
+        }
+        else if (textureRefs.Count == 1)
+        {
+            // Single texture
+            polygonTextureRef = textureRefs[0];
+        }
+        // else keep "Default-Material"
+
         if (!subMeshes.ContainsKey(polygonTextureRef)) { subMeshes[polygonTextureRef] = new List<int>(); materialNames.Add(polygonTextureRef); }
         for (int j = i + 1; j < blockEnd; j++)
         {
@@ -889,12 +943,12 @@ public class GeometryProcessor
 
 
     public void CreateMasterVertexBuffer(List<EggVertex> vertexPool, out Vector3[] masterVertices,
-        out Vector3[] masterNormals, out Vector2[] masterUVs, out Color[] masterColors)
+        out Vector3[] masterNormals, out Vector2[] masterUVs, out Vector2[] masterUV2s, out Color[] masterColors)
     {
         // Create mapping from vertex pool + local index to global index
         vertexPoolMappings.Clear();
         var verticesByPool = new Dictionary<string, List<EggVertex>>();
-        
+
         // Group vertices by their vertex pool
         foreach (var vertex in vertexPool)
         {
@@ -903,43 +957,59 @@ public class GeometryProcessor
                 verticesByPool[poolName] = new List<EggVertex>();
             verticesByPool[poolName].Add(vertex);
         }
-        
+
         // Create mapping and master arrays
         var masterVerticesList = new List<Vector3>();
         var masterNormalsList = new List<Vector3>();
         var masterUVsList = new List<Vector2>();
+        var masterUV2sList = new List<Vector2>();
         var masterColorsList = new List<Color>();
-        
+
         int globalIndex = 0;
         foreach (var poolKvp in verticesByPool)
         {
             string poolName = poolKvp.Key;
             var poolVertices = poolKvp.Value;
-            
+
             vertexPoolMappings[poolName] = new Dictionary<int, int>();
-            
+
             for (int localIndex = 0; localIndex < poolVertices.Count; localIndex++)
             {
                 var vertex = poolVertices[localIndex];
                 vertexPoolMappings[poolName][localIndex] = globalIndex;
-                
+
                 masterVerticesList.Add(vertex.position);
                 masterNormalsList.Add(vertex.normal);
                 masterUVsList.Add(vertex.uv);
                 masterColorsList.Add(vertex.color);
-                
+
+                // Handle UV2 - use first named UV if available
+                Vector2 uv2 = Vector2.zero;
+                if (vertex.namedUVs.Count > 0)
+                {
+                    // Use the first named UV (typically "multi", "overlay", etc.)
+                    uv2 = vertex.namedUVs.First().Value;
+                }
+                masterUV2sList.Add(uv2);
+
                 globalIndex++;
             }
-            
+
             DebugLogger.LogEggImporter($"[VertexPool] Mapped {poolVertices.Count} vertices from pool '{poolName}' to global indices {globalIndex - poolVertices.Count}-{globalIndex - 1}");
         }
-        
+
         masterVertices = masterVerticesList.ToArray();
         masterNormals = masterNormalsList.ToArray();
         masterUVs = masterUVsList.ToArray();
+        masterUV2s = masterUV2sList.ToArray();
         masterColors = masterColorsList.ToArray();
-        
+
+        int uv2Count = masterUV2s.Count(uv => uv != Vector2.zero);
         DebugLogger.LogEggImporter($"[VertexPool] Created master vertex buffer with {masterVertices.Length} total vertices from {verticesByPool.Count} vertex pools");
+        if (uv2Count > 0)
+        {
+            DebugLogger.LogEggImporter($"[UV2] Found {uv2Count} vertices with secondary UV coordinates");
+        }
     }
 
     private bool WillContainGeometry(string[] lines, int transformStart, Dictionary<string, Transform> hierarchyMap, string currentPath)

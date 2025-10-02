@@ -3,6 +3,7 @@ Shader "EggImporter/VertexColorTexture"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
+        _BlendTex ("Blend Texture (optional)", 2D) = "white" {}
         _AlphaTex ("Alpha Mask (optional)", 2D) = "white" {}
         _Color ("Color", Color) = (1,1,1,1)
         _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.1
@@ -18,12 +19,14 @@ Shader "EggImporter/VertexColorTexture"
         #include "UnityCG.cginc"
 
         sampler2D _MainTex;
+        sampler2D _BlendTex;
         sampler2D _AlphaTex;
         fixed4 _Color;
 
         struct Input
         {
             float2 uv_MainTex;
+            float2 uv2_BlendTex;
             fixed4 color : COLOR;
         };
 
@@ -31,6 +34,7 @@ Shader "EggImporter/VertexColorTexture"
         {
             UNITY_INITIALIZE_OUTPUT(Input, o);
             o.uv_MainTex = v.texcoord.xy;
+            o.uv2_BlendTex = v.texcoord1.xy;
             o.color = v.color;
         }
 
@@ -52,10 +56,19 @@ Shader "EggImporter/VertexColorTexture"
         {
             // Sample main texture
             fixed4 texColor = tex2D(_MainTex, IN.uv_MainTex);
-            
+
+            // Sample blend texture with UV2
+            fixed4 blendColor = tex2D(_BlendTex, IN.uv2_BlendTex);
+
+            // If blend texture is assigned (not white), multiply it with base texture
+            if (blendColor.r < 0.99 || blendColor.g < 0.99 || blendColor.b < 0.99)
+            {
+                texColor *= blendColor;
+            }
+
             // Apply vertex colors and material color
             fixed4 finalColor = texColor * IN.color * _Color;
-            
+
             o.Albedo = finalColor.rgb;
             
             // Check if alpha texture is assigned (not white)
