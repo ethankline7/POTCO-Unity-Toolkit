@@ -608,15 +608,18 @@ public class EggImporter : ScriptedImporter
         // If set to highest only, apply LOD filtering
         if (settings.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly)
         {
-            return ShouldImportHighestLODOnly(fileName);
+            // Check if file has skeletal data for numeric LOD filtering
+            var lines = File.ReadAllLines(assetPath);
+            bool hasSkeletalData = HasSkeletalData(lines);
+            return ShouldImportHighestLODOnly(fileName, hasSkeletalData);
         }
-        
+
         return true; // Default: import everything
     }
-    
-    private bool ShouldImportHighestLODOnly(string fileName)
+
+    private bool ShouldImportHighestLODOnly(string fileName, bool hasSkeletalData)
     {
-        return LODFilteringUtility.ShouldImportHighestLODOnly(fileName);
+        return LODFilteringUtility.ShouldImportHighestLODOnly(fileName, hasSkeletalData);
     }
     
     private bool HasSkeletalData(string[] lines)
