@@ -159,9 +159,15 @@ public class ProceduralCaveGenerator : EditorWindow
     void OnValidate()
     {
         // Reload when switching between egg and prefab mode
+        // Defer to avoid "SendMessage cannot be called during OnValidate" error
         if (allFoundPrefabs != null)
         {
-            LoadAllPrefabs();
+            EditorApplication.delayCall += () => {
+                if (this != null)
+                {
+                    LoadAllPrefabs();
+                }
+            };
         }
     }
     

@@ -14,6 +14,11 @@ namespace POTCO.ShipBuilder
         public bool generateCollisions = true;
         public bool addShipController = false;
 
+        // NEW: Ship preset system
+        public int selectedPresetID = -1; // -1 = custom ship, else POTCO ship ID
+        public int styleID = 0; // ShipGlobals.Styles enum value
+        public int logoID = 0; // ShipGlobals.Logos enum value
+
         // Component mappings: locator name -> component name
         public Dictionary<string, string> masts = new Dictionary<string, string>();
         public Dictionary<string, string> cannonsBroadsideLeft = new Dictionary<string, string>();

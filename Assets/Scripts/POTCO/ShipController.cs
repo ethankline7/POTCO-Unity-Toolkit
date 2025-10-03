@@ -22,7 +22,7 @@ namespace POTCO
         public Transform thirdPersonCameraPoint;
         public Vector3 cameraOffset = new Vector3(0, 5, -10);
         public float orbitSpeed = 300f;
-        public float orbitDistance = 350f;
+        public float orbitDistance = 400f;
         public float orbitHeight = 100f;
 
         [Header("Control Settings")]

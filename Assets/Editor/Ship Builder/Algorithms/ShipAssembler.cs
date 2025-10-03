@@ -114,6 +114,24 @@ namespace POTCO.ShipBuilder
             // Clean up logic object (we only needed it for the transforms)
             Object.DestroyImmediate(logicObject);
 
+            // Apply style textures if a preset was selected
+            if (config.styleID > 0)
+            {
+                ApplyHullTexture(shipRoot, config.styleID);
+                ApplyStyleTextures(shipRoot, config.styleID);
+            }
+
+            // Apply logo overlay if specified
+            Debug.Log($"Logo ID from config: {config.logoID}");
+            if (config.logoID > 0)
+            {
+                ApplySailLogo(shipRoot, config.logoID);
+            }
+            else
+            {
+                Debug.LogWarning("No logo selected (logoID <= 0), skipping logo application");
+            }
+
             // Add ship controller if requested
             if (config.addShipController)
             {
@@ -122,6 +140,10 @@ namespace POTCO.ShipBuilder
             }
 
             Debug.Log($"Ship assembled successfully: {shipName}");
+
+            // Register this ship for automatic scene editing
+            SceneEditing.ShipComponentVisualizer.RegisterBuiltShip(shipRoot);
+
             return shipRoot;
         }
 
@@ -348,6 +370,371 @@ namespace POTCO.ShipBuilder
             }
 
             Debug.Log($"Set all materials to double-sided for {obj.name}");
+        }
+
+        private void ApplyStyleTextures(GameObject ship, int styleID)
+        {
+            string textureName = database.GetSailTexture(styleID);
+            if (string.IsNullOrEmpty(textureName))
+            {
+                Debug.LogWarning($"No sail texture found for style ID {styleID}");
+                return;
+            }
+
+            // Try loading from multiple phase folders
+            Texture2D texture = null;
+            string[] searchPaths = new string[]
+            {
+                $"phase_2/maps/{textureName}",
+                $"phase_3/maps/{textureName}",
+                $"phase_4/maps/{textureName}",
+                $"phase_5/maps/{textureName}",
+                $"phase_6/maps/{textureName}",
+                $"phase_3/models/shipparts/{textureName}",
+                $"phase_4/models/shipparts/{textureName}",
+                $"phase_3/models/textureCards/{textureName}",
+                $"phase_4/models/textureCards/{textureName}"
+            };
+
+            foreach (string path in searchPaths)
+            {
+                texture = Resources.Load<Texture2D>(path);
+                if (texture != null)
+                {
+                    Debug.Log($"Loaded style texture from: {path}");
+                    break;
+                }
+            }
+
+            if (texture == null)
+            {
+                Debug.LogWarning($"Could not find texture: {textureName} in Resources folders");
+                return;
+            }
+
+            // Find all renderers in the ship
+            var allRenderers = ship.GetComponentsInChildren<Renderer>(true);
+            int texturesApplied = 0;
+
+            foreach (var renderer in allRenderers)
+            {
+                // Check if this renderer is under a "sails" group (lowercase)
+                Transform current = renderer.transform;
+                bool isUnderSails = false;
+                while (current != null)
+                {
+                    if (current.name == "sails")
+                    {
+                        isUnderSails = true;
+                        break;
+                    }
+                    current = current.parent;
+                }
+
+                if (!isUnderSails) continue; // Only apply to objects under "sails" group
+
+                Debug.Log($"⛵ Found sail object: {renderer.gameObject.name}");
+
+                Material[] sharedMats = renderer.sharedMaterials;
+                Material[] newMats = new Material[sharedMats.Length];
+                bool anyChanged = false;
+
+                for (int i = 0; i < sharedMats.Length; i++)
+                {
+                    if (sharedMats[i] == null)
+                    {
+                        newMats[i] = null;
+                        continue;
+                    }
+
+                    Debug.Log($"  Old material: {sharedMats[i].name}, texture: {(sharedMats[i].mainTexture != null ? sharedMats[i].mainTexture.name : "null")}");
+
+                    // Copy the existing material (preserves shader, UVs, and all settings)
+                    Material newMat = new Material(sharedMats[i]);
+                    newMat.name = sharedMats[i].name + "_styled";
+
+                    // Overlay the style texture using blend texture
+                    if (newMat.HasProperty("_BlendTex"))
+                    {
+                        newMat.SetTexture("_BlendTex", texture);
+                    }
+
+                    Debug.Log($"  New material: {newMat.name}, base texture: {(newMat.mainTexture != null ? newMat.mainTexture.name : "null")}, blend texture: {texture.name}");
+
+                    newMats[i] = newMat;
+                    texturesApplied++;
+                    anyChanged = true;
+                }
+
+                // Update renderer materials if we modified any
+                if (anyChanged)
+                {
+                    renderer.sharedMaterials = newMats;
+                    Debug.Log($"  ✅ Updated renderer materials");
+                }
+            }
+
+            Debug.Log($"Applied style texture '{textureName}' to {texturesApplied} sail materials (Style ID: {styleID})");
+        }
+
+        private void ApplyHullTexture(GameObject ship, int styleID)
+        {
+            string textureName = database.GetStyleTexture(styleID);
+            if (string.IsNullOrEmpty(textureName))
+            {
+                Debug.LogWarning($"No hull texture found for style ID {styleID}");
+                return;
+            }
+
+            // Try loading from multiple phase folders
+            Texture2D texture = null;
+            string[] searchPaths = new string[]
+            {
+                $"phase_2/maps/{textureName}",
+                $"phase_3/maps/{textureName}",
+                $"phase_4/maps/{textureName}",
+                $"phase_5/maps/{textureName}",
+                $"phase_6/maps/{textureName}",
+                $"phase_3/models/shipparts/{textureName}",
+                $"phase_4/models/shipparts/{textureName}",
+                $"phase_3/models/textureCards/{textureName}",
+                $"phase_4/models/textureCards/{textureName}"
+            };
+
+            foreach (string path in searchPaths)
+            {
+                texture = Resources.Load<Texture2D>(path);
+                if (texture != null)
+                {
+                    Debug.Log($"Loaded hull texture from: {path}");
+                    break;
+                }
+            }
+
+            if (texture == null)
+            {
+                Debug.LogWarning($"Could not find hull texture: {textureName} in Resources folders");
+                return;
+            }
+
+            // Find Hull object
+            Transform hullTransform = ship.transform.Find("Hull");
+            if (hullTransform == null)
+            {
+                Debug.LogWarning("Hull object not found in ship");
+                return;
+            }
+
+            // Apply to all renderers in Hull (excluding sails)
+            var allRenderers = hullTransform.GetComponentsInChildren<Renderer>(true);
+            int texturesApplied = 0;
+
+            foreach (var renderer in allRenderers)
+            {
+                // Skip if this renderer is under a "sails" or "transparent" group
+                Transform current = renderer.transform;
+                bool isUnderSails = false;
+                bool isUnderTransparent = false;
+                while (current != null && current != hullTransform)
+                {
+                    if (current.name == "sails")
+                    {
+                        isUnderSails = true;
+                        break;
+                    }
+                    if (current.name == "transparent")
+                    {
+                        isUnderTransparent = true;
+                        break;
+                    }
+                    current = current.parent;
+                }
+
+                if (isUnderSails || isUnderTransparent) continue; // Skip sail objects and transparent objects
+
+                Material[] sharedMats = renderer.sharedMaterials;
+                Material[] newMats = new Material[sharedMats.Length];
+                bool anyChanged = false;
+
+                for (int i = 0; i < sharedMats.Length; i++)
+                {
+                    if (sharedMats[i] == null)
+                    {
+                        newMats[i] = null;
+                        continue;
+                    }
+
+                    // Copy the existing material
+                    Material newMat = new Material(sharedMats[i]);
+                    newMat.name = sharedMats[i].name + "_hull_styled";
+                    newMat.mainTexture = texture;
+
+                    newMats[i] = newMat;
+                    texturesApplied++;
+                    anyChanged = true;
+                }
+
+                if (anyChanged)
+                {
+                    renderer.sharedMaterials = newMats;
+                }
+            }
+
+            Debug.Log($"Applied hull texture '{textureName}' to {texturesApplied} hull materials (Style ID: {styleID})");
+        }
+
+        private void ApplySailLogo(GameObject ship, int logoID)
+        {
+            string logoTextureName = database.GetLogoTexture(logoID);
+            if (string.IsNullOrEmpty(logoTextureName))
+            {
+                Debug.LogWarning($"No logo texture found for logo ID {logoID}");
+                return;
+            }
+
+            // Try loading from multiple phase folders
+            Texture2D logoTexture = null;
+            string[] searchPaths = new string[]
+            {
+                $"phase_2/maps/{logoTextureName}",
+                $"phase_3/maps/{logoTextureName}",
+                $"phase_4/maps/{logoTextureName}",
+                $"phase_5/maps/{logoTextureName}",
+                $"phase_6/maps/{logoTextureName}",
+                $"phase_3/models/shipparts/{logoTextureName}",
+                $"phase_4/models/shipparts/{logoTextureName}",
+                $"phase_3/models/textureCards/{logoTextureName}",
+                $"phase_4/models/textureCards/{logoTextureName}"
+            };
+
+            foreach (string path in searchPaths)
+            {
+                logoTexture = Resources.Load<Texture2D>(path);
+                if (logoTexture != null)
+                {
+                    Debug.Log($"Loaded logo texture from: {path}");
+                    break;
+                }
+            }
+
+            if (logoTexture == null)
+            {
+                Debug.LogWarning($"Could not find logo texture: {logoTextureName} in Resources folders");
+                return;
+            }
+
+            // Find all renderers in the ship
+            var allRenderers = ship.GetComponentsInChildren<Renderer>(true);
+            int logosApplied = 0;
+
+            foreach (var renderer in allRenderers)
+            {
+                // Check if this renderer is under a "sails" group (lowercase)
+                Transform current = renderer.transform;
+                bool isUnderSails = false;
+                string mastType = null;
+
+                while (current != null)
+                {
+                    if (current.name == "sails")
+                    {
+                        isUnderSails = true;
+                        // Get mast type from parent hierarchy (e.g., "main_tri", "main_square", "fore_multi")
+                        if (current.parent != null && current.parent.parent != null)
+                        {
+                            mastType = current.parent.parent.name;
+                        }
+                        break;
+                    }
+                    current = current.parent;
+                }
+
+                if (!isUnderSails) continue; // Only apply to objects under "sails" group
+
+                // Determine which sail index should get the logo based on mast type
+                int targetSailIndex = 0; // Default to sail_0
+                if (mastType != null && mastType.Contains("fore_multi"))
+                {
+                    targetSailIndex = 1; // fore_multi uses sail_1
+                }
+
+                // Check if this is the correct sail for logo application
+                string sailName = renderer.gameObject.name;
+                if (!sailName.StartsWith("sail_"))
+                {
+                    continue; // Skip non-sail objects
+                }
+
+                // Extract sail index from name (e.g., "sail_0" -> 0)
+                string sailIndexStr = sailName.Replace("sail_", "");
+                if (!int.TryParse(sailIndexStr, out int sailIndex))
+                {
+                    continue;
+                }
+
+                // Only apply logo to the target sail
+                if (sailIndex != targetSailIndex)
+                {
+                    continue;
+                }
+
+                Debug.Log($"🏴 Applying logo to {sailName} under {mastType}");
+
+                Material[] sharedMats = renderer.sharedMaterials;
+                Material[] newMats = new Material[sharedMats.Length];
+                bool anyChanged = false;
+
+                for (int i = 0; i < sharedMats.Length; i++)
+                {
+                    if (sharedMats[i] == null)
+                    {
+                        newMats[i] = null;
+                        continue;
+                    }
+
+                    // Copy the existing material (should already have style texture from ApplyStyleTextures)
+                    Material mat = new Material(sharedMats[i]);
+                    if (!mat.name.Contains("_styled"))
+                    {
+                        mat.name = sharedMats[i].name + "_styled";
+                    }
+
+                    // Debug: Log all available texture properties
+                    Shader shader = mat.shader;
+                    Debug.Log($"  Material shader: {shader.name}");
+                    for (int propIdx = 0; propIdx < shader.GetPropertyCount(); propIdx++)
+                    {
+                        if (shader.GetPropertyType(propIdx) == UnityEngine.Rendering.ShaderPropertyType.Texture)
+                        {
+                            string propName = shader.GetPropertyName(propIdx);
+                            Debug.Log($"    Texture property: {propName}");
+                        }
+                    }
+
+                    // Apply logo as second blend texture
+                    if (mat.HasProperty("_BlendTex2"))
+                    {
+                        mat.SetTexture("_BlendTex2", logoTexture);
+                        logosApplied++;
+                        anyChanged = true;
+                        newMats[i] = mat;
+                        Debug.Log($"    ✅ Applied logo overlay to: {renderer.gameObject.name}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"    Material does not have _BlendTex2 property");
+                        newMats[i] = mat;
+                    }
+                }
+
+                // Update renderer materials if we modified any
+                if (anyChanged)
+                {
+                    renderer.sharedMaterials = newMats;
+                }
+            }
+
+            Debug.Log($"Applied logo overlay '{logoTextureName}' to {logosApplied} sail materials (Logo ID: {logoID})");
         }
     }
 }

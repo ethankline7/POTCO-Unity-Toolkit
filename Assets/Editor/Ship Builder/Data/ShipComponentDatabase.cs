@@ -10,6 +10,10 @@ namespace POTCO.ShipBuilder
         private Dictionary<string, string> shipHulls = new Dictionary<string, string>(); // name -> path
         private Dictionary<string, string> shipComponents = new Dictionary<string, string>(); // name -> path
 
+        // NEW: POTCO ship data parser
+        private POTCOShipDataParser potcoParser;
+        private bool potcoDataLoaded = false;
+
         public void Initialize()
         {
             shipHulls.Clear();
@@ -103,6 +107,189 @@ namespace POTCO.ShipBuilder
             }
 
             Debug.Log($"Ship Builder Database initialized: {shipHulls.Count} hulls, {shipComponents.Count} components");
+
+            // NEW: Initialize POTCO data
+            InitializePOTCOData();
+        }
+
+        // NEW: Initialize POTCO ship data from Python files
+        public void InitializePOTCOData()
+        {
+            if (potcoDataLoaded) return;
+
+            string potcoSourcePath = "Assets/Editor/POTCO_Source";
+            if (!System.IO.Directory.Exists(potcoSourcePath))
+            {
+                Debug.LogWarning($"POTCO_Source folder not found at {potcoSourcePath}");
+                return;
+            }
+
+            potcoParser = new POTCOShipDataParser();
+            potcoParser.ParseAllPOTCOData(potcoSourcePath);
+            potcoDataLoaded = true;
+        }
+
+        // NEW: Get list of available ship presets for dropdown
+        public string[] GetAvailableShipPresets()
+        {
+            if (!potcoDataLoaded || potcoParser == null)
+            {
+                return new string[] { "Custom Ship (No Preset)" };
+            }
+
+            List<string> presets = new List<string>();
+            presets.Add("Custom Ship (No Preset)"); // Index 0 = custom
+
+            // Get all ship configs sorted by name
+            var sortedShips = potcoParser.ShipConfigs
+                .OrderBy(kvp => potcoParser.ShipDisplayNames.ContainsKey(kvp.Key) ? potcoParser.ShipDisplayNames[kvp.Key] : kvp.Key.ToString())
+                .ToList();
+
+            foreach (var kvp in sortedShips)
+            {
+                int shipID = kvp.Key;
+                string displayName = potcoParser.ShipDisplayNames.ContainsKey(shipID)
+                    ? potcoParser.ShipDisplayNames[shipID]
+                    : $"Ship #{shipID}";
+
+                presets.Add($"{displayName} (ID: {shipID})");
+            }
+
+            return presets.ToArray();
+        }
+
+        // NEW: Get ship IDs in same order as GetAvailableShipPresets()
+        public int[] GetShipPresetIDs()
+        {
+            if (!potcoDataLoaded || potcoParser == null)
+            {
+                return new int[] { -1 };
+            }
+
+            List<int> ids = new List<int>();
+            ids.Add(-1); // Index 0 = custom ship
+
+            var sortedShips = potcoParser.ShipConfigs
+                .OrderBy(kvp => potcoParser.ShipDisplayNames.ContainsKey(kvp.Key) ? potcoParser.ShipDisplayNames[kvp.Key] : kvp.Key.ToString())
+                .ToList();
+
+            foreach (var kvp in sortedShips)
+            {
+                ids.Add(kvp.Key);
+            }
+
+            return ids.ToArray();
+        }
+
+        // NEW: Get ship configuration data by ID
+        public ShipConfigData GetShipConfig(int shipID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+
+            if (potcoParser.ShipConfigs.TryGetValue(shipID, out ShipConfigData config))
+            {
+                // Fill in display name if available
+                if (potcoParser.ShipDisplayNames.TryGetValue(shipID, out string displayName))
+                {
+                    config.displayName = displayName;
+                }
+                return config;
+            }
+
+            return null;
+        }
+
+        // NEW: Get hull model name for a ship ID
+        public string GetHullModelName(int shipID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+
+            if (potcoParser.HullModelNames.TryGetValue(shipID, out string modelName))
+            {
+                // Return full model name with prefix
+                return $"pir_m_shp_{modelName}";
+            }
+
+            return null;
+        }
+
+        // NEW: Get style texture name (hull textures)
+        public string GetStyleTexture(int styleID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+
+            if (potcoParser.StyleTextures.TryGetValue(styleID, out string textureName))
+            {
+                return textureName;
+            }
+
+            return null;
+        }
+
+        // NEW: Get sail texture name (sail textures)
+        public string GetSailTexture(int styleID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+
+            if (potcoParser.SailTextures.TryGetValue(styleID, out string textureName))
+            {
+                return textureName;
+            }
+
+            return null;
+        }
+
+        // NEW: Get logo texture name
+        public string GetLogoTexture(int logoID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+
+            if (potcoParser.LogoTextures.TryGetValue(logoID, out string textureName))
+            {
+                return textureName;
+            }
+
+            return null;
+        }
+
+        // NEW: Get mast type prefix and max height
+        public MastTypeData GetMastTypeData(int mastID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+
+            if (potcoParser.MastTypes.TryGetValue(mastID, out MastTypeData mastData))
+            {
+                return mastData;
+            }
+
+            return null;
+        }
+
+        // NEW: Get mast model name from mast config
+        public string GetMastModelName(MastConfig config)
+        {
+            if (!config.IsValid()) return null;
+
+            MastTypeData mastData = GetMastTypeData(config.mastType);
+            if (mastData == null) return null;
+
+            // Build mast name: pir_r_shp_mst_ + prefix + _ + height
+            return $"pir_r_shp_mst_{mastData.prefix}_{config.height}";
+        }
+
+        // NEW: Get prow/bowsprit model name from ID
+        public string GetProwModelName(int prowID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+            if (prowID == 0) return null;
+
+            // Prow models follow pattern in BowSpritDict
+            // For now, return common prow patterns
+            // TODO: Parse BowSpritDict from ShipBlueprints.py if needed
+            if (prowID == 1) return "prow_skeleton_zero"; // Skeleton
+            if (prowID == 2) return "prow_female_zero";  // Lady
+
+            return null;
         }
 
         public string[] GetAvailableHulls()
@@ -117,9 +304,15 @@ namespace POTCO.ShipBuilder
             // Add "None" option
             components.Add("<None>");
 
-            // Filter components by prefix or exact match
+            // Filter components by prefix or exact match, excluding collision objects
             foreach (string componentName in shipComponents.Keys.OrderBy(x => x))
             {
+                // Exclude collision objects
+                if (componentName.Contains("_collision") || componentName.EndsWith("_collisions"))
+                {
+                    continue;
+                }
+
                 if (componentName.StartsWith(prefix) || componentName.Contains(prefix))
                 {
                     components.Add(componentName);
@@ -197,6 +390,26 @@ namespace POTCO.ShipBuilder
 
             Debug.LogError($"Failed to load component: {componentName} from {shipComponents[componentName]}");
             return null;
+        }
+
+        public GameObject GetComponentPrefab(string componentName)
+        {
+            if (componentName == "<None>" || string.IsNullOrEmpty(componentName))
+                return null;
+
+            if (!shipComponents.ContainsKey(componentName))
+            {
+                Debug.LogWarning($"Component prefab not found: {componentName}");
+                return null;
+            }
+
+            GameObject prefab = Resources.Load<GameObject>(shipComponents[componentName]);
+            if (prefab == null)
+            {
+                Debug.LogError($"Failed to load component prefab: {componentName} from {shipComponents[componentName]}");
+            }
+
+            return prefab;
         }
 
         private string GetResourcePath(string fullPath)
