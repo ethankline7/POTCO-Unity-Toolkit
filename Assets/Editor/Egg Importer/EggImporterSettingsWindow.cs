@@ -149,8 +149,8 @@ public class EggImporterSettingsWindow : EditorWindow
         
         GUILayout.Label("🥚 EGG Importer Manager", headerStyle);
         GUILayout.Space(5);
-        
-        bool autoImportEnabled = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
+
+        bool autoImportEnabled = EggImporterSettings.Instance.autoImportEnabled;
         string statusText = autoImportEnabled ? "✅ Auto-Import: ENABLED" : "⚠️ Auto-Import: DISABLED";
         var statusStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel);
         statusStyle.normal.textColor = autoImportEnabled ? Color.green : Color.yellow;
@@ -183,11 +183,13 @@ public class EggImporterSettingsWindow : EditorWindow
         GUILayout.Label("🔄 Auto-Import Control", EditorStyles.boldLabel);
         GUILayout.Space(5);
         
-        bool autoImportEnabled = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
+        var settings = EggImporterSettings.Instance;
+        bool autoImportEnabled = settings.autoImportEnabled;
         bool newAutoImportEnabled = EditorGUILayout.Toggle("Enable Auto-Import", autoImportEnabled);
         if (newAutoImportEnabled != autoImportEnabled)
         {
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", newAutoImportEnabled);
+            settings.autoImportEnabled = newAutoImportEnabled;
+            EditorUtility.SetDirty(settings);
         }
         
         if (autoImportEnabled)
@@ -465,13 +467,14 @@ public class EggImporterSettingsWindow : EditorWindow
     
     private void DrawManualImportTab()
     {
-        bool autoImportEnabled = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        
+        var settings = EggImporterSettings.Instance;
+        bool autoImportEnabled = settings.autoImportEnabled;
+
         // Status Section
         EditorGUILayout.BeginVertical(sectionStyle);
         GUILayout.Label("📋 Import Status", EditorStyles.boldLabel);
         GUILayout.Space(5);
-        
+
         if (autoImportEnabled)
         {
             EditorGUILayout.HelpBox("✅ Auto-import is currently ENABLED. EGG files should import automatically.", MessageType.Info);
@@ -481,23 +484,25 @@ public class EggImporterSettingsWindow : EditorWindow
             EditorGUILayout.HelpBox("⚠️ Auto-import is DISABLED. Use the manual import buttons below to process EGG files.", MessageType.Warning);
         }
         EditorGUILayout.EndVertical();
-        
+
         // Quick Actions
         EditorGUILayout.BeginVertical(sectionStyle);
         GUILayout.Label("⚡ Quick Actions", EditorStyles.boldLabel);
         GUILayout.Space(10);
-        
+
         if (GUILayout.Button("🔄 Enable Auto-Import", buttonStyle))
         {
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", true);
+            settings.autoImportEnabled = true;
+            EditorUtility.SetDirty(settings);
             DebugLogger.LogEggImporter("Auto-import enabled via EGG Importer Manager.");
         }
-        
+
         GUILayout.Space(5);
-        
+
         if (GUILayout.Button("⏸️ Disable Auto-Import", buttonStyle))
         {
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", false);
+            settings.autoImportEnabled = false;
+            EditorUtility.SetDirty(settings);
             DebugLogger.LogEggImporter("Auto-import disabled via EGG Importer Manager.");
         }
         EditorGUILayout.EndVertical();
@@ -984,7 +989,7 @@ public class EggImporterSettingsWindow : EditorWindow
         
         EditorGUILayout.LabelField("EGG Importer Version:", "2.0");
         EditorGUILayout.LabelField("Unity Version:", Application.unityVersion);
-        EditorGUILayout.LabelField("Auto-Import Status:", EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false) ? "Enabled" : "Disabled");
+        EditorGUILayout.LabelField("Auto-Import Status:", EggImporterSettings.Instance.autoImportEnabled ? "Enabled" : "Disabled");
         EditorGUILayout.EndVertical();
         
         // LOD Information
@@ -1029,7 +1034,7 @@ public class EggImporterSettingsWindow : EditorWindow
                 settings.lodImportMode = EggImporterSettings.LODImportMode.HighestOnly;
                 settings.skipCollisions = true;
                 settings.enableDebugLogging = true;
-                EditorPrefs.SetBool("EggImporter_AutoImportEnabled", false);
+                settings.autoImportEnabled = false;
                 EditorPrefs.SetBool("EggImporter_SkipStartupPrompt", false); // Enable startup prompt by default
                 EditorUtility.SetDirty(settings);
                 DebugLogger.LogEggImporter("All EGG importer settings reset to defaults.");
@@ -1149,11 +1154,13 @@ public class EggImporterSettingsWindow : EditorWindow
     private void ForceImportEggFile(string assetPath)
     {
         DebugLogger.LogEggImporter($"Force importing: {assetPath}");
-        
+
         // Temporarily enable auto-import for this specific import
-        bool originalSetting = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        EditorPrefs.SetBool("EggImporter_AutoImportEnabled", true);
-        
+        var settings = EggImporterSettings.Instance;
+        bool originalSetting = settings.autoImportEnabled;
+        settings.autoImportEnabled = true;
+        EditorUtility.SetDirty(settings);
+
         try
         {
             // Force reimport the asset
@@ -1162,7 +1169,8 @@ public class EggImporterSettingsWindow : EditorWindow
         finally
         {
             // Restore original setting
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", originalSetting);
+            settings.autoImportEnabled = originalSetting;
+            EditorUtility.SetDirty(settings);
         }
     }
 }

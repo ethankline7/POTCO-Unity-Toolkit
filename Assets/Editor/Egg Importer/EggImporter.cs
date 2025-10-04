@@ -582,9 +582,8 @@ public class EggImporter : ScriptedImporter
     
     private bool ShouldAutoImport()
     {
-        // Check for EditorPrefs setting to disable auto-import
-        bool autoImportEnabled = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        return autoImportEnabled;
+        // Check settings to see if auto-import is enabled
+        return EggImporterSettings.Instance.autoImportEnabled;
     }
     
     private bool ShouldImportBasedOnLOD(string assetPath)

@@ -23,7 +23,7 @@ public class EggImportStartupPrompt
         hasPrompted = true;
         
         // Check if auto-import is already enabled
-        bool autoImportEnabled = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
+        bool autoImportEnabled = EggImporterSettings.Instance.autoImportEnabled;
         if (autoImportEnabled) return; // Skip prompt if auto-import is enabled
         
         // Check if user has chosen to skip this prompt
@@ -51,33 +51,35 @@ public class EggImportStartupPrompt
         int importedCount = 0;
         
         // Temporarily enable auto-import for this batch operation
-        bool originalSetting = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        EditorPrefs.SetBool("EggImporter_AutoImportEnabled", true);
-        
+        var settings = EggImporterSettings.Instance;
+        bool originalSetting = settings.autoImportEnabled;
+        settings.autoImportEnabled = true;
+        EditorUtility.SetDirty(settings);
+
         try
         {
             foreach (string fullPath in eggFiles)
             {
                 string relativePath = "Assets" + fullPath.Substring(Application.dataPath.Length);
                 relativePath = relativePath.Replace('\\', '/');
-                
+
                 // Show progress
                 string fileName = Path.GetFileName(relativePath);
                 bool cancelled = EditorUtility.DisplayCancelableProgressBar(
-                    "Importing EGG Files", 
-                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})", 
+                    "Importing EGG Files",
+                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})",
                     (float)importedCount / totalFiles);
-                
+
                 if (cancelled)
                 {
                     DebugLogger.LogEggImporter($"EGG import cancelled by user after {importedCount} files.");
                     break;
                 }
-                
+
                 // Force import the asset
                 AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
                 importedCount++;
-                
+
                 // Small delay to prevent Unity from freezing
                 if (importedCount % 5 == 0)
                 {
@@ -88,7 +90,8 @@ public class EggImportStartupPrompt
         finally
         {
             // Restore original auto-import setting
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", originalSetting);
+            settings.autoImportEnabled = originalSetting;
+            EditorUtility.SetDirty(settings);
             EditorUtility.ClearProgressBar();
         }
         
@@ -208,31 +211,34 @@ public class EggImportStartupPrompt
         int totalFiles = files.Length;
         
         // Temporarily enable auto-import
-        bool originalSetting = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        EditorPrefs.SetBool("EggImporter_AutoImportEnabled", true);
-        
+        var settings = EggImporterSettings.Instance;
+        bool originalSetting = settings.autoImportEnabled;
+        settings.autoImportEnabled = true;
+        EditorUtility.SetDirty(settings);
+
         try
         {
             foreach (string relativePath in files)
             {
                 string fileName = Path.GetFileName(relativePath);
                 bool cancelled = EditorUtility.DisplayCancelableProgressBar(
-                    "Importing Filtered EGG Files", 
-                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})", 
+                    "Importing Filtered EGG Files",
+                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})",
                     (float)importedCount / totalFiles);
-                
+
                 if (cancelled) break;
-                
+
                 AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
                 importedCount++;
-                
+
                 if (importedCount % 5 == 0)
                     System.Threading.Thread.Sleep(100);
             }
         }
         finally
         {
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", originalSetting);
+            settings.autoImportEnabled = originalSetting;
+            EditorUtility.SetDirty(settings);
             EditorUtility.ClearProgressBar();
         }
         
