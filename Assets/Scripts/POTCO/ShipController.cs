@@ -24,6 +24,9 @@ namespace POTCO
         public float orbitSpeed = 300f;
         public float orbitDistance = 400f;
         public float orbitHeight = 100f;
+        public float zoomSpeed = 100f;
+        public float minZoomDistance = 50f;
+        public float maxZoomDistance = 1000f;
 
         [Header("Control Settings")]
         public float interactionDistance = 10f;
@@ -662,6 +665,14 @@ namespace POTCO
 
         private void HandleCameraOrbit()
         {
+            // Handle zoom with mouse scroll wheel
+            float scrollInput = Input.GetAxis("Mouse ScrollWheel");
+            if (scrollInput != 0f)
+            {
+                orbitDistance -= scrollInput * zoomSpeed;
+                orbitDistance = Mathf.Clamp(orbitDistance, minZoomDistance, maxZoomDistance);
+            }
+
             // Allow orbiting with right mouse button
             if (Input.GetMouseButton(1))
             {

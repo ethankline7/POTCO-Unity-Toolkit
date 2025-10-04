@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace POTCO.ShipBuilder
 {
@@ -192,10 +193,11 @@ namespace POTCO.ShipBuilder
                 }
 
                 // If this is a mast, add MastTypeInfo component and set double-sided materials
-                if (categoryName == "Masts" && componentName.Contains("pir_r_shp_mst_") && !componentName.EndsWith("_skeleton"))
+                if (categoryName == "Masts" && componentName.Contains("pir_r_shp_mst_"))
                 {
                     // Extract mast type from component name
                     // e.g., "pir_r_shp_mst_main_tri" -> "main_tri"
+                    // e.g., "pir_r_shp_mst_main_square_skeletonB" -> "main_square_skeletonB"
                     string mastType = ExtractMastType(componentName);
                     var mastInfo = component.AddComponent<POTCO.MastTypeInfo>();
                     mastInfo.mastType = mastType;
@@ -321,19 +323,15 @@ namespace POTCO.ShipBuilder
         {
             // Extract mast type from component name
             // e.g., "pir_r_shp_mst_main_tri" -> "main_tri"
+            // e.g., "pir_r_shp_mst_main_square_skeletonB" -> "main_square_skeletonB"
+            // e.g., "pir_r_shp_mst_aft_skeleton" -> "aft_skeleton"
             if (componentName.Contains("pir_r_shp_mst_"))
             {
                 int startIndex = componentName.IndexOf("pir_r_shp_mst_") + "pir_r_shp_mst_".Length;
                 string remainder = componentName.Substring(startIndex);
 
-                // Split and take first two parts (e.g., "main_tri")
-                string[] parts = remainder.Split('_');
-                if (parts.Length >= 2)
-                {
-                    return parts[0] + "_" + parts[1];
-                }
-
-                return remainder; // Fallback to whole remainder
+                // Return the full remainder (this is the complete mast type including skeleton variants)
+                return remainder;
             }
 
             return "unknown";
@@ -623,62 +621,111 @@ namespace POTCO.ShipBuilder
                 return;
             }
 
+            // Try loading alpha texture (texture name + "_a")
+            Texture2D logoAlphaTexture = null;
+            string logoAlphaName = logoTextureName + "_a";
+            string[] alphaSearchPaths = new string[]
+            {
+                $"phase_2/maps/{logoAlphaName}",
+                $"phase_3/maps/{logoAlphaName}",
+                $"phase_4/maps/{logoAlphaName}",
+                $"phase_5/maps/{logoAlphaName}",
+                $"phase_6/maps/{logoAlphaName}",
+                $"phase_3/models/shipparts/{logoAlphaName}",
+                $"phase_4/models/shipparts/{logoAlphaName}",
+                $"phase_3/models/textureCards/{logoAlphaName}",
+                $"phase_4/models/textureCards/{logoAlphaName}"
+            };
+
+            foreach (string path in alphaSearchPaths)
+            {
+                logoAlphaTexture = Resources.Load<Texture2D>(path);
+                if (logoAlphaTexture != null)
+                {
+                    Debug.Log($"Loaded logo alpha texture from: {path}");
+                    break;
+                }
+            }
+
             // Find all renderers in the ship
             var allRenderers = ship.GetComponentsInChildren<Renderer>(true);
             int logosApplied = 0;
 
+            // Group sails by unique mast instance and apply logo to the first sail of each mast
+            var sailsByMast = new Dictionary<string, List<(Renderer renderer, int sailIndex)>>();
+
             foreach (var renderer in allRenderers)
             {
-                // Check if this renderer is under a "sails" group (lowercase)
+                // Find sails and group by mast instance
                 Transform current = renderer.transform;
                 bool isUnderSails = false;
                 string mastType = null;
+                string mastLocation = null;
 
                 while (current != null)
                 {
                     if (current.name == "sails")
                     {
                         isUnderSails = true;
-                        // Get mast type from parent hierarchy (e.g., "main_tri", "main_square", "fore_multi")
-                        if (current.parent != null && current.parent.parent != null)
+                        Transform temp = current.parent;
+                        while (temp != null)
                         {
-                            mastType = current.parent.parent.name;
+                            // Find location identifier (e.g., "location_mainmast_0")
+                            if (temp.name.StartsWith("location_"))
+                            {
+                                mastLocation = temp.name;
+                            }
+                            // Find mast type (e.g., "main_square")
+                            if (temp.name.Contains("main_") || temp.name.Contains("fore_") || temp.name.Contains("aft_"))
+                            {
+                                mastType = temp.name;
+                            }
+                            temp = temp.parent;
                         }
                         break;
                     }
                     current = current.parent;
                 }
 
-                if (!isUnderSails) continue; // Only apply to objects under "sails" group
+                if (!isUnderSails) continue;
+                if (mastType == null) continue;
 
-                // Determine which sail index should get the logo based on mast type
-                int targetSailIndex = 0; // Default to sail_0
-                if (mastType != null && mastType.Contains("fore_multi"))
-                {
-                    targetSailIndex = 1; // fore_multi uses sail_1
-                }
+                // Skip masts that don't get logos
+                if (mastType.Contains("fore_tri") || mastType.Contains("aft_tri")) continue;
 
-                // Check if this is the correct sail for logo application
+                // Check if this is a sail object
                 string sailName = renderer.gameObject.name;
-                if (!sailName.StartsWith("sail_"))
-                {
-                    continue; // Skip non-sail objects
-                }
+                if (!sailName.StartsWith("sail_")) continue;
 
-                // Extract sail index from name (e.g., "sail_0" -> 0)
+                // Extract sail index
                 string sailIndexStr = sailName.Replace("sail_", "");
-                if (!int.TryParse(sailIndexStr, out int sailIndex))
-                {
-                    continue;
-                }
+                if (!int.TryParse(sailIndexStr, out int sailIndex)) continue;
 
-                // Only apply logo to the target sail
-                if (sailIndex != targetSailIndex)
-                {
-                    continue;
-                }
+                // Create unique mast identifier combining location and type
+                string mastIdentifier = mastLocation != null ? $"{mastLocation}/{mastType}" : mastType;
 
-                Debug.Log($"🏴 Applying logo to {sailName} under {mastType}");
+                // Add to group
+                if (!sailsByMast.ContainsKey(mastIdentifier))
+                {
+                    sailsByMast[mastIdentifier] = new List<(Renderer, int)>();
+                }
+                sailsByMast[mastIdentifier].Add((renderer, sailIndex));
+            }
+
+            // Apply logo to the first sail (lowest index) of each mast
+            foreach (var kvp in sailsByMast)
+            {
+                string mastIdentifier = kvp.Key;
+                var sails = kvp.Value;
+
+                // Find the minimum sail index
+                int minIndex = sails.Min(s => s.sailIndex);
+                var firstSail = sails.First(s => s.sailIndex == minIndex);
+
+                Renderer renderer = firstSail.renderer;
+                int sailIndex = firstSail.sailIndex;
+
+                Debug.Log($"🏴 Applying logo to sail_{sailIndex} (first sail) under {mastIdentifier}");
 
                 Material[] sharedMats = renderer.sharedMaterials;
                 Material[] newMats = new Material[sharedMats.Length];
@@ -692,39 +739,46 @@ namespace POTCO.ShipBuilder
                         continue;
                     }
 
-                    // Copy the existing material (should already have style texture from ApplyStyleTextures)
-                    Material mat = new Material(sharedMats[i]);
-                    if (!mat.name.Contains("_styled"))
+                    // Load the sail with logo shader
+                    Shader logoShader = Shader.Find("EggImporter/SailWithLogo");
+                    if (logoShader == null)
                     {
-                        mat.name = sharedMats[i].name + "_styled";
+                        Debug.LogError("Could not find EggImporter/SailWithLogo shader");
+                        newMats[i] = sharedMats[i];
+                        continue;
                     }
 
-                    // Debug: Log all available texture properties
-                    Shader shader = mat.shader;
-                    Debug.Log($"  Material shader: {shader.name}");
-                    for (int propIdx = 0; propIdx < shader.GetPropertyCount(); propIdx++)
-                    {
-                        if (shader.GetPropertyType(propIdx) == UnityEngine.Rendering.ShaderPropertyType.Texture)
-                        {
-                            string propName = shader.GetPropertyName(propIdx);
-                            Debug.Log($"    Texture property: {propName}");
-                        }
-                    }
+                    // Create new material with logo shader
+                    Material mat = new Material(logoShader);
+                    mat.name = sharedMats[i].name + "_withlogo";
 
-                    // Apply logo as second blend texture
-                    if (mat.HasProperty("_BlendTex2"))
+                    // Copy properties from original material
+                    if (sharedMats[i].HasProperty("_MainTex"))
+                        mat.SetTexture("_MainTex", sharedMats[i].GetTexture("_MainTex"));
+                    if (sharedMats[i].HasProperty("_BlendTex"))
+                        mat.SetTexture("_BlendTex", sharedMats[i].GetTexture("_BlendTex"));
+                    if (sharedMats[i].HasProperty("_AlphaTex"))
+                        mat.SetTexture("_AlphaTex", sharedMats[i].GetTexture("_AlphaTex"));
+                    if (sharedMats[i].HasProperty("_Color"))
+                        mat.SetColor("_Color", sharedMats[i].GetColor("_Color"));
+                    if (sharedMats[i].HasProperty("_Cull"))
+                        mat.SetFloat("_Cull", sharedMats[i].GetFloat("_Cull"));
+
+                    // Set logo textures
+                    mat.SetTexture("_LogoTex", logoTexture);
+                    if (logoAlphaTexture != null)
                     {
-                        mat.SetTexture("_BlendTex2", logoTexture);
-                        logosApplied++;
-                        anyChanged = true;
-                        newMats[i] = mat;
-                        Debug.Log($"    ✅ Applied logo overlay to: {renderer.gameObject.name}");
+                        mat.SetTexture("_LogoAlpha", logoAlphaTexture);
+                        Debug.Log($"    ✅ Applied logo with alpha mask to: {renderer.gameObject.name}");
                     }
                     else
                     {
-                        Debug.LogWarning($"    Material does not have _BlendTex2 property");
-                        newMats[i] = mat;
+                        Debug.Log($"    ⚠️ No alpha texture found for logo");
                     }
+
+                    logosApplied++;
+                    anyChanged = true;
+                    newMats[i] = mat;
                 }
 
                 // Update renderer materials if we modified any

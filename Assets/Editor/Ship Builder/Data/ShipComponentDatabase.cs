@@ -16,6 +16,7 @@ namespace POTCO.ShipBuilder
 
         public void Initialize()
         {
+            Debug.Log("[ShipComponentDatabase] Initializing...");
             shipHulls.Clear();
             shipComponents.Clear();
 
@@ -206,7 +207,7 @@ namespace POTCO.ShipBuilder
 
             if (potcoParser.HullModelNames.TryGetValue(shipID, out string modelName))
             {
-                // Return full model name with prefix
+                // All ship hulls use pir_m_shp_ prefix
                 return $"pir_m_shp_{modelName}";
             }
 
@@ -268,13 +269,24 @@ namespace POTCO.ShipBuilder
         // NEW: Get mast model name from mast config
         public string GetMastModelName(MastConfig config)
         {
-            if (!config.IsValid()) return null;
+            if (!config.IsValid())
+            {
+                Debug.LogWarning($"[GetMastModelName] Invalid mast config: mastType={config.mastType}, height={config.height}");
+                return null;
+            }
 
             MastTypeData mastData = GetMastTypeData(config.mastType);
-            if (mastData == null) return null;
+            if (mastData == null)
+            {
+                Debug.LogWarning($"[GetMastModelName] No mast type data found for mastType ID: {config.mastType}");
+                return null;
+            }
 
-            // Build mast name: pir_r_shp_mst_ + prefix + _ + height
-            return $"pir_r_shp_mst_{mastData.prefix}_{config.height}";
+            // Build mast name: pir_r_shp_mst_ + prefix
+            // Prefix already includes skeleton suffix if needed (e.g., "main_square_skeletonA")
+            string modelName = $"pir_r_shp_mst_{mastData.prefix}";
+            Debug.Log($"[GetMastModelName] mastType={config.mastType}, prefix={mastData.prefix} → {modelName}");
+            return modelName;
         }
 
         // NEW: Get prow/bowsprit model name from ID
@@ -288,6 +300,36 @@ namespace POTCO.ShipBuilder
             // TODO: Parse BowSpritDict from ShipBlueprints.py if needed
             if (prowID == 1) return "prow_skeleton_zero"; // Skeleton
             if (prowID == 2) return "prow_female_zero";  // Lady
+
+            return null;
+        }
+
+        // NEW: Get deck cannon model name from cannon ID
+        public string GetDeckCannonModelName(int cannonID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+            if (cannonID == 0) return null;
+
+            if (potcoParser.CannonTypes.TryGetValue(cannonID, out string suffix))
+            {
+                // Deck cannons: pir_r_shp_can_deck_{suffix}
+                return $"pir_r_shp_can_deck_{suffix}";
+            }
+
+            return null;
+        }
+
+        // NEW: Get broadside cannon model name from cannon ID
+        public string GetBroadsideCannonModelName(int cannonID)
+        {
+            if (!potcoDataLoaded || potcoParser == null) return null;
+            if (cannonID == 0) return null;
+
+            if (potcoParser.CannonTypes.TryGetValue(cannonID, out string suffix))
+            {
+                // Broadside cannons: pir_r_shp_can_broadside_{suffix}
+                return $"pir_r_shp_can_broadside_{suffix}";
+            }
 
             return null;
         }

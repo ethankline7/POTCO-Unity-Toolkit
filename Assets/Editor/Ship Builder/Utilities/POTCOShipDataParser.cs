@@ -53,6 +53,12 @@ namespace POTCO.ShipBuilder
         // Prow ID constants (name -> ID)
         public Dictionary<string, int> ProwIDConstants { get; private set; }
 
+        // Cannon ID constants (name -> ID)
+        public Dictionary<string, int> CannonIDConstants { get; private set; }
+
+        // Cannon type data (cannon ID -> model name suffix)
+        public Dictionary<int, string> CannonTypes { get; private set; }
+
         public POTCOShipDataParser()
         {
             ShipConfigs = new Dictionary<int, ShipConfigData>();
@@ -62,12 +68,14 @@ namespace POTCO.ShipBuilder
             LogoTextures = new Dictionary<int, string>();
             ShipDisplayNames = new Dictionary<int, string>();
             MastTypes = new Dictionary<int, MastTypeData>();
+            CannonTypes = new Dictionary<int, string>();
 
             ShipIDConstants = new Dictionary<string, int>();
             StyleIDConstants = new Dictionary<string, int>();
             LogoIDConstants = new Dictionary<string, int>();
             MastIDConstants = new Dictionary<string, int>();
             ProwIDConstants = new Dictionary<string, int>();
+            CannonIDConstants = new Dictionary<string, int>();
         }
 
         public void ParseAllPOTCOData(string potcoSourceFolder)
@@ -75,11 +83,22 @@ namespace POTCO.ShipBuilder
             string shipGlobalsPath = Path.Combine(potcoSourceFolder, "ShipGlobals.py");
             string shipBlueprintsPath = Path.Combine(potcoSourceFolder, "ShipBlueprints.py");
             string localizerPath = Path.Combine(potcoSourceFolder, "PLocalizerEnglish.py");
+            string cannonPath = Path.Combine(potcoSourceFolder, "Cannon.py");
 
             if (File.Exists(shipGlobalsPath))
             {
                 string content = File.ReadAllText(shipGlobalsPath);
                 ParseShipGlobals(content);
+            }
+
+            if (File.Exists(cannonPath))
+            {
+                string content = File.ReadAllText(cannonPath);
+                ParseCannon(content);
+            }
+            else
+            {
+                Debug.LogWarning($"[POTCOShipDataParser] Cannon.py not found at: {cannonPath}");
             }
 
             if (File.Exists(shipBlueprintsPath))
@@ -116,6 +135,9 @@ namespace POTCO.ShipBuilder
             // Parse prow enum
             ParseProwConstants(lines);
 
+            // Parse cannon enum
+            ParseCannonConstants(lines);
+
             // Parse ship configurations (__shipConfigs = {)
             ParseShipConfigurations(lines);
         }
@@ -126,6 +148,16 @@ namespace POTCO.ShipBuilder
 
             // Parse HullDict (ship ID -> model name)
             ParseHullDict(lines);
+
+            // Debug: Check if SKEL_INTERCEPTORL3 (ID 61) was parsed
+            if (HullModelNames.TryGetValue(61, out string skelInterceptorModel))
+            {
+                Debug.Log($"[ParseShipBlueprints] SKEL_INTERCEPTORL3 (61) hull model: {skelInterceptorModel}");
+            }
+            else
+            {
+                Debug.LogWarning($"[ParseShipBlueprints] SKEL_INTERCEPTORL3 (61) NOT found in HullModelNames!");
+            }
 
             // Parse shipStyles (style ID -> hull texture name)
             ParseShipStyles(lines);
@@ -138,6 +170,16 @@ namespace POTCO.ShipBuilder
 
             // Parse mastDict (mast ID -> prefix and maxHeight)
             ParseMastDict(lines);
+        }
+
+        private void ParseCannon(string content)
+        {
+            string[] lines = content.Split('\n');
+
+            // Parse cannon dictionary (cannon ID -> model suffix)
+            ParseCannonDict(lines);
+
+            Debug.Log($"[ParseCannon] Cannon enum has {CannonIDConstants.Count} types, parsed {CannonTypes.Count} cannon models from Cannon.py");
         }
 
         private void ParseLocalizer(string content)
@@ -345,6 +387,53 @@ namespace POTCO.ShipBuilder
             }
         }
 
+        private void ParseCannonConstants(string[] lines)
+        {
+            bool inCannonClass = false;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+
+                if (line.Contains("class Cannons:"))
+                {
+                    inCannonClass = true;
+                    Debug.Log($"[ParseCannonConstants] Found Cannons class at line {i}");
+                    continue;
+                }
+
+                if (inCannonClass)
+                {
+                    if (line.StartsWith("class ") || (string.IsNullOrWhiteSpace(line) && i > 0 && string.IsNullOrWhiteSpace(lines[i - 1])))
+                    {
+                        Debug.Log($"[ParseCannonConstants] Finished parsing. Total cannons: {CannonIDConstants.Count}");
+                        break;
+                    }
+
+                    if (line.Contains("=") && !line.StartsWith("#"))
+                    {
+                        var parts = line.Split('=');
+                        if (parts.Length >= 2)
+                        {
+                            string name = parts[0].Trim();
+                            string valueStr = parts[1].Trim().Split(new[] { ' ', '#', '\r' })[0];
+
+                            if (int.TryParse(valueStr, out int value))
+                            {
+                                CannonIDConstants[name] = value;
+                                Debug.Log($"[ParseCannonConstants] {name} = {value}");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!inCannonClass)
+            {
+                Debug.LogWarning("[ParseCannonConstants] 'class Cannons:' not found in ShipGlobals.py");
+            }
+        }
+
         private void ParseShipConfigurations(string[] lines)
         {
             // Find __shipConfigs = { line
@@ -406,6 +495,23 @@ namespace POTCO.ShipBuilder
                 // Parse config properties
                 if (inShipConfig && currentConfig != null && line.Contains("'") && line.Contains(":"))
                 {
+                    // Check if value is on multiple lines (ends with [)
+                    string trimmedLine = line.Trim();
+                    if (trimmedLine.EndsWith("["))
+                    {
+                        // Multi-line array - combine with next line
+                        string key = trimmedLine.Split(ColonSeparator)[0].Trim();
+
+                        // Read next line for the actual value
+                        if (i + 1 < lines.Length)
+                        {
+                            string nextLine = lines[i + 1].Trim();
+                            // Reconstruct the full line with opening bracket
+                            line = key + ": [" + nextLine;
+                            i++; // Skip next line since we already processed it
+                        }
+                    }
+
                     ParseConfigProperty(line, currentConfig);
                 }
             }
@@ -475,14 +581,19 @@ namespace POTCO.ShipBuilder
 
                 case "cannons":
                     config.maxDeckCannons = ParseCannonArrayLength(value);
+                    config.cannonType = ParseCannonType(value);
                     break;
 
                 case "leftBroadsides":
                     config.maxBroadsideLeft = ParseCannonArrayLength(value);
+                    config.broadsideType = ParseCannonType(value);
                     break;
 
                 case "rightBroadsides":
                     config.maxBroadsideRight = ParseCannonArrayLength(value);
+                    // Use same broadside type as left
+                    if (config.broadsideType == 0)
+                        config.broadsideType = ParseCannonType(value);
                     break;
 
                 case "prow":
@@ -628,9 +739,53 @@ namespace POTCO.ShipBuilder
             return 0;
         }
 
+        private int ParseCannonType(string value)
+        {
+            // Parse arrays like "[Cannons.L1] * 10" -> extract Cannons.L1 -> L1 ID
+            value = value.Trim().TrimEnd(',');
+
+            // Extract content between [ and ]
+            int openBracket = value.IndexOf('[');
+            int closeBracket = value.IndexOf(']');
+            if (openBracket < 0 || closeBracket < 0)
+            {
+                Debug.LogWarning($"[ParseCannonType] No brackets found in: {value}");
+                return 0;
+            }
+
+            string arrayContent = value.Substring(openBracket + 1, closeBracket - openBracket - 1).Trim();
+
+            // Extract cannon name (e.g., "Cannons.L1" -> "L1")
+            if (arrayContent.Contains("Cannons."))
+            {
+                string cannonName = arrayContent.Split('.').Last().Trim();
+                if (CannonIDConstants.TryGetValue(cannonName, out int cannonID))
+                {
+                    Debug.Log($"[ParseCannonType] Found cannon '{cannonName}' -> ID {cannonID}");
+                    return cannonID;
+                }
+                else
+                {
+                    Debug.LogWarning($"[ParseCannonType] Cannon name '{cannonName}' not found in CannonIDConstants (count: {CannonIDConstants.Count})");
+                }
+            }
+
+            return 0;
+        }
+
         private void ParseHullDict(string[] lines)
         {
             bool inDict = false;
+
+            // Debug: Check if SKEL_INTERCEPTORL3 is in ShipIDConstants
+            if (ShipIDConstants.TryGetValue("SKEL_INTERCEPTORL3", out int skelID))
+            {
+                Debug.Log($"[ParseHullDict] SKEL_INTERCEPTORL3 found in ShipIDConstants with ID {skelID}");
+            }
+            else
+            {
+                Debug.LogWarning("[ParseHullDict] SKEL_INTERCEPTORL3 NOT in ShipIDConstants!");
+            }
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -639,24 +794,21 @@ namespace POTCO.ShipBuilder
                 if (line.Contains("HullDict") && line.Contains("=") && line.Contains("{"))
                 {
                     inDict = true;
+                    Debug.Log("[ParseHullDict] Found HullDict");
                     continue;
                 }
 
                 if (inDict)
                 {
-                    if (line.Contains("}"))
-                    {
-                        break;
-                    }
-
                     // Parse lines like "ShipGlobals.QUEEN_ANNES_REVENGE: 'cas_queenAnnesRevenge',"
+                    // or "ShipGlobals.SKEL_INTERCEPTORL3: 'skl_sloop' }" (with closing brace)
                     if (line.Contains(":") && line.Contains("'"))
                     {
                         var parts = line.Split(ColonSeparator);
                         if (parts.Length >= 2)
                         {
                             string shipIDStr = parts[0].Trim();
-                            string modelName = parts[1].Trim().Trim(',', '\'', ' ');
+                            string modelName = parts[1].Trim().Trim(',', '\'', ' ', '}');
 
                             // Extract ship name
                             if (shipIDStr.Contains("ShipGlobals."))
@@ -665,9 +817,27 @@ namespace POTCO.ShipBuilder
                                 if (ShipIDConstants.TryGetValue(shipName, out int shipID))
                                 {
                                     HullModelNames[shipID] = modelName;
+                                    if (shipName == "SKEL_INTERCEPTORL3")
+                                    {
+                                        Debug.Log($"[ParseHullDict] *** FOUND SKEL_INTERCEPTORL3 (ID {shipID}) -> {modelName}");
+                                    }
+                                }
+                                else
+                                {
+                                    if (shipName == "SKEL_INTERCEPTORL3")
+                                    {
+                                        Debug.LogWarning($"[ParseHullDict] *** SKEL_INTERCEPTORL3 not found in ShipIDConstants (has {ShipIDConstants.Count} entries)");
+                                    }
                                 }
                             }
                         }
+                    }
+
+                    // Check for end of dictionary AFTER parsing the line
+                    if (line.Contains("}"))
+                    {
+                        Debug.Log($"[ParseHullDict] Parsed {HullModelNames.Count} hull models");
+                        break;
                     }
                 }
             }
@@ -815,24 +985,16 @@ namespace POTCO.ShipBuilder
             {
                 string line = lines[i].Trim();
 
-                if (line.Contains("mastDict") && line.Contains("=") && line.Contains("{"))
+                // Look for both "mastDict" and "MastData" to support different file formats
+                if ((line.Contains("mastDict") || line.Contains("MastData")) && line.Contains("=") && line.Contains("{"))
                 {
                     inDict = true;
+                    Debug.Log($"[ParseMastDict] Found mast data dictionary at line {i}: {line}");
                     continue;
                 }
 
                 if (inDict)
                 {
-                    // Check for closing of mastDict
-                    if (line == "}" || (line.Contains("}") && !line.Contains("{")))
-                    {
-                        if (currentMastID >= 0)
-                        {
-                            MastTypes[currentMastID] = currentMastData;
-                        }
-                        break;
-                    }
-
                     // New mast entry (e.g., "ShipGlobals.Masts.Main_Square: {")
                     if (line.Contains("Masts.") && line.Contains(":") && line.Contains("{"))
                     {
@@ -840,6 +1002,7 @@ namespace POTCO.ShipBuilder
                         if (currentMastID >= 0)
                         {
                             MastTypes[currentMastID] = currentMastData;
+                            Debug.Log($"[ParseMastDict] Saved mast ID {currentMastID}: prefix='{currentMastData.prefix}', maxHeight={currentMastData.maxHeight}");
                         }
 
                         string mastName = line.Split(new[] { "Masts." }, StringSplitOptions.None)[1].Split(ColonSeparator)[0].Trim();
@@ -847,6 +1010,11 @@ namespace POTCO.ShipBuilder
                         {
                             currentMastID = mastID;
                             currentMastData = new MastTypeData();
+                            Debug.Log($"[ParseMastDict] Started parsing mast '{mastName}' (ID: {mastID})");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[ParseMastDict] Unknown mast name: {mastName}");
                         }
                     }
 
@@ -863,8 +1031,78 @@ namespace POTCO.ShipBuilder
                         }
                         else if (line.Contains("'prefix':"))
                         {
-                            string prefix = line.Split(ColonSeparator)[1].Trim().Trim(',', '\'', ' ');
+                            string prefix = line.Split(ColonSeparator)[1].Trim().Trim(',', '\'', ' ', '}');
                             currentMastData.prefix = prefix;
+                            Debug.Log($"[ParseMastDict] Mast ID {currentMastID}: prefix = '{prefix}', maxHeight = {currentMastData.maxHeight}");
+
+                            // Check if this is the last entry (has closing braces like "} }")
+                            if (line.TrimEnd().EndsWith("} }") || line.TrimEnd().EndsWith("}}"))
+                            {
+                                // Save the current mast since it's the last one
+                                MastTypes[currentMastID] = currentMastData;
+                                Debug.Log($"[ParseMastDict] Saved final mast ID {currentMastID}: prefix='{currentMastData.prefix}', maxHeight={currentMastData.maxHeight}");
+                                Debug.Log($"[ParseMastDict] Finished parsing. Total masts: {MastTypes.Count}");
+                                break;
+                            }
+                        }
+                    }
+
+                    // Check for standalone closing brace
+                    if (line.Trim() == "}")
+                    {
+                        if (currentMastID >= 0)
+                        {
+                            MastTypes[currentMastID] = currentMastData;
+                            Debug.Log($"[ParseMastDict] Saved final mast ID {currentMastID}: prefix='{currentMastData.prefix}', maxHeight={currentMastData.maxHeight}");
+                        }
+                        Debug.Log($"[ParseMastDict] Finished parsing. Total masts: {MastTypes.Count}");
+                        break;
+                    }
+                }
+            }
+        }
+
+        private void ParseCannonDict(string[] lines)
+        {
+            bool inDict = false;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+
+                // Look for "cannonTypes" dictionary in Cannon.py
+                if (line.Contains("cannonTypes") && line.Contains("=") && line.Contains("{"))
+                {
+                    inDict = true;
+                    Debug.Log($"[ParseCannonDict] Found cannonTypes dictionary at line {i}: {line}");
+                    continue;
+                }
+
+                if (inDict)
+                {
+                    if (line == "}")
+                    {
+                        break;
+                    }
+
+                    // Parse lines like "ShipGlobals.Cannons.L1: 'plain',"
+                    if (line.Contains("Cannons.") && line.Contains(":") && line.Contains("'"))
+                    {
+                        var parts = line.Split(ColonSeparator);
+                        if (parts.Length >= 2)
+                        {
+                            string cannonIDStr = parts[0].Trim();
+                            string modelSuffix = parts[1].Trim().Trim(',', '\'', ' ', '}');
+
+                            // Extract cannon name (e.g., "ShipGlobals.Cannons.L1" -> "L1")
+                            if (cannonIDStr.Contains("Cannons."))
+                            {
+                                string cannonName = cannonIDStr.Split(new[] { "Cannons." }, StringSplitOptions.None)[1].Trim();
+                                if (CannonIDConstants.TryGetValue(cannonName, out int cannonID))
+                                {
+                                    CannonTypes[cannonID] = modelSuffix;
+                                }
+                            }
                         }
                     }
                 }
@@ -941,6 +1179,10 @@ namespace POTCO.ShipBuilder
         public int maxBroadsideLeft;
         public int maxBroadsideRight;
         public int prowType;
+
+        // Cannon types (can be different per ship)
+        public int cannonType; // Cannons enum value
+        public int broadsideType; // Cannons enum value for broadsides
     }
 
     [Serializable]
@@ -955,7 +1197,7 @@ namespace POTCO.ShipBuilder
     [Serializable]
     public class MastTypeData
     {
-        public string prefix;
+        public string prefix; // Full model suffix (e.g., "main_square", "main_square_skeletonA", "fore_skeleton")
         public int maxHeight;
     }
 }

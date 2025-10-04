@@ -27,6 +27,11 @@ public class FirstPersonController : MonoBehaviour
     private bool isGrounded;
     private float xRotation = 0f;
 
+    // Moving platform support
+    private Transform currentPlatform;
+    private Vector3 lastPlatformPosition;
+    private Quaternion lastPlatformRotation;
+
     void Start()
     {
         controller = GetComponent<CharacterController>();
@@ -57,6 +62,7 @@ public class FirstPersonController : MonoBehaviour
         HandleMouseLook();
         HandleMovement();
         HandleJump();
+        HandleMovingPlatform();
     }
 
     void HandleMouseLook()
@@ -110,6 +116,61 @@ public class FirstPersonController : MonoBehaviour
             groundCheckObj.transform.SetParent(transform);
             groundCheckObj.transform.localPosition = new Vector3(0, -1f, 0);
             groundCheck = groundCheckObj.transform;
+        }
+    }
+
+    void HandleMovingPlatform()
+    {
+        // Detect platform under player
+        RaycastHit hit;
+        Transform newPlatform = null;
+
+        if (Physics.Raycast(groundCheck.position, Vector3.down, out hit, groundDistance + 0.1f, groundMask))
+        {
+            // Check if the hit object or its parents have a ShipController (it's a moving ship)
+            POTCO.ShipController shipController = hit.collider.GetComponentInParent<POTCO.ShipController>();
+            if (shipController != null)
+            {
+                newPlatform = shipController.transform;
+            }
+        }
+
+        // Platform changed
+        if (newPlatform != currentPlatform)
+        {
+            currentPlatform = newPlatform;
+            if (currentPlatform != null)
+            {
+                lastPlatformPosition = currentPlatform.position;
+                lastPlatformRotation = currentPlatform.rotation;
+            }
+        }
+
+        // Move with platform
+        if (currentPlatform != null && isGrounded)
+        {
+            // Calculate platform movement delta
+            Vector3 platformMoveDelta = currentPlatform.position - lastPlatformPosition;
+
+            // Calculate rotation delta
+            Quaternion rotationDelta = currentPlatform.rotation * Quaternion.Inverse(lastPlatformRotation);
+
+            // Apply platform movement
+            controller.Move(platformMoveDelta);
+
+            // Apply rotation around platform center
+            Vector3 offsetFromPlatform = transform.position - currentPlatform.position;
+            Vector3 rotatedOffset = rotationDelta * offsetFromPlatform;
+            Vector3 rotationMoveDelta = rotatedOffset - offsetFromPlatform;
+            controller.Move(rotationMoveDelta);
+
+            // Rotate player with platform (only Y-axis to keep upright)
+            Vector3 eulerDelta = rotationDelta.eulerAngles;
+            transform.Rotate(Vector3.up, eulerDelta.y, Space.World);
+
+            // Store current platform transform for next frame
+            lastPlatformPosition = currentPlatform.position;
+            lastPlatformRotation = currentPlatform.rotation;
         }
     }
 

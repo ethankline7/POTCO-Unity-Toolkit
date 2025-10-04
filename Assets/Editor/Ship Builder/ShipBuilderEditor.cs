@@ -725,17 +725,18 @@ namespace POTCO.ShipBuilder
                 Debug.LogWarning($"  No hull model found for model class {config.modelClass} (Ship ID: {shipID})");
             }
 
-            // Auto-configure masts (NOTE: model name mapping needs to be fixed when we know the pattern)
-            ApplyMastConfig("location_mainmast1", config.mastConfig1);
-            ApplyMastConfig("location_mainmast2", config.mastConfig2);
-            ApplyMastConfig("location_mainmast3", config.mastConfig3);
-            ApplyMastConfig("location_foremast", config.foremastConfig);
-            ApplyMastConfig("location_aftmast", config.aftmastConfig);
+            // Auto-configure masts - use _0, _1, _2 suffix pattern to match actual locator names
+            ApplyMastConfig("location_mainmast_0", config.mastConfig1);
+            ApplyMastConfig("location_mainmast_1", config.mastConfig2);
+            ApplyMastConfig("location_mainmast_2", config.mastConfig3);
+            ApplyMastConfigAny("location_foremast", config.foremastConfig);
+            ApplyMastConfigAny("location_aftmast", config.aftmastConfig);
 
-            // Auto-limit cannons
-            LimitCannons(currentShip.cannonsDeck, config.maxDeckCannons);
-            LimitCannons(currentShip.cannonsBroadsideLeft, config.maxBroadsideLeft);
-            LimitCannons(currentShip.cannonsBroadsideRight, config.maxBroadsideRight);
+            // Auto-limit and set cannon types
+            Debug.Log($"[ApplyPOTCOShipPreset] cannonType={config.cannonType}, broadsideType={config.broadsideType}, maxDeck={config.maxDeckCannons}, maxBroadsideL={config.maxBroadsideLeft}");
+            ApplyCannons(currentShip.cannonsDeck, config.maxDeckCannons, config.cannonType, true);
+            ApplyCannons(currentShip.cannonsBroadsideLeft, config.maxBroadsideLeft, config.broadsideType, false);
+            ApplyCannons(currentShip.cannonsBroadsideRight, config.maxBroadsideRight, config.broadsideType, false);
 
             // Set prow/bowsprit
             string prowModelName = componentDatabase.GetProwModelName(config.prowType);
@@ -755,6 +756,8 @@ namespace POTCO.ShipBuilder
 
         private void ApplyMastConfig(string locatorName, MastConfig mastConfig)
         {
+            Debug.Log($"[ApplyMastConfig] {locatorName}: mastType={mastConfig.mastType}, height={mastConfig.height}");
+
             if (!mastConfig.IsValid())
             {
                 // Remove mast from this locator if config is invalid (mastType = 0 or height = 0)
@@ -774,20 +777,99 @@ namespace POTCO.ShipBuilder
                     currentShip.masts[locatorName] = mastModelName;
                     Debug.Log($"  Mast {locatorName}: {mastModelName}");
                 }
+                else
+                {
+                    Debug.LogWarning($"  Mast locator not found: {locatorName}");
+                }
             }
         }
 
-        private void LimitCannons(Dictionary<string, string> cannons, int maxCount)
+        private void ApplyMastConfigAny(string locatorPrefix, MastConfig mastConfig)
         {
-            if (cannons == null || maxCount <= 0) return;
-            if (cannons.Count <= maxCount) return;
+            if (currentShip.masts == null) return;
 
-            // Keep only first 'maxCount' entries, remove the rest
-            List<string> keys = new List<string>(cannons.Keys);
-            for (int i = maxCount; i < keys.Count; i++)
+            if (!mastConfig.IsValid())
             {
-                cannons[keys[i]] = "<None>";
+                // Remove mast from matching locators if config is invalid
+                foreach (var key in new List<string>(currentShip.masts.Keys))
+                {
+                    if (key.StartsWith(locatorPrefix))
+                    {
+                        currentShip.masts[key] = "<None>";
+                    }
+                }
+                return;
             }
+
+            // Get mast model name from database
+            string mastModelName = componentDatabase.GetMastModelName(mastConfig);
+
+            // Apply to ONLY the first locator that starts with the prefix (follow what config says)
+            // Sort keys to ensure consistent order (location_aftmast before location_aftmast1, etc.)
+            var sortedKeys = new List<string>(currentShip.masts.Keys);
+            sortedKeys.Sort();
+
+            bool found = false;
+            foreach (var key in sortedKeys)
+            {
+                if (key.StartsWith(locatorPrefix))
+                {
+                    if (!found)
+                    {
+                        // Apply mast to first matching locator (only if we have a valid model name)
+                        if (!string.IsNullOrEmpty(mastModelName))
+                        {
+                            currentShip.masts[key] = mastModelName;
+                            Debug.Log($"  Mast {key}: {mastModelName}");
+                        }
+                        found = true;
+                    }
+                    else
+                    {
+                        // Remove additional masts beyond the first one
+                        currentShip.masts[key] = "<None>";
+                        Debug.Log($"  Mast {key}: <None> (extra locator, removed)");
+                    }
+                }
+            }
+
+            if (!found)
+            {
+                Debug.LogWarning($"  No mast locators found starting with: {locatorPrefix}");
+            }
+        }
+
+        private void ApplyCannons(Dictionary<string, string> cannons, int maxCount, int cannonTypeID, bool isDeckCannon)
+        {
+            if (cannons == null) return;
+
+            // Get cannon model name from database
+            string cannonModelName = isDeckCannon
+                ? componentDatabase.GetDeckCannonModelName(cannonTypeID)
+                : componentDatabase.GetBroadsideCannonModelName(cannonTypeID);
+
+            if (string.IsNullOrEmpty(cannonModelName))
+            {
+                // Fallback to default cannon type
+                cannonModelName = isDeckCannon ? "pir_r_shp_can_deck_plain" : "pir_r_shp_can_broadside_plain";
+            }
+
+            List<string> keys = new List<string>(cannons.Keys);
+            for (int i = 0; i < keys.Count; i++)
+            {
+                if (i < maxCount)
+                {
+                    // Apply cannon model
+                    cannons[keys[i]] = cannonModelName;
+                }
+                else
+                {
+                    // Remove excess cannons
+                    cannons[keys[i]] = "<None>";
+                }
+            }
+
+            Debug.Log($"  Cannons ({(isDeckCannon ? "Deck" : "Broadside")}): {cannonModelName} x{maxCount}");
         }
     }
 }
