@@ -12,18 +12,26 @@ public class GeometryProcessor
 {
     private ParserUtilities _parserUtils;
     private MaterialHandler _materialHandler;
-    
+
     // Cache commonly used separators to avoid repeated allocations
     private static readonly char[] SpaceSeparator = { ' ' };
     private static readonly char[] SpaceNewlineCarriageReturnSeparators = { ' ', '\n', '\r' };
-    
+
     // Cache for frequently used materials to avoid repeated Shader.Find calls
     private static Material _cachedDefaultMaterial;
-    
+
+    // Store current asset path for context-aware LOD filtering
+    private string _currentAssetPath = "";
+
     public GeometryProcessor()
     {
         _parserUtils = new ParserUtilities();
         _materialHandler = new MaterialHandler();
+    }
+
+    public void SetCurrentAssetPath(string assetPath)
+    {
+        _currentAssetPath = assetPath;
     }
 
     public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx,
@@ -679,6 +687,16 @@ public class GeometryProcessor
 
     public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap)
     {
+        // Detect ship LOD variant sets at this level if we're in a ship model
+        Dictionary<string, List<string>> shipLODVariantSets = new Dictionary<string, List<string>>();
+        if (IsShipModel())
+        {
+            shipLODVariantSets = DetectShipLODVariantSets(lines, start, end);
+        }
+
+        // Track if we've seen a _high group at THIS level (for ship LOD filtering)
+        bool hasSeenHighGroupAtThisLevel = false;
+
         int i = start;
         while (i < end)
         {
@@ -686,10 +704,10 @@ public class GeometryProcessor
             if (line.StartsWith("<Group>"))
             {
                 string groupName = _parserUtils.GetGroupName(line);
-                
+
                 // Cache the group end to avoid multiple expensive FindMatchingBrace calls
                 int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
-                
+
                 // Skip collision groups based on settings - optimized
                 if (EggImporterSettings.Instance.skipCollisions)
                 {
@@ -701,7 +719,14 @@ public class GeometryProcessor
                         continue;
                     }
                 }
-                
+
+                // Check for ship-specific LOD groups (pir_r_shp_can_* and pir_m_shp_cas_*)
+                if (ShouldSkipShipLODGroup(groupName, shipLODVariantSets, ref hasSeenHighGroupAtThisLevel))
+                {
+                    i = groupEnd + 1;
+                    continue;
+                }
+
                 // Check if this is a named LOD group and handle according to settings
                 if (EggImporterSettings.Instance.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly && ShouldSkipNamedLODGroup(groupName))
                 {
@@ -1162,22 +1187,168 @@ public class GeometryProcessor
         return false;
     }
 
+    private bool IsShipModel()
+    {
+        // Check if current asset is a ship cannon or ship model
+        if (string.IsNullOrEmpty(_currentAssetPath))
+            return false;
+
+        string fileName = System.IO.Path.GetFileNameWithoutExtension(_currentAssetPath).ToLower();
+        return fileName.StartsWith("pir_r_shp_can_") || fileName.StartsWith("pir_m_shp_cas_");
+    }
+
+    private Dictionary<string, List<string>> DetectShipLODVariantSets(string[] lines, int start, int end)
+    {
+        // Scan all groups at this level and group them by base name if they have ship LOD suffixes
+        Dictionary<string, List<string>> groupsByBaseName = new Dictionary<string, List<string>>();
+
+        int i = start;
+        while (i < end)
+        {
+            string line = lines[i].Trim();
+            if (line.StartsWith("<Group>"))
+            {
+                string groupName = _parserUtils.GetGroupName(line);
+                string baseName = GetShipLODBaseName(groupName);
+
+                if (baseName != null)
+                {
+                    if (!groupsByBaseName.ContainsKey(baseName))
+                    {
+                        groupsByBaseName[baseName] = new List<string>();
+                    }
+                    groupsByBaseName[baseName].Add(groupName);
+                }
+
+                // Skip to end of this group
+                int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
+                i = groupEnd + 1;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        // Only keep base names that have multiple LOD variants
+        Dictionary<string, List<string>> lodVariants = new Dictionary<string, List<string>>();
+        foreach (var kvp in groupsByBaseName)
+        {
+            if (kvp.Value.Count > 1)
+            {
+                lodVariants[kvp.Key] = kvp.Value;
+                DebugLogger.LogEggImporter($"🚢 Detected ship LOD variant set '{kvp.Key}': {string.Join(", ", kvp.Value)}");
+            }
+        }
+
+        return lodVariants;
+    }
+
+    private string GetShipLODBaseName(string groupName)
+    {
+        // Extract base name if group has a ship LOD suffix
+        // e.g., "cannon_high" -> "cannon", "mast_med" -> "mast"
+        string lowerName = groupName.ToLower();
+
+        if (lowerName.EndsWith("_high") || lowerName.EndsWith("_hi"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+        else if (lowerName.EndsWith("_med") || lowerName.EndsWith("_medium"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+        else if (lowerName.EndsWith("_low"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+        else if (lowerName.EndsWith("_superlow") || lowerName.EndsWith("_super"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+
+        return null;
+    }
+
+    private bool IsPartOfShipLODVariantSet(string groupName, Dictionary<string, List<string>> shipLODVariantSets)
+    {
+        // Check if this group is part of a detected ship LOD variant set
+        string baseName = GetShipLODBaseName(groupName);
+        return baseName != null && shipLODVariantSets.ContainsKey(baseName);
+    }
+
+    private bool ShouldSkipShipLODGroup(string groupName, Dictionary<string, List<string>> shipLODVariantSets, ref bool hasSeenHighGroupAtThisLevel)
+    {
+        // Special LOD handling for ship models (pir_r_shp_can_* and pir_m_shp_cas_*)
+        // These models use suffix-based LOD: groupname_high, groupname_med, groupname_low, groupname_superlow
+        if (!IsShipModel())
+            return false;
+
+        // IMPORTANT: Only filter groups that are part of detected LOD variant sets
+        // This prevents filtering child meshes like "cannon_axis_High" which aren't LOD variants
+        if (!IsPartOfShipLODVariantSet(groupName, shipLODVariantSets))
+            return false;
+
+        string lowerGroupName = groupName.ToLower();
+        var settings = EggImporterSettings.Instance;
+
+        switch (settings.lodImportMode)
+        {
+            case EggImporterSettings.LODImportMode.AllLODs:
+                return false; // Import all LODs
+
+            case EggImporterSettings.LODImportMode.HighestOnly:
+                // Check if this is a _high group
+                bool isHighGroup = lowerGroupName.EndsWith("_high") || lowerGroupName.EndsWith("_hi");
+
+                if (isHighGroup)
+                {
+                    // If we've already seen a _high group at this level, skip this one
+                    if (hasSeenHighGroupAtThisLevel)
+                    {
+                        DebugLogger.LogEggImporter($"🚫 Skipping duplicate ship _high LOD group: '{groupName}' (already imported first _high group at this level)");
+                        return true;
+                    }
+                    else
+                    {
+                        // Mark that we've seen a _high group at this level
+                        hasSeenHighGroupAtThisLevel = true;
+                        DebugLogger.LogEggImporter($"✅ Importing ship _high LOD variant: '{groupName}'");
+                        return false;
+                    }
+                }
+                else
+                {
+                    // Skip all non-high groups (med, low, superlow)
+                    DebugLogger.LogEggImporter($"🚫 Skipping ship LOD variant (not highest): '{groupName}'");
+                    return true;
+                }
+
+            default:
+                return false;
+        }
+    }
+
     private bool ShouldSkipNamedLODGroup(string groupName)
     {
         // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow
         string lowerGroupName = groupName.ToLower();
-        
+
         if (lowerGroupName == "lod_high" || lowerGroupName == "lod_hi")
         {
             return false; // Always import highest quality
         }
-        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" || 
+        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" ||
                  lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super")
         {
             DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}'");
             return true; // Skip lower quality groups
         }
-        
+
         return false; // Not a named LOD group
     }
     

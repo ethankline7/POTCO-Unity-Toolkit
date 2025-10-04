@@ -515,16 +515,8 @@ namespace POTCO.ShipBuilder
                 return;
             }
 
-            // Find Hull object
-            Transform hullTransform = ship.transform.Find("Hull");
-            if (hullTransform == null)
-            {
-                Debug.LogWarning("Hull object not found in ship");
-                return;
-            }
-
-            // Apply to all renderers in Hull (excluding sails)
-            var allRenderers = hullTransform.GetComponentsInChildren<Renderer>(true);
+            // Apply to all renderers in the entire ship (excluding sails and transparent objects)
+            var allRenderers = ship.GetComponentsInChildren<Renderer>(true);
             int texturesApplied = 0;
 
             foreach (var renderer in allRenderers)
@@ -533,14 +525,14 @@ namespace POTCO.ShipBuilder
                 Transform current = renderer.transform;
                 bool isUnderSails = false;
                 bool isUnderTransparent = false;
-                while (current != null && current != hullTransform)
+                while (current != null && current != ship.transform)
                 {
-                    if (current.name == "sails")
+                    if (current.name.ToLower().Contains("sails"))
                     {
                         isUnderSails = true;
                         break;
                     }
-                    if (current.name == "transparent")
+                    if (current.name.ToLower().Contains("transparent"))
                     {
                         isUnderTransparent = true;
                         break;
@@ -562,14 +554,45 @@ namespace POTCO.ShipBuilder
                         continue;
                     }
 
-                    // Copy the existing material
-                    Material newMat = new Material(sharedMats[i]);
-                    newMat.name = sharedMats[i].name + "_hull_styled";
-                    newMat.mainTexture = texture;
+                    // Only replace ships_static_* textures with the style texture
+                    bool isShipsStaticMaterial = false;
+                    string debugInfo = $"Material '{sharedMats[i].name}'";
 
-                    newMats[i] = newMat;
-                    texturesApplied++;
-                    anyChanged = true;
+                    if (sharedMats[i].mainTexture != null)
+                    {
+                        string currentTexName = sharedMats[i].mainTexture.name;
+                        debugInfo += $" has texture '{currentTexName}'";
+                        isShipsStaticMaterial = currentTexName.StartsWith("ships_static");
+                    }
+                    else
+                    {
+                        debugInfo += " has no mainTexture";
+                        if (sharedMats[i].name.Contains("ships_static"))
+                        {
+                            // Material name contains ships_static even if texture isn't loaded yet
+                            isShipsStaticMaterial = true;
+                        }
+                    }
+
+                    if (isShipsStaticMaterial)
+                    {
+                        Debug.Log($"✅ Replacing {debugInfo} with style texture on {renderer.gameObject.name}");
+
+                        // Copy the existing material and replace texture
+                        Material newMat = new Material(sharedMats[i]);
+                        newMat.name = sharedMats[i].name + "_hull_styled";
+                        newMat.mainTexture = texture;
+
+                        newMats[i] = newMat;
+                        texturesApplied++;
+                        anyChanged = true;
+                    }
+                    else
+                    {
+                        Debug.Log($"⏭️ Skipping {debugInfo} on {renderer.gameObject.name}");
+                        // Keep the original material unchanged
+                        newMats[i] = sharedMats[i];
+                    }
                 }
 
                 if (anyChanged)

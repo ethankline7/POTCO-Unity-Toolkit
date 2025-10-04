@@ -81,6 +81,7 @@ public class EggImporter : ScriptedImporter
         // Initialize processors
         _animationProcessor = new AnimationProcessor();
         _geometryProcessor = new GeometryProcessor();
+        _geometryProcessor.SetCurrentAssetPath(ctx.assetPath); // Set asset path for ship LOD filtering
         _materialHandler = new MaterialHandler();
         _parserUtils = new ParserUtilities();
         RecordTiming("Processor Initialization");
