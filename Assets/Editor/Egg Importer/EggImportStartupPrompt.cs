@@ -4,6 +4,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using POTCO.Editor;
+using POTCO;
 
 [InitializeOnLoad]
 public class EggImportStartupPrompt
@@ -22,7 +23,7 @@ public class EggImportStartupPrompt
         hasPrompted = true;
         
         // Check if auto-import is already enabled
-        bool autoImportEnabled = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
+        bool autoImportEnabled = EggImporterSettings.Instance.autoImportEnabled;
         if (autoImportEnabled) return; // Skip prompt if auto-import is enabled
         
         // Check if user has chosen to skip this prompt
@@ -43,40 +44,42 @@ public class EggImportStartupPrompt
         // Show the enhanced startup prompt window
         EggImportStartupWindow.ShowWindow(eggFileCount);
     }
-    
+
     private static void ImportAllEggFilesWithProgress(int totalFiles)
     {
         string[] eggFiles = Directory.GetFiles(Application.dataPath, "*.egg", SearchOption.AllDirectories);
         int importedCount = 0;
         
         // Temporarily enable auto-import for this batch operation
-        bool originalSetting = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        EditorPrefs.SetBool("EggImporter_AutoImportEnabled", true);
-        
+        var settings = EggImporterSettings.Instance;
+        bool originalSetting = settings.autoImportEnabled;
+        settings.autoImportEnabled = true;
+        EditorUtility.SetDirty(settings);
+
         try
         {
             foreach (string fullPath in eggFiles)
             {
                 string relativePath = "Assets" + fullPath.Substring(Application.dataPath.Length);
                 relativePath = relativePath.Replace('\\', '/');
-                
+
                 // Show progress
                 string fileName = Path.GetFileName(relativePath);
                 bool cancelled = EditorUtility.DisplayCancelableProgressBar(
-                    "Importing EGG Files", 
-                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})", 
+                    "Importing EGG Files",
+                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})",
                     (float)importedCount / totalFiles);
-                
+
                 if (cancelled)
                 {
                     DebugLogger.LogEggImporter($"EGG import cancelled by user after {importedCount} files.");
                     break;
                 }
-                
+
                 // Force import the asset
                 AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
                 importedCount++;
-                
+
                 // Small delay to prevent Unity from freezing
                 if (importedCount % 5 == 0)
                 {
@@ -87,7 +90,8 @@ public class EggImportStartupPrompt
         finally
         {
             // Restore original auto-import setting
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", originalSetting);
+            settings.autoImportEnabled = originalSetting;
+            EditorUtility.SetDirty(settings);
             EditorUtility.ClearProgressBar();
         }
         
@@ -207,41 +211,286 @@ public class EggImportStartupPrompt
         int totalFiles = files.Length;
         
         // Temporarily enable auto-import
-        bool originalSetting = EditorPrefs.GetBool("EggImporter_AutoImportEnabled", false);
-        EditorPrefs.SetBool("EggImporter_AutoImportEnabled", true);
-        
+        var settings = EggImporterSettings.Instance;
+        bool originalSetting = settings.autoImportEnabled;
+        settings.autoImportEnabled = true;
+        EditorUtility.SetDirty(settings);
+
         try
         {
             foreach (string relativePath in files)
             {
                 string fileName = Path.GetFileName(relativePath);
                 bool cancelled = EditorUtility.DisplayCancelableProgressBar(
-                    "Importing Filtered EGG Files", 
-                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})", 
+                    "Importing Filtered EGG Files",
+                    $"Processing {fileName}... ({importedCount + 1}/{totalFiles})",
                     (float)importedCount / totalFiles);
-                
+
                 if (cancelled) break;
-                
+
                 AssetDatabase.ImportAsset(relativePath, ImportAssetOptions.ForceUpdate);
                 importedCount++;
-                
+
                 if (importedCount % 5 == 0)
                     System.Threading.Thread.Sleep(100);
             }
         }
         finally
         {
-            EditorPrefs.SetBool("EggImporter_AutoImportEnabled", originalSetting);
+            settings.autoImportEnabled = originalSetting;
+            EditorUtility.SetDirty(settings);
             EditorUtility.ClearProgressBar();
         }
         
-        string completionMessage = importedCount == totalFiles 
+        string completionMessage = importedCount == totalFiles
             ? $"✅ Successfully imported all {importedCount} filtered EGG files!"
             : $"⚠️ Imported {importedCount} of {totalFiles} filtered EGG files.";
-            
+
         EditorUtility.DisplayDialog("Import Complete", completionMessage, "OK");
+
+        // Rebuild groups after import completes
+        RebuildAllGroups();
     }
-    
+
+    private static void RebuildAllGroups()
+    {
+        string groupsFolder = "Assets/Resources/Groups";
+        if (!Directory.Exists(groupsFolder))
+        {
+            return;
+        }
+
+        string[] groupPrefabPaths = Directory.GetFiles(groupsFolder, "*.prefab", SearchOption.AllDirectories);
+        if (groupPrefabPaths.Length == 0)
+        {
+            return;
+        }
+
+        int rebuiltCount = 0;
+        int totalGroups = groupPrefabPaths.Length;
+
+        DebugLogger.LogAlways($"🔄 Rebuilding {totalGroups} group prefabs after EGG import...");
+
+        for (int i = 0; i < groupPrefabPaths.Length; i++)
+        {
+            string prefabPath = groupPrefabPaths[i].Replace("\\", "/");
+            string fileName = Path.GetFileName(prefabPath);
+
+            EditorUtility.DisplayProgressBar("Rebuilding Groups", $"Processing {fileName}... ({i + 1}/{totalGroups})", (float)i / totalGroups);
+
+            try
+            {
+                if (RebuildGroupPrefab(prefabPath))
+                {
+                    rebuiltCount++;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogError($"Failed to rebuild group {fileName}: {ex.Message}");
+            }
+        }
+
+        EditorUtility.ClearProgressBar();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        if (rebuiltCount > 0)
+        {
+            DebugLogger.LogAlways($"✅ Rebuilt {rebuiltCount}/{totalGroups} group prefabs");
+        }
+    }
+
+    private static bool RebuildGroupPrefab(string prefabPath)
+    {
+        GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        if (prefabAsset == null) return false;
+
+        // Instantiate the group prefab in the scene
+        GameObject groupInstance = PrefabUtility.InstantiatePrefab(prefabAsset) as GameObject;
+        bool madeChanges = false;
+
+        // Find all children with ObjectListInfo and collect data first (before any destruction)
+        ObjectListInfo[] infos = groupInstance.GetComponentsInChildren<ObjectListInfo>(true);
+        List<(string modelPath, Transform transform, Vector3 pos, Quaternion rot, Vector3 scale, Transform parent, int siblingIndex, string name, ObjectListInfo sourceInfo)> itemsToReplace = new List<(string, Transform, Vector3, Quaternion, Vector3, Transform, int, string, ObjectListInfo)>();
+
+        foreach (ObjectListInfo info in infos)
+        {
+            // Skip the root group object itself (it has modelPath starting with "Groups/")
+            if (info.transform == groupInstance.transform)
+            {
+                continue; // Don't try to replace the group root
+            }
+
+            // Skip if this already has a mesh (not empty)
+            MeshFilter meshFilter = info.GetComponent<MeshFilter>();
+            MeshRenderer meshRenderer = info.GetComponent<MeshRenderer>();
+
+            if (meshFilter != null && meshFilter.sharedMesh != null)
+            {
+                continue; // Already has mesh, skip
+            }
+
+            // Skip if no modelPath
+            if (string.IsNullOrEmpty(info.modelPath))
+            {
+                continue;
+            }
+
+            // Skip if modelPath starts with "Groups/" (this is the group itself, not a child prop)
+            if (info.modelPath.StartsWith("Groups/"))
+            {
+                continue;
+            }
+
+            // Store all data we need before destruction
+            Transform emptyTransform = info.transform;
+            itemsToReplace.Add((
+                info.modelPath,
+                emptyTransform,
+                emptyTransform.localPosition,
+                emptyTransform.localRotation,
+                emptyTransform.localScale,
+                emptyTransform.parent,
+                emptyTransform.GetSiblingIndex(),
+                emptyTransform.gameObject.name,
+                info
+            ));
+        }
+
+        // Now process the replacements
+        foreach (var item in itemsToReplace)
+        {
+            // Skip if the transform was already destroyed (e.g., was a child of another destroyed object)
+            if (item.transform == null)
+            {
+                continue;
+            }
+
+            // Try to find the prefab by modelPath
+            GameObject foundPrefab = FindPrefabByModelPath(item.modelPath);
+            if (foundPrefab == null)
+            {
+                UnityEngine.Debug.LogWarning($"Could not find prefab for modelPath: {item.modelPath}");
+                continue;
+            }
+
+            // Instantiate the correct prefab and unpack it
+            GameObject tempInstance = PrefabUtility.InstantiatePrefab(foundPrefab) as GameObject;
+            PrefabUtility.UnpackPrefabInstance(tempInstance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+
+            // Apply transform data (check parent is still valid - if parent was destroyed, use groupInstance as parent)
+            Transform parentTransform = item.parent != null ? item.parent : groupInstance.transform;
+            tempInstance.transform.SetParent(parentTransform);
+            tempInstance.transform.localPosition = item.pos;
+            tempInstance.transform.localRotation = item.rot;
+            tempInstance.transform.localScale = item.scale;
+            tempInstance.transform.SetSiblingIndex(item.siblingIndex);
+            tempInstance.name = item.name;
+
+            // Copy ObjectListInfo data to the new instance
+            ObjectListInfo newInfo = tempInstance.GetComponent<ObjectListInfo>();
+            if (newInfo == null)
+            {
+                newInfo = tempInstance.AddComponent<ObjectListInfo>();
+            }
+            CopyObjectListInfo(item.sourceInfo, newInfo);
+
+            // Destroy the empty GameObject
+            UnityEngine.Object.DestroyImmediate(item.transform.gameObject);
+
+            madeChanges = true;
+        }
+
+        if (madeChanges)
+        {
+            // Verify groupInstance is still valid before saving
+            if (groupInstance != null)
+            {
+                PrefabUtility.SaveAsPrefabAsset(groupInstance, prefabPath);
+                DebugLogger.LogAlways($"✅ Rebuilt group: {Path.GetFileName(prefabPath)}");
+            }
+            else
+            {
+                UnityEngine.Debug.LogError($"Group instance became null while rebuilding {Path.GetFileName(prefabPath)}");
+            }
+        }
+
+        // Clean up the instance
+        if (groupInstance != null)
+        {
+            UnityEngine.Object.DestroyImmediate(groupInstance);
+        }
+
+        return madeChanges;
+    }
+
+    private static GameObject FindPrefabByModelPath(string modelPath)
+    {
+        // modelPath can be:
+        // 1. "Groups/Flower Base" (for group prefabs)
+        // 2. "models/props/TreeBase" (without phase prefix - need to search all phases)
+
+        // First try direct path (for Groups)
+        string prefabPath = $"Assets/Resources/{modelPath}.prefab";
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        if (prefab != null)
+        {
+            return prefab;
+        }
+
+        // Try .egg extension (for models in phase folders)
+        string eggPath = $"Assets/Resources/{modelPath}.egg";
+        GameObject eggPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(eggPath);
+        if (eggPrefab != null)
+        {
+            return eggPrefab;
+        }
+
+        // If not found, search all phase folders
+        string[] phaseFolders = new string[] { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
+        foreach (string phase in phaseFolders)
+        {
+            // Try .egg first
+            eggPath = $"Assets/Resources/{phase}/{modelPath}.egg";
+            eggPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(eggPath);
+            if (eggPrefab != null)
+            {
+                return eggPrefab;
+            }
+
+            // Try .prefab
+            prefabPath = $"Assets/Resources/{phase}/{modelPath}.prefab";
+            prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab != null)
+            {
+                return prefab;
+            }
+        }
+
+        return null;
+    }
+
+    private static void CopyObjectListInfo(ObjectListInfo source, ObjectListInfo dest)
+    {
+        dest.objectType = source.objectType;
+        dest.modelPath = source.modelPath;
+        dest.hasVisualBlock = source.hasVisualBlock;
+        dest.visualColor = source.visualColor;
+        dest.disableCollision = source.disableCollision;
+        dest.instanced = source.instanced;
+        dest.holiday = source.holiday;
+        dest.visSize = source.visSize;
+        dest.isGroup = source.isGroup;
+        dest.groupCategory = source.groupCategory;
+        dest.groupSubcategory = source.groupSubcategory;
+        dest.autoDetectOnStart = source.autoDetectOnStart;
+        dest.autoGenerateId = source.autoGenerateId;
+
+        // Generate new unique ID
+        dest.GenerateObjectId();
+    }
+
     // Helper methods for filtering (simplified versions of EggImporter methods)
     public static bool IsAnimationOnlyFile(string[] lines)
     {

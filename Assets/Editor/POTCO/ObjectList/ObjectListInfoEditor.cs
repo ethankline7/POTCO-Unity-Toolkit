@@ -7,7 +7,7 @@ using WorldDataExporter.Utilities;
 
 namespace POTCO.Editor
 {
-    [CustomEditor(typeof(ObjectListInfo))]
+    [CustomEditor(typeof(ObjectListInfo)), CanEditMultipleObjects]
     public class ObjectListInfoEditor : UnityEditor.Editor
     {
         private SerializedProperty objectTypeProp;
@@ -18,8 +18,11 @@ namespace POTCO.Editor
         private SerializedProperty instancedProp;
         private SerializedProperty holidayProp;
         private SerializedProperty visSizeProp;
+        private SerializedProperty isGroupProp;
         private SerializedProperty autoDetectOnStartProp;
         private SerializedProperty autoGenerateIdProp;
+        private SerializedProperty hasVisualColorProp;
+        private SerializedProperty visualColorValueProp;
         
         private List<string> availableObjectTypes;
         private int selectedTypeIndex = 0;
@@ -34,8 +37,11 @@ namespace POTCO.Editor
             instancedProp = serializedObject.FindProperty("instanced");
             holidayProp = serializedObject.FindProperty("holiday");
             visSizeProp = serializedObject.FindProperty("visSize");
+            isGroupProp = serializedObject.FindProperty("isGroup");
             autoDetectOnStartProp = serializedObject.FindProperty("autoDetectOnStart");
             autoGenerateIdProp = serializedObject.FindProperty("autoGenerateId");
+            hasVisualColorProp = serializedObject.FindProperty("_hasVisualColor");
+            visualColorValueProp = serializedObject.FindProperty("_visualColorValue");
             
             LoadAvailableObjectTypes();
         }
@@ -108,40 +114,63 @@ namespace POTCO.Editor
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
-            
+
             ObjectListInfo objectListInfo = (ObjectListInfo)target;
-            
+            bool isMultiSelection = targets.Length > 1;
+
             EditorGUILayout.LabelField("ObjectList Info", EditorStyles.boldLabel);
             EditorGUILayout.Space();
-            
-            // Auto-Detection Settings
+
+            // Auto-Detection Settings (supports multi-editing)
             EditorGUILayout.LabelField("Auto-Detection", EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(autoDetectOnStartProp, new GUIContent("Auto-Detect on Start", "Automatically detect properties when component starts"));
             EditorGUILayout.PropertyField(autoGenerateIdProp, new GUIContent("Auto-Generate ID", "Automatically generate object ID when needed"));
-            
-            // Auto-detect button
+
+            // Auto-detect buttons (supports multi-editing)
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("🔍 Auto-Detect All Properties", GUILayout.Height(25)))
             {
-                ObjectListIntegration.AutoDetectAllProperties(objectListInfo);
-                EditorUtility.SetDirty(objectListInfo);
+                if (isMultiSelection)
+                {
+                    foreach (ObjectListInfo target in targets)
+                    {
+                        ObjectListIntegration.AutoDetectAllProperties(target);
+                        EditorUtility.SetDirty(target);
+                    }
+                }
+                else
+                {
+                    ObjectListIntegration.AutoDetectAllProperties(objectListInfo);
+                    EditorUtility.SetDirty(objectListInfo);
+                }
                 serializedObject.Update();
                 LoadAvailableObjectTypes(); // Refresh the dropdown
             }
             if (GUILayout.Button("🆔 Generate New ID", GUILayout.Height(25)))
             {
-                objectListInfo.GenerateObjectId();
-                EditorUtility.SetDirty(objectListInfo);
+                if (isMultiSelection)
+                {
+                    foreach (ObjectListInfo target in targets)
+                    {
+                        target.GenerateObjectId();
+                        EditorUtility.SetDirty(target);
+                    }
+                }
+                else
+                {
+                    objectListInfo.GenerateObjectId();
+                    EditorUtility.SetDirty(objectListInfo);
+                }
                 serializedObject.Update();
             }
             EditorGUILayout.EndHorizontal();
-            
+
             EditorGUILayout.Space();
             
-            // Object Information
+            // Object Information (supports multi-editing)
             EditorGUILayout.LabelField("Object Information", EditorStyles.boldLabel);
-            
-            // Object Type Dropdown
+
+            // Object Type Dropdown (supports multi-editing)
             if (availableObjectTypes != null && availableObjectTypes.Count > 0)
             {
                 EditorGUI.BeginChangeCheck();
@@ -155,69 +184,152 @@ namespace POTCO.Editor
             {
                 EditorGUILayout.PropertyField(objectTypeProp, new GUIContent("Object Type"));
             }
-            
-            // Object ID with status indicator
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PropertyField(objectIdProp, new GUIContent("Object ID"));
-            if (string.IsNullOrEmpty(objectIdProp.stringValue))
+
+            // Object ID with status indicator (supports multi-editing)
+            if (!isMultiSelection)
             {
-                EditorGUILayout.LabelField("❌", GUILayout.Width(20));
-            }
-            else
-            {
-                EditorGUILayout.LabelField("✅", GUILayout.Width(20));
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            // Model Path with status indicator
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PropertyField(modelPathProp, new GUIContent("Model Path"));
-            if (string.IsNullOrEmpty(modelPathProp.stringValue))
-            {
-                EditorGUILayout.LabelField("❌", GUILayout.Width(20));
-            }
-            else
-            {
-                EditorGUILayout.LabelField("✅", GUILayout.Width(20));
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.Space();
-            
-            // Visual Properties
-            EditorGUILayout.LabelField("Visual Properties", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(hasVisualBlockProp, new GUIContent("Has Visual Block"));
-            
-            // Handle nullable Color manually
-            EditorGUILayout.BeginHorizontal();
-            bool hasColor = objectListInfo.visualColor.HasValue;
-            bool newHasColor = EditorGUILayout.Toggle("Use Visual Color", hasColor);
-            
-            if (newHasColor != hasColor)
-            {
-                if (newHasColor)
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(objectIdProp, new GUIContent("Object ID"));
+                if (string.IsNullOrEmpty(objectIdProp.stringValue))
                 {
-                    objectListInfo.visualColor = Color.white;
+                    EditorGUILayout.LabelField("❌", GUILayout.Width(20));
                 }
                 else
                 {
-                    objectListInfo.visualColor = null;
+                    EditorGUILayout.LabelField("✅", GUILayout.Width(20));
                 }
-                EditorUtility.SetDirty(objectListInfo);
-            }
-            
-            if (newHasColor)
-            {
-                Color currentColor = objectListInfo.visualColor ?? Color.white;
-                Color newColor = EditorGUILayout.ColorField(currentColor);
-                if (newColor != currentColor)
+                EditorGUILayout.EndHorizontal();
+
+                // Model Path with status indicator
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(modelPathProp, new GUIContent("Model Path"));
+                if (string.IsNullOrEmpty(modelPathProp.stringValue))
                 {
-                    objectListInfo.visualColor = newColor;
-                    EditorUtility.SetDirty(objectListInfo);
+                    EditorGUILayout.LabelField("❌", GUILayout.Width(20));
                 }
+                else
+                {
+                    EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            else
+            {
+                // For multi-selection, show the fields without status indicators
+                EditorGUILayout.PropertyField(objectIdProp, new GUIContent("Object ID"));
+                EditorGUILayout.PropertyField(modelPathProp, new GUIContent("Model Path"));
+            }
+
+            EditorGUILayout.Space();
+
+            // Visual Properties (supports multi-editing)
+            EditorGUILayout.LabelField("Visual Properties", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(hasVisualBlockProp, new GUIContent("Has Visual Block"));
+
+            // Check if this is a light
+            Light lightComponent = objectListInfo.GetComponent<Light>();
+            bool isLight = lightComponent != null;
+
+            // Enhanced visual color field with VisualColorHandler management
+            EditorGUILayout.BeginHorizontal();
+
+            if (isLight)
+            {
+                // For lights, visual color is always enabled and matches light color
+                GUI.enabled = false; // Disable toggle for lights
+                EditorGUILayout.Toggle("Use Visual Color", true);
+                GUI.enabled = true;
+
+                // Show light color (synced with visual color)
+                GUI.enabled = false;
+                EditorGUILayout.ColorField(lightComponent.color);
+                GUI.enabled = true;
+            }
+            else
+            {
+                // Normal visual color editing for non-lights
+                EditorGUI.BeginChangeCheck();
+                bool newHasColor = EditorGUILayout.Toggle("Use Visual Color", hasVisualColorProp.boolValue);
+
+                if (EditorGUI.EndChangeCheck())
+            {
+                hasVisualColorProp.boolValue = newHasColor;
+                if (!newHasColor)
+                {
+                    visualColorValueProp.colorValue = Color.white;
+                }
+
+                serializedObject.ApplyModifiedProperties();
+
+                // Update all selected objects
+                foreach (ObjectListInfo t in targets)
+                {
+                    ManageVisualColorHandler(t);
+                    EditorUtility.SetDirty(t);
+                }
+            }
+
+            if (hasVisualColorProp.boolValue)
+            {
+                EditorGUI.BeginChangeCheck();
+                Color newColor = EditorGUILayout.ColorField(visualColorValueProp.colorValue);
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    visualColorValueProp.colorValue = newColor;
+                    serializedObject.ApplyModifiedProperties();
+
+                    // Update all selected objects
+                    foreach (ObjectListInfo t in targets)
+                    {
+                        RefreshVisualColorHandler(t);
+                        EditorUtility.SetDirty(t);
+                    }
+                }
+            }
             }
             EditorGUILayout.EndHorizontal();
-            
+
+            // Special handling for lights
+            if (isLight)
+            {
+                // Ensure sync component exists
+                LightVisualColorSync syncComponent = objectListInfo.GetComponent<LightVisualColorSync>();
+                if (syncComponent == null)
+                {
+                    syncComponent = objectListInfo.gameObject.AddComponent<LightVisualColorSync>();
+                    syncComponent.SyncColors();
+                    EditorUtility.SetDirty(objectListInfo.gameObject);
+                }
+
+                // Force sync colors
+                hasVisualColorProp.boolValue = true;
+                visualColorValueProp.colorValue = lightComponent.color;
+                serializedObject.ApplyModifiedProperties();
+
+                // Ensure handlers are set up
+                ManageVisualColorHandler(objectListInfo);
+
+                EditorGUILayout.HelpBox("💡 Visual color automatically syncs with light color", MessageType.Info);
+            }
+
+            // Show info about VisualColorHandler
+            if (hasVisualColorProp.boolValue && !isLight)
+            {
+                VisualColorHandler handler = objectListInfo.GetComponent<VisualColorHandler>();
+                if (handler != null)
+                {
+                    EditorGUILayout.HelpBox("🎨 Visual color is being applied via MaterialPropertyBlock (preserves across play mode)", MessageType.Info);
+                }
+                else
+                {
+                    if (GUILayout.Button("Add Visual Color Handler"))
+                    {
+                        ManageVisualColorHandler(objectListInfo);
+                    }
+                }
+            }
+
             EditorGUILayout.Space();
             
             // Object Properties
@@ -226,34 +338,136 @@ namespace POTCO.Editor
             EditorGUILayout.PropertyField(instancedProp, new GUIContent("Instanced"));
             EditorGUILayout.PropertyField(holidayProp, new GUIContent("Holiday"));
             EditorGUILayout.PropertyField(visSizeProp, new GUIContent("Vis Size"));
-            
+
+            EditorGUILayout.Space();
+
+            // Group Settings (disabled for multi-selection)
+            EditorGUILayout.LabelField("Group Settings", EditorStyles.boldLabel);
+
+            if (isMultiSelection)
+            {
+                EditorGUILayout.HelpBox("Group Settings editing is disabled when multiple objects are selected.", MessageType.Info);
+            }
+            else
+            {
+                EditorGUILayout.PropertyField(isGroupProp, new GUIContent("Group", "Mark as group - only exports position/rotation and holiday/visSize if set"));
+
+                if (isGroupProp.boolValue)
+                {
+                    EditorGUILayout.HelpBox("📦 Group Mode: Only position, rotation, holiday, and visSize will be exported.", MessageType.Info);
+                }
+            }
+
             EditorGUILayout.Space();
             
             // Export Status
             EditorGUILayout.LabelField("Export Status", EditorStyles.boldLabel);
-            bool readyToExport = !string.IsNullOrEmpty(objectIdProp.stringValue) && !string.IsNullOrEmpty(objectTypeProp.stringValue);
-            
-            if (readyToExport)
+
+            if (isMultiSelection)
             {
-                EditorGUILayout.HelpBox("✅ Ready to export!", MessageType.Info);
+                // Count ready vs not ready objects
+                int readyCount = 0;
+                int totalCount = targets.Length;
+
+                foreach (ObjectListInfo target in targets)
+                {
+                    bool ready = !string.IsNullOrEmpty(target.objectId) &&
+                                (target.isGroup || !string.IsNullOrEmpty(target.objectType));
+                    if (ready) readyCount++;
+                }
+
+                if (readyCount == totalCount)
+                {
+                    EditorGUILayout.HelpBox($"✅ All {totalCount} objects ready to export!", MessageType.Info);
+                }
+                else if (readyCount > 0)
+                {
+                    EditorGUILayout.HelpBox($"⚠️ {readyCount}/{totalCount} objects ready to export", MessageType.Warning);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox($"❌ None of the {totalCount} objects are ready to export", MessageType.Error);
+                }
             }
             else
             {
-                string issues = "";
-                if (string.IsNullOrEmpty(objectIdProp.stringValue)) issues += "• Missing Object ID\n";
-                if (string.IsNullOrEmpty(objectTypeProp.stringValue)) issues += "• Missing Object Type\n";
-                
-                EditorGUILayout.HelpBox($"❌ Cannot export:\n{issues}", MessageType.Warning);
-            }
-            
-            // Display detected info
-            if (!string.IsNullOrEmpty(modelPathProp.stringValue))
-            {
-                string modelName = System.IO.Path.GetFileNameWithoutExtension(modelPathProp.stringValue);
-                EditorGUILayout.HelpBox($"📋 Detected Model: {modelName}", MessageType.None);
+                // Groups only need objectId, regular objects need both objectId and objectType
+                bool readyToExport = !string.IsNullOrEmpty(objectIdProp.stringValue) &&
+                                    (isGroupProp.boolValue || !string.IsNullOrEmpty(objectTypeProp.stringValue));
+
+                if (readyToExport)
+                {
+                    EditorGUILayout.HelpBox("✅ Ready to export!", MessageType.Info);
+                }
+                else
+                {
+                    string issues = "";
+                    if (string.IsNullOrEmpty(objectIdProp.stringValue)) issues += "• Missing Object ID\n";
+                    if (!isGroupProp.boolValue && string.IsNullOrEmpty(objectTypeProp.stringValue)) issues += "• Missing Object Type (not required for groups)\n";
+
+                    EditorGUILayout.HelpBox($"❌ Cannot export:\n{issues}", MessageType.Warning);
+                }
+
+                // Display detected info
+                if (!string.IsNullOrEmpty(modelPathProp.stringValue))
+                {
+                    string modelName = System.IO.Path.GetFileNameWithoutExtension(modelPathProp.stringValue);
+                    EditorGUILayout.HelpBox($"📋 Detected Model: {modelName}", MessageType.None);
+                }
             }
             
             serializedObject.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// Manages the VisualColorHandler component based on whether visual color is set
+        /// </summary>
+        private void ManageVisualColorHandler(ObjectListInfo info)
+        {
+            if (info == null) return;
+
+            VisualColorHandler handler = info.GetComponent<VisualColorHandler>();
+
+            if (info.visualColor.HasValue)
+            {
+                // Add handler if missing
+                if (handler == null)
+                {
+                    handler = info.gameObject.AddComponent<VisualColorHandler>();
+                    EditorUtility.SetDirty(info.gameObject);
+                }
+                // Refresh the color application
+                handler.RefreshVisualColor();
+            }
+            else
+            {
+                // Remove handler if no color is set
+                if (handler != null)
+                {
+                    DestroyImmediate(handler);
+                    EditorUtility.SetDirty(info.gameObject);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the VisualColorHandler to apply the new color
+        /// </summary>
+        private void RefreshVisualColorHandler(ObjectListInfo info)
+        {
+            if (info == null) return;
+
+            VisualColorHandler handler = info.GetComponent<VisualColorHandler>();
+            if (handler == null && info.visualColor.HasValue)
+            {
+                handler = info.gameObject.AddComponent<VisualColorHandler>();
+                EditorUtility.SetDirty(info.gameObject);
+            }
+
+            if (handler != null)
+            {
+                handler.RefreshVisualColor();
+            }
         }
     }
 }

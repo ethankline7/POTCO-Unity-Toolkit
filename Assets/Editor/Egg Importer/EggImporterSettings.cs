@@ -19,7 +19,10 @@ public class EggImporterSettings : ScriptableObject
     
     [Header("Debug Settings")]
     public bool enableDebugLogging = true;
-    
+
+    [Header("Auto-Import Control")]
+    public bool autoImportEnabled = false;
+
     [Header("Pivot Settings")]
     public PivotMode pivotMode = PivotMode.BottomCenter;
     

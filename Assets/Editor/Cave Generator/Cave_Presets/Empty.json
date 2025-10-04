@@ -4,8 +4,6 @@
         "generationDelay": 0.004999999888241291,
         "capOpenEnds": true,
         "useEggFiles": true,
-        "preventOverlaps": false,
-        "overlapCheckRadius": 40.0,
         "maxBranches": 2,
         "branchProbability": 0.30000001192092898,
         "enableBranching": true,

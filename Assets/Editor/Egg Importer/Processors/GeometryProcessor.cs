@@ -12,22 +12,30 @@ public class GeometryProcessor
 {
     private ParserUtilities _parserUtils;
     private MaterialHandler _materialHandler;
-    
+
     // Cache commonly used separators to avoid repeated allocations
     private static readonly char[] SpaceSeparator = { ' ' };
     private static readonly char[] SpaceNewlineCarriageReturnSeparators = { ' ', '\n', '\r' };
-    
+
     // Cache for frequently used materials to avoid repeated Shader.Find calls
     private static Material _cachedDefaultMaterial;
-    
+
+    // Store current asset path for context-aware LOD filtering
+    private string _currentAssetPath = "";
+
     public GeometryProcessor()
     {
         _parserUtils = new ParserUtilities();
         _materialHandler = new MaterialHandler();
     }
 
-    public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx, 
-        Vector3[] masterVertices, Vector3[] masterNormals, Vector2[] masterUVs, Color[] masterColors, 
+    public void SetCurrentAssetPath(string assetPath)
+    {
+        _currentAssetPath = assetPath;
+    }
+
+    public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx,
+        Vector3[] masterVertices, Vector3[] masterNormals, Vector2[] masterUVs, Vector2[] masterUV2s, Color[] masterColors,
         Dictionary<string, Material> materialDict, bool hasSkeletalData, EggJoint rootJoint, GameObject rootBoneObject, Dictionary<string, EggJoint> joints)
     {
         DebugLogger.LogEggImporter($"Creating mesh for GameObject: {go.name}");
@@ -51,6 +59,7 @@ public class GeometryProcessor
         Vector3[] meshVertices;
         Vector3[] meshNormals;
         Vector2[] meshUVs;
+        Vector2[] meshUV2s;
         Color[] meshColors;
         Dictionary<int, int> globalToLocalMap = null;
         int[] sortedIndices = null;
@@ -61,6 +70,7 @@ public class GeometryProcessor
             meshVertices = masterVertices;
             meshNormals = masterNormals;
             meshUVs = masterUVs;
+            meshUV2s = masterUV2s;
             meshColors = masterColors;
         }
         else
@@ -85,6 +95,7 @@ public class GeometryProcessor
             var localVertices = new Vector3[sortedIndices.Length];
             var localNormals = new Vector3[sortedIndices.Length];
             var localUVs = new Vector2[sortedIndices.Length];
+            var localUV2s = new Vector2[sortedIndices.Length];
             var localColors = new Color[sortedIndices.Length];
 
             // Create mapping from global index to local index
@@ -96,12 +107,14 @@ public class GeometryProcessor
                 localVertices[i] = masterVertices[globalIndex];
                 localNormals[i] = masterNormals[globalIndex];
                 localUVs[i] = masterUVs[globalIndex];
+                localUV2s[i] = (masterUV2s != null && globalIndex < masterUV2s.Length) ? masterUV2s[globalIndex] : Vector2.zero;
                 localColors[i] = masterColors[globalIndex];
             }
 
             meshVertices = localVertices;
             meshNormals = localNormals;
             meshUVs = localUVs;
+            meshUV2s = localUV2s;
             meshColors = localColors;
             DebugLogger.LogEggImporter($"Static mesh uses {meshVertices.Length} vertices out of {masterVertices.Length} total vertices");
         }
@@ -158,6 +171,15 @@ public class GeometryProcessor
         mesh.vertices = meshVertices;
         mesh.normals = meshNormals;
         mesh.uv = meshUVs;
+        if (meshUV2s != null && meshUV2s.Length == meshVertices.Length)
+        {
+            int nonZeroCount = meshUV2s.Count(uv => uv != Vector2.zero);
+            if (nonZeroCount > 0)
+            {
+                mesh.uv2 = meshUV2s;
+                DebugLogger.LogEggImporter($"[UV2] Assigned UV2 channel with {nonZeroCount} non-zero coordinates");
+            }
+        }
         mesh.colors = meshColors;
         mesh.subMeshCount = materialNames.Count;
 
@@ -510,7 +532,26 @@ public class GeometryProcessor
                         if (openBrace == -1 || closeBrace == -1) continue;
                         string valuesString = attributeLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
                         var valueParts = valuesString.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries);
-                        if (attributeLine.StartsWith("<UV>") && !attributeLine.Contains("tattoomap")) { vert.uv = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
+
+                        if (attributeLine.StartsWith("<UV>"))
+                        {
+                            // Parse both primary and named UVs
+                            // Primary: <UV> { 0.5 0.5 }
+                            // Named: <UV> multi { 0.5 0.5 }
+                            string uvPrefix = attributeLine.Substring(0, openBrace).Trim();
+                            if (uvPrefix == "<UV>") // Primary UV
+                            {
+                                vert.uv = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture));
+                            }
+                            else
+                            {
+                                // Named UV channel (e.g., "<UV> multi { ... }")
+                                string uvName = uvPrefix.Substring(4).Trim(); // Remove "<UV>" prefix
+                                Vector2 namedUV = new Vector2(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture));
+                                vert.namedUVs[uvName] = namedUV;
+                                DebugLogger.LogEggImporter($"[UV] Parsed named UV channel '{uvName}': {namedUV}");
+                            }
+                        }
                         else if (attributeLine.StartsWith("<Normal>")) { vert.normal = new Vector3(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[2], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture)); }
                         else if (attributeLine.StartsWith("<RGBA>")) { vert.color = new Color(float.Parse(valueParts[0], CultureInfo.InvariantCulture), float.Parse(valueParts[1], CultureInfo.InvariantCulture), float.Parse(valueParts[2], CultureInfo.InvariantCulture), float.Parse(valueParts[3], CultureInfo.InvariantCulture)); }
                     }
@@ -533,7 +574,7 @@ public class GeometryProcessor
     {
         string polygonTextureRef = "Default-Material";
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
-        
+
         // Check for collision tags - skip collision polygons based on settings
         if (EggImporterSettings.Instance.skipCollisions)
         {
@@ -547,12 +588,33 @@ public class GeometryProcessor
                 }
             }
         }
-        
+
+        // Collect ALL texture references for multi-texture support
+        var textureRefs = new List<string>();
         for (int j = i + 1; j < blockEnd; j++)
         {
             string innerLine = lines[j].Trim();
-            if (innerLine.StartsWith("<TRef>")) { polygonTextureRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim(); break; }
+            if (innerLine.StartsWith("<TRef>"))
+            {
+                string texRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
+                textureRefs.Add(texRef);
+            }
         }
+
+        // Create material name from all texture references
+        if (textureRefs.Count > 1)
+        {
+            // Multiple textures - join with || separator for multi-texture material
+            polygonTextureRef = string.Join("||", textureRefs);
+            DebugLogger.LogEggImporter($"[MultiTex] Polygon uses {textureRefs.Count} textures: {polygonTextureRef}");
+        }
+        else if (textureRefs.Count == 1)
+        {
+            // Single texture
+            polygonTextureRef = textureRefs[0];
+        }
+        // else keep "Default-Material"
+
         if (!subMeshes.ContainsKey(polygonTextureRef)) { subMeshes[polygonTextureRef] = new List<int>(); materialNames.Add(polygonTextureRef); }
         for (int j = i + 1; j < blockEnd; j++)
         {
@@ -625,6 +687,16 @@ public class GeometryProcessor
 
     public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap)
     {
+        // Detect ship LOD variant sets at this level if we're in a ship model
+        Dictionary<string, List<string>> shipLODVariantSets = new Dictionary<string, List<string>>();
+        if (IsShipModel())
+        {
+            shipLODVariantSets = DetectShipLODVariantSets(lines, start, end);
+        }
+
+        // Track if we've seen a _high group at THIS level (for ship LOD filtering)
+        bool hasSeenHighGroupAtThisLevel = false;
+
         int i = start;
         while (i < end)
         {
@@ -632,10 +704,10 @@ public class GeometryProcessor
             if (line.StartsWith("<Group>"))
             {
                 string groupName = _parserUtils.GetGroupName(line);
-                
+
                 // Cache the group end to avoid multiple expensive FindMatchingBrace calls
                 int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
-                
+
                 // Skip collision groups based on settings - optimized
                 if (EggImporterSettings.Instance.skipCollisions)
                 {
@@ -647,7 +719,14 @@ public class GeometryProcessor
                         continue;
                     }
                 }
-                
+
+                // Check for ship-specific LOD groups (pir_r_shp_can_* and pir_m_shp_cas_*)
+                if (ShouldSkipShipLODGroup(groupName, shipLODVariantSets, ref hasSeenHighGroupAtThisLevel))
+                {
+                    i = groupEnd + 1;
+                    continue;
+                }
+
                 // Check if this is a named LOD group and handle according to settings
                 if (EggImporterSettings.Instance.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly && ShouldSkipNamedLODGroup(groupName))
                 {
@@ -889,12 +968,12 @@ public class GeometryProcessor
 
 
     public void CreateMasterVertexBuffer(List<EggVertex> vertexPool, out Vector3[] masterVertices,
-        out Vector3[] masterNormals, out Vector2[] masterUVs, out Color[] masterColors)
+        out Vector3[] masterNormals, out Vector2[] masterUVs, out Vector2[] masterUV2s, out Color[] masterColors)
     {
         // Create mapping from vertex pool + local index to global index
         vertexPoolMappings.Clear();
         var verticesByPool = new Dictionary<string, List<EggVertex>>();
-        
+
         // Group vertices by their vertex pool
         foreach (var vertex in vertexPool)
         {
@@ -903,43 +982,59 @@ public class GeometryProcessor
                 verticesByPool[poolName] = new List<EggVertex>();
             verticesByPool[poolName].Add(vertex);
         }
-        
+
         // Create mapping and master arrays
         var masterVerticesList = new List<Vector3>();
         var masterNormalsList = new List<Vector3>();
         var masterUVsList = new List<Vector2>();
+        var masterUV2sList = new List<Vector2>();
         var masterColorsList = new List<Color>();
-        
+
         int globalIndex = 0;
         foreach (var poolKvp in verticesByPool)
         {
             string poolName = poolKvp.Key;
             var poolVertices = poolKvp.Value;
-            
+
             vertexPoolMappings[poolName] = new Dictionary<int, int>();
-            
+
             for (int localIndex = 0; localIndex < poolVertices.Count; localIndex++)
             {
                 var vertex = poolVertices[localIndex];
                 vertexPoolMappings[poolName][localIndex] = globalIndex;
-                
+
                 masterVerticesList.Add(vertex.position);
                 masterNormalsList.Add(vertex.normal);
                 masterUVsList.Add(vertex.uv);
                 masterColorsList.Add(vertex.color);
-                
+
+                // Handle UV2 - use first named UV if available
+                Vector2 uv2 = Vector2.zero;
+                if (vertex.namedUVs.Count > 0)
+                {
+                    // Use the first named UV (typically "multi", "overlay", etc.)
+                    uv2 = vertex.namedUVs.First().Value;
+                }
+                masterUV2sList.Add(uv2);
+
                 globalIndex++;
             }
-            
+
             DebugLogger.LogEggImporter($"[VertexPool] Mapped {poolVertices.Count} vertices from pool '{poolName}' to global indices {globalIndex - poolVertices.Count}-{globalIndex - 1}");
         }
-        
+
         masterVertices = masterVerticesList.ToArray();
         masterNormals = masterNormalsList.ToArray();
         masterUVs = masterUVsList.ToArray();
+        masterUV2s = masterUV2sList.ToArray();
         masterColors = masterColorsList.ToArray();
-        
+
+        int uv2Count = masterUV2s.Count(uv => uv != Vector2.zero);
         DebugLogger.LogEggImporter($"[VertexPool] Created master vertex buffer with {masterVertices.Length} total vertices from {verticesByPool.Count} vertex pools");
+        if (uv2Count > 0)
+        {
+            DebugLogger.LogEggImporter($"[UV2] Found {uv2Count} vertices with secondary UV coordinates");
+        }
     }
 
     private bool WillContainGeometry(string[] lines, int transformStart, Dictionary<string, Transform> hierarchyMap, string currentPath)
@@ -1092,22 +1187,168 @@ public class GeometryProcessor
         return false;
     }
 
+    private bool IsShipModel()
+    {
+        // Check if current asset is a ship cannon or ship model
+        if (string.IsNullOrEmpty(_currentAssetPath))
+            return false;
+
+        string fileName = System.IO.Path.GetFileNameWithoutExtension(_currentAssetPath).ToLower();
+        return fileName.StartsWith("pir_r_shp_can_") || fileName.StartsWith("pir_m_shp_cas_");
+    }
+
+    private Dictionary<string, List<string>> DetectShipLODVariantSets(string[] lines, int start, int end)
+    {
+        // Scan all groups at this level and group them by base name if they have ship LOD suffixes
+        Dictionary<string, List<string>> groupsByBaseName = new Dictionary<string, List<string>>();
+
+        int i = start;
+        while (i < end)
+        {
+            string line = lines[i].Trim();
+            if (line.StartsWith("<Group>"))
+            {
+                string groupName = _parserUtils.GetGroupName(line);
+                string baseName = GetShipLODBaseName(groupName);
+
+                if (baseName != null)
+                {
+                    if (!groupsByBaseName.ContainsKey(baseName))
+                    {
+                        groupsByBaseName[baseName] = new List<string>();
+                    }
+                    groupsByBaseName[baseName].Add(groupName);
+                }
+
+                // Skip to end of this group
+                int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
+                i = groupEnd + 1;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        // Only keep base names that have multiple LOD variants
+        Dictionary<string, List<string>> lodVariants = new Dictionary<string, List<string>>();
+        foreach (var kvp in groupsByBaseName)
+        {
+            if (kvp.Value.Count > 1)
+            {
+                lodVariants[kvp.Key] = kvp.Value;
+                DebugLogger.LogEggImporter($"🚢 Detected ship LOD variant set '{kvp.Key}': {string.Join(", ", kvp.Value)}");
+            }
+        }
+
+        return lodVariants;
+    }
+
+    private string GetShipLODBaseName(string groupName)
+    {
+        // Extract base name if group has a ship LOD suffix
+        // e.g., "cannon_high" -> "cannon", "mast_med" -> "mast"
+        string lowerName = groupName.ToLower();
+
+        if (lowerName.EndsWith("_high") || lowerName.EndsWith("_hi"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+        else if (lowerName.EndsWith("_med") || lowerName.EndsWith("_medium"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+        else if (lowerName.EndsWith("_low"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+        else if (lowerName.EndsWith("_superlow") || lowerName.EndsWith("_super"))
+        {
+            int lastUnderscore = groupName.LastIndexOf('_');
+            return groupName.Substring(0, lastUnderscore);
+        }
+
+        return null;
+    }
+
+    private bool IsPartOfShipLODVariantSet(string groupName, Dictionary<string, List<string>> shipLODVariantSets)
+    {
+        // Check if this group is part of a detected ship LOD variant set
+        string baseName = GetShipLODBaseName(groupName);
+        return baseName != null && shipLODVariantSets.ContainsKey(baseName);
+    }
+
+    private bool ShouldSkipShipLODGroup(string groupName, Dictionary<string, List<string>> shipLODVariantSets, ref bool hasSeenHighGroupAtThisLevel)
+    {
+        // Special LOD handling for ship models (pir_r_shp_can_* and pir_m_shp_cas_*)
+        // These models use suffix-based LOD: groupname_high, groupname_med, groupname_low, groupname_superlow
+        if (!IsShipModel())
+            return false;
+
+        // IMPORTANT: Only filter groups that are part of detected LOD variant sets
+        // This prevents filtering child meshes like "cannon_axis_High" which aren't LOD variants
+        if (!IsPartOfShipLODVariantSet(groupName, shipLODVariantSets))
+            return false;
+
+        string lowerGroupName = groupName.ToLower();
+        var settings = EggImporterSettings.Instance;
+
+        switch (settings.lodImportMode)
+        {
+            case EggImporterSettings.LODImportMode.AllLODs:
+                return false; // Import all LODs
+
+            case EggImporterSettings.LODImportMode.HighestOnly:
+                // Check if this is a _high group
+                bool isHighGroup = lowerGroupName.EndsWith("_high") || lowerGroupName.EndsWith("_hi");
+
+                if (isHighGroup)
+                {
+                    // If we've already seen a _high group at this level, skip this one
+                    if (hasSeenHighGroupAtThisLevel)
+                    {
+                        DebugLogger.LogEggImporter($"🚫 Skipping duplicate ship _high LOD group: '{groupName}' (already imported first _high group at this level)");
+                        return true;
+                    }
+                    else
+                    {
+                        // Mark that we've seen a _high group at this level
+                        hasSeenHighGroupAtThisLevel = true;
+                        DebugLogger.LogEggImporter($"✅ Importing ship _high LOD variant: '{groupName}'");
+                        return false;
+                    }
+                }
+                else
+                {
+                    // Skip all non-high groups (med, low, superlow)
+                    DebugLogger.LogEggImporter($"🚫 Skipping ship LOD variant (not highest): '{groupName}'");
+                    return true;
+                }
+
+            default:
+                return false;
+        }
+    }
+
     private bool ShouldSkipNamedLODGroup(string groupName)
     {
         // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow
         string lowerGroupName = groupName.ToLower();
-        
+
         if (lowerGroupName == "lod_high" || lowerGroupName == "lod_hi")
         {
             return false; // Always import highest quality
         }
-        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" || 
+        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" ||
                  lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super")
         {
             DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}'");
             return true; // Skip lower quality groups
         }
-        
+
         return false; // Not a named LOD group
     }
     

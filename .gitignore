@@ -191,3 +191,5 @@ Assets/Scripts.meta
 *.rgb.meta
 *.jpg.meta
 Assets/Editor/Egg Importer/MultiTexturesImporter.meta
+Assets/Cache.meta
+/Assets/Cache

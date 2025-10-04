@@ -5,9 +5,9 @@ using POTCO.Editor;
 
 public static class LODFilteringUtility
 {
-    public static bool ShouldImportHighestLODOnly(string fileName)
+    public static bool ShouldImportHighestLODOnly(string fileName, bool hasSkeletalData = false)
     {
-        DebugLogger.LogEggImporter($"🔍 Checking LOD for file: {fileName}");
+        DebugLogger.LogEggImporter($"🔍 Checking LOD for file: {fileName} (hasSkeletalData: {hasSkeletalData})");
         
         // Handle character LODs: _hi/_high, _med/_medium, _low, _super/_superlow (super/superlow is lowest quality)
         if (fileName.EndsWith("_hi") || fileName.EndsWith("_high"))
@@ -43,14 +43,16 @@ public static class LODFilteringUtility
             }
         }
         
-        // Handle simple numeric LODs: model_1000, model_2000, etc.
+        // Handle distance-based numeric LODs: model_1000, model_2000, etc.
+        // NOTE: Numeric LOD system only applies to animated models with skeletal data
+        // Static props use internal lod_high/lod_medium/lod_low groups instead
         var numericMatch = System.Text.RegularExpressions.Regex.Match(fileName, @"(.+)_(\d+)$");
-        if (numericMatch.Success)
+        if (numericMatch.Success && hasSkeletalData)
         {
             string baseName = numericMatch.Groups[1].Value;
             int currentLOD = int.Parse(numericMatch.Groups[2].Value);
-            
-            DebugLogger.LogEggImporter($"🔍 Found numeric LOD: {fileName} (base: '{baseName}', number: {currentLOD})");
+
+            DebugLogger.LogEggImporter($"🔍 Found numeric LOD in skeletal model: {fileName} (base: '{baseName}', number: {currentLOD})");
             
             // Find all numeric variants for this model
             string[] allFiles = System.IO.Directory.GetFiles(Application.dataPath, "*.egg", System.IO.SearchOption.AllDirectories);

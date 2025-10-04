@@ -57,7 +57,7 @@ namespace WorldDataExporter.Utilities
                 GenerateObjectEntry(content, rootObjects[i], 2, settings, i == rootObjects.Count - 1);
             }
             
-            content.AppendLine("    }");
+            content.AppendLine("    },");
             content.AppendLine("}");
         }
         

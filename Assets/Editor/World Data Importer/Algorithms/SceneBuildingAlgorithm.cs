@@ -179,7 +179,10 @@ namespace WorldDataImporter.Algorithms
             stats.importTime = (float)(System.DateTime.Now - startTime).TotalSeconds;
             LogImportStatistics(stats, path);
             DebugLogger.LogWorldImporter($"✅ Scene built successfully in {stats.importTime:F2} seconds.");
-            
+
+            // Post-import: Refresh all VisualColorHandlers to ensure colors are applied
+            RefreshAllVisualColors(root);
+
             return stats;
         }
 
@@ -362,7 +365,10 @@ namespace WorldDataImporter.Algorithms
             stats.importTime = (float)(System.DateTime.Now - startTime).TotalSeconds;
             LogImportStatistics(stats, path);
             DebugLogger.LogWorldImporter($"✅ Scene built successfully in {stats.importTime:F2} seconds with delays.");
-            
+
+            // Post-import: Refresh all VisualColorHandlers to ensure colors are applied
+            RefreshAllVisualColors(root);
+
             onComplete?.Invoke(stats);
         }
 
@@ -373,6 +379,7 @@ namespace WorldDataImporter.Algorithms
             DebugLogger.LogWorldImporter($"   • Successful Imports: {stats.successfulImports}");
             DebugLogger.LogWorldImporter($"   • Missing Models: {stats.missingModels}");
             DebugLogger.LogWorldImporter($"   • Color Overrides Applied: {stats.colorOverrides}");
+            DebugLogger.LogWorldImporter($"   • Visual Colors Applied: {stats.visualColorsApplied}");
             DebugLogger.LogWorldImporter($"   • Collision Disabled: {stats.collisionDisabled}");
             DebugLogger.LogWorldImporter($"   • Import Time: {stats.importTime:F2}s");
             
@@ -383,6 +390,35 @@ namespace WorldDataImporter.Algorithms
                 {
                     DebugLogger.LogWorldImporter($"      - {kvp.Key}: {kvp.Value}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Refresh all VisualColorHandlers in the scene after import
+        /// </summary>
+        private static void RefreshAllVisualColors(GameObject root)
+        {
+            if (root == null) return;
+
+            VisualColorHandler[] colorHandlers = root.GetComponentsInChildren<VisualColorHandler>();
+            int refreshedCount = 0;
+
+            foreach (var handler in colorHandlers)
+            {
+                if (handler != null)
+                {
+                    handler.RefreshVisualColor();
+                    UnityEditor.EditorUtility.SetDirty(handler);
+                    refreshedCount++;
+                }
+            }
+
+            if (refreshedCount > 0)
+            {
+                DebugLogger.LogWorldImporter($"🎨 Refreshed {refreshedCount} Visual Color handlers");
+
+                // Force a scene repaint to show the colors
+                UnityEditor.SceneView.RepaintAll();
             }
         }
     }

@@ -19,7 +19,6 @@ namespace CaveGenerator.Algorithms
         public List<Transform> openConnectors;
         public Dictionary<Transform, ConnectorInfo> connectorData;
         public List<CavePieceNode> generatedPieces;
-        public HashSet<Vector3> occupiedPositions;
         public Dictionary<GameObject, int> prefabLikelihoods;
         public int currentIndex;
         public string lastGenerationSeed;

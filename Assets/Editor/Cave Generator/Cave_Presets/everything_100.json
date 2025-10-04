@@ -1,0 +1,285 @@
+{
+    "settings": {
+        "caveLength": 20,
+        "generationDelay": 0.004999999888241291,
+        "capOpenEnds": true,
+        "forceCapOpenEnds": true,
+        "useEggFiles": true,
+        "maxBranches": 7,
+        "branchProbability": 1.0,
+        "enableBranching": true,
+        "maxDepth": 8,
+        "allowLoops": true,
+        "forceCaveLength": false,
+        "seed": -1,
+        "visualizeConnectors": false,
+        "realtimePreview": false,
+        "enableOverlapDetection": true,
+        "overlapTolerance": 0.14000000059604646,
+        "enableBacktracking": true,
+        "maxPrefabRetries": 10,
+        "maxBacktrackSteps": 5
+    },
+    "selections": [
+        {
+            "modelName": "pir_m_are_cav_cellar_A",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_cellar_B",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveNarrow",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWideRampLeft",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWideRampRight",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide_ravine",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide_ravine_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide_vista",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide_water",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_curveWide_water2",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend100",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend100_entrance",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend150",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend150_entrance",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend150_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend150_water",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend200",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend200_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_deadend200_water",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_elbow100",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_elbow150",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_elbow200",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_elbow200_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_fourway100",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_fourway150",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_fourway200",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_fourway200_water",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallNarrow100",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallNarrow150",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallNarrow200",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallNarrow75_entrance",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallNarrowAscend",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallNarrowDescend",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallTransition",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide100",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide150",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide200",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide200_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide200_ravine",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide200_vista",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWide75_entrance",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWideAscend",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWideAscend_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_hallWideDescend",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_threeway100",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_threeway150",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_threeway150_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_threeway200",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_threeway200_lava",
+            "isEnabled": true,
+            "likelihood": 100
+        },
+        {
+            "modelName": "pir_m_are_cav_threeway200_water",
+            "isEnabled": true,
+            "likelihood": 100
+        }
+    ]
+}

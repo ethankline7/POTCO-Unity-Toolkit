@@ -312,27 +312,54 @@ namespace WorldDataExporter.Utilities
             exportedObj.rotation = CoordinateConverter.UnityToPanda3DHPR(transform.localEulerAngles);
             exportedObj.scale = CoordinateConverter.UnityToPanda3DScale(transform.localScale);
             
-            // Use data from ObjectListInfo (we already verified it exists)
-            exportedObj.objectType = potcoInfo.objectType;
-            exportedObj.modelPath = potcoInfo.modelPath;
-            exportedObj.visualColor = potcoInfo.visualColor;
-            exportedObj.disableCollision = potcoInfo.disableCollision;
-            exportedObj.instanced = potcoInfo.instanced;
-            exportedObj.holiday = potcoInfo.holiday;
-            exportedObj.visSize = potcoInfo.visSize;
-            
-            DebugLogger.LogWorldExporter($"📋 Using ObjectListInfo data: Type='{potcoInfo.objectType}', Model='{potcoInfo.modelPath}'");
-            
-            // Model path should already be set from ObjectListInfo
-            if (string.IsNullOrEmpty(exportedObj.modelPath))
+            // Check if this is marked as a group
+            if (potcoInfo.isGroup)
             {
-                DebugLogger.LogWarningWorldExporter($"⚠️ No model path in ObjectListInfo for '{unityObj.name}' - this may cause export issues");
+                // Groups export as GROUP type with standard smiley model to avoid bracket problems
+                DebugLogger.LogWorldExporter($"📦 Processing as Group - using smiley model for Visual block");
+
+                // Set object type to GROUP, use smiley model for Visual block
+                exportedObj.objectType = "GROUP";
+                exportedObj.modelPath = "models/misc/smiley";
+                exportedObj.visualColor = potcoInfo.visualColor;
+                exportedObj.disableCollision = potcoInfo.disableCollision;
+                exportedObj.instanced = potcoInfo.instanced;
+
+                // Only include holiday and visSize if they have values
+                exportedObj.holiday = !string.IsNullOrEmpty(potcoInfo.holiday) ? potcoInfo.holiday : null;
+                exportedObj.visSize = !string.IsNullOrEmpty(potcoInfo.visSize) ? potcoInfo.visSize : null;
+            }
+            else
+            {
+                // Use data from ObjectListInfo (we already verified it exists)
+                exportedObj.objectType = potcoInfo.objectType;
+                exportedObj.modelPath = potcoInfo.modelPath;
+                exportedObj.visualColor = potcoInfo.visualColor;
+                exportedObj.disableCollision = potcoInfo.disableCollision;
+                exportedObj.instanced = potcoInfo.instanced;
+                exportedObj.holiday = potcoInfo.holiday;
+                exportedObj.visSize = potcoInfo.visSize;
+            }
+            
+            if (potcoInfo.isGroup)
+            {
+                DebugLogger.LogWorldExporter($"📦 Group export data: Holiday='{exportedObj.holiday}', VisSize='{exportedObj.visSize}'");
+            }
+            else
+            {
+                DebugLogger.LogWorldExporter($"📋 Using ObjectListInfo data: Type='{exportedObj.objectType}', Model='{exportedObj.modelPath}'");
+
+                // Model path should already be set from ObjectListInfo
+                if (string.IsNullOrEmpty(exportedObj.modelPath))
+                {
+                    DebugLogger.LogWarningWorldExporter($"⚠️ No model path in ObjectListInfo for '{unityObj.name}' - this may cause export issues");
+                }
             }
             
             // Visual color should already be set from ObjectListInfo (if needed)
             
-            // Extract lighting properties if this is a light object
-            if (exportedObj.IsLightObject())
+            // Extract lighting properties if this is a light object (but not for groups)
+            if (!potcoInfo.isGroup && exportedObj.IsLightObject())
             {
                 ExtractLightingProperties(unityObj, exportedObj);
             }
@@ -951,8 +978,9 @@ namespace WorldDataExporter.Utilities
         
         private static bool ShouldExportObject(ExportedObject obj, ExportSettings settings)
         {
-            // Get POTCO definition for additional filtering info
-            var potcoDefinition = ObjectListParser.GetObjectDefinition(obj.objectType);
+            // Get POTCO definition for additional filtering info (skip for GROUP objectType)
+            var potcoDefinition = (obj.objectType != "GROUP" && !string.IsNullOrEmpty(obj.objectType)) ?
+                                 ObjectListParser.GetObjectDefinition(obj.objectType) : null;
             
             // Filter based on settings using POTCO definition data
             if (!settings.exportLighting && obj.IsLightObject())
@@ -968,13 +996,16 @@ namespace WorldDataExporter.Utilities
                 return false;
             
             // Check exclude/include lists
-            if (settings.excludeObjectTypes.Count > 0 && 
-                settings.excludeObjectTypes.Contains(obj.objectType))
-                return false;
-                
-            if (settings.includeObjectTypes.Count > 0 && 
-                !settings.includeObjectTypes.Contains(obj.objectType))
-                return false;
+            if (!string.IsNullOrEmpty(obj.objectType))
+            {
+                if (settings.excludeObjectTypes.Count > 0 &&
+                    settings.excludeObjectTypes.Contains(obj.objectType))
+                    return false;
+
+                if (settings.includeObjectTypes.Count > 0 &&
+                    !settings.includeObjectTypes.Contains(obj.objectType))
+                    return false;
+            }
             
             DebugLogger.LogWorldExporter($"✅ Exporting object: '{obj.objectType}' - '{obj.name}'");
             return true;

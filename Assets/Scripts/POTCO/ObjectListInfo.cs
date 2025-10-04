@@ -7,32 +7,60 @@ namespace POTCO
     /// <summary>
     /// Enhanced component that stores ObjectList object type information with auto-detection
     /// </summary>
+    [SelectionBase]
     public class ObjectListInfo : MonoBehaviour
     {
-        [Header("ObjectList Object Information")]
         [Tooltip("Select from available ObjectList object types")]
         public string objectType = "MISC_OBJ";
-        
+
         [Tooltip("Auto-generated unique ID (generated on export)")]
         public string objectId;
-        
+
         [Tooltip("Auto-detected model path based on GameObject")]
         public string modelPath;
-        
-        [Header("Visual Properties")]
+
         public bool hasVisualBlock = true;
-        public Color? visualColor;
-        
-        [Header("Object Properties")]
+
+        [SerializeField]
+        private bool _hasVisualColor = false;
+        [SerializeField]
+        private Color _visualColorValue = Color.white;
+
+        public Color? visualColor
+        {
+            get => _hasVisualColor ? (Color?)_visualColorValue : null;
+            set
+            {
+                if (value.HasValue)
+                {
+                    _hasVisualColor = true;
+                    _visualColorValue = value.Value;
+                }
+                else
+                {
+                    _hasVisualColor = false;
+                    _visualColorValue = Color.white;
+                }
+            }
+        }
+
         public bool disableCollision = false;
         public bool instanced = false;
         public string holiday = "";
         public string visSize = "";
-        
-        [Header("Auto-Detection")]
+
+        [Tooltip("Mark as group - only exports position/rotation and holiday/visSize if set")]
+        public bool isGroup = false;
+
+        [Tooltip("Category for group objects")]
+        public string groupCategory = "";
+
+        [Tooltip("Subcategory for group objects")]
+        public string groupSubcategory = "";
+
         [Tooltip("Auto-detect properties from GameObject and ObjectList")]
         public bool autoDetectOnStart = true;
-        
+
         [Tooltip("Generate new object ID automatically")]
         public bool autoGenerateId = true;
         
@@ -519,5 +547,6 @@ namespace POTCO
             CheckAndFixDuplicateObjectId();
             LogAutoObjectList($"Checked for duplicate IDs on '{gameObject.name}' - Current ID: {objectId}");
         }
+
     }
 }
