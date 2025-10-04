@@ -813,5 +813,40 @@ namespace POTCO.ShipBuilder
 
             Debug.Log($"Applied logo overlay '{logoTextureName}' to {logosApplied} sail materials (Logo ID: {logoID})");
         }
+
+        // ===== PUBLIC METHODS FOR APPLYING CUSTOMIZATION TO EXISTING SHIPS =====
+
+        public void ApplyHullTextureToExistingShip(GameObject ship, int styleID)
+        {
+            if (ship == null)
+            {
+                Debug.LogError("Cannot apply hull texture to null ship");
+                return;
+            }
+
+            ApplyHullTexture(ship, styleID);
+        }
+
+        public void ApplySailColorToExistingShip(GameObject ship, int sailColorID)
+        {
+            if (ship == null)
+            {
+                Debug.LogError("Cannot apply sail color to null ship");
+                return;
+            }
+
+            ApplyStyleTextures(ship, sailColorID);
+        }
+
+        public void ApplySailLogoToExistingShip(GameObject ship, int logoID)
+        {
+            if (ship == null)
+            {
+                Debug.LogError("Cannot apply sail logo to null ship");
+                return;
+            }
+
+            ApplySailLogo(ship, logoID);
+        }
     }
 }

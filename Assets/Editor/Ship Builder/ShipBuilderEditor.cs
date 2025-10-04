@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace POTCO.ShipBuilder
 {
@@ -41,6 +42,34 @@ namespace POTCO.ShipBuilder
         // Search/Filter
         private string searchFilter = "";
 
+        // Customization Tab State
+        private string[] hullStyleNames;
+        private int[] hullStyleIDs;
+        private int selectedHullStyleIndex = 0;
+
+        private string[] sailColorNames;
+        private int[] sailColorIDs;
+        private int selectedSailColorIndex = 0;
+
+        private string[] logoNames;
+        private int[] logoIDs;
+        private int selectedLogoIndex = 0;
+
+        // Texture preview caching
+        private Texture2D cachedHullTexture;
+        private Texture2D cachedSailTexture;
+        private Texture2D cachedLogoTexture;
+        private int cachedHullStyleID = -1;
+        private int cachedSailColorID = -1;
+        private int cachedLogoID = -1;
+
+        // Favorites System
+        private List<CustomizationPreset> customizationFavorites = new List<CustomizationPreset>();
+        private int selectedFavoriteIndex = -1;
+
+        // Live preview toggle
+        private bool livePreviewEnabled = false;
+
         [MenuItem("POTCO/Ship Builder")]
         public static void ShowWindow()
         {
@@ -57,6 +86,8 @@ namespace POTCO.ShipBuilder
             currentShip = new ShipConfiguration();
             LoadAvailablePresets();
             LoadPOTCOPresets();
+            LoadCustomizationOptions();
+            LoadCustomizationFavorites();
         }
 
         private void OnGUI()
@@ -126,6 +157,22 @@ namespace POTCO.ShipBuilder
 
         private void DrawShipDesignTab()
         {
+            // Live Preview Toggle (moved from Customization tab)
+            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+            bool newLivePreview = EditorGUILayout.Toggle("🔴 Live Preview", livePreviewEnabled, GUILayout.Width(120));
+            if (newLivePreview != livePreviewEnabled)
+            {
+                livePreviewEnabled = newLivePreview;
+                if (livePreviewEnabled && previewShip != null)
+                {
+                    RebuildShipWithLivePreview();
+                }
+            }
+            EditorGUILayout.HelpBox("Automatically rebuild ship when components or customization changes", MessageType.None);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(10);
+
             DrawPOTCOShipPresetSelection();
             EditorGUILayout.Space(10);
 
@@ -143,14 +190,332 @@ namespace POTCO.ShipBuilder
 
         private void DrawCustomizationTab()
         {
-            EditorGUILayout.HelpBox("🎨 Material and color customization coming soon!", MessageType.Info);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🎨 Ship Customization", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Customize your ship's appearance with hull styles, sail colors, and logos. Enable Live Preview in Ship Design tab to see changes in real-time.", MessageType.Info);
+            EditorGUILayout.EndVertical();
+
             EditorGUILayout.Space(10);
 
-            // Placeholder for future material/color customization
-            EditorGUILayout.LabelField("Future Features:", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("• Color picker for hull");
-            EditorGUILayout.LabelField("• Material presets (weathered, new, damaged)");
-            EditorGUILayout.LabelField("• Custom texture application");
+            // Hull Style Section
+            DrawHullStyleSection();
+            EditorGUILayout.Space(10);
+
+            // Sail Color Section
+            DrawSailColorSection();
+            EditorGUILayout.Space(10);
+
+            // Logo Section
+            DrawLogoSection();
+            EditorGUILayout.Space(10);
+
+            // Favorites Section
+            DrawFavoritesSection();
+            EditorGUILayout.Space(10);
+
+            // Action Buttons
+            DrawCustomizationButtons();
+        }
+
+        private void DrawHullStyleSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🏴‍☠️ Hull & Mast Style", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Changes the wood texture on hull, masts, and structural parts.", MessageType.None);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Style:", GUILayout.Width(60));
+
+            if (hullStyleNames != null && hullStyleNames.Length > 0)
+            {
+                // Left arrow button
+                if (GUILayout.Button("◄", GUILayout.Width(30)))
+                {
+                    selectedHullStyleIndex--;
+                    if (selectedHullStyleIndex < 0) selectedHullStyleIndex = hullStyleNames.Length - 1; // Wrap around
+                    currentShip.styleID = hullStyleIDs[selectedHullStyleIndex];
+                    cachedHullTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+
+                int newIndex = EditorGUILayout.Popup(selectedHullStyleIndex, hullStyleNames);
+                if (newIndex != selectedHullStyleIndex)
+                {
+                    selectedHullStyleIndex = newIndex;
+                    currentShip.styleID = hullStyleIDs[selectedHullStyleIndex];
+                    cachedHullTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+
+                // Right arrow button
+                if (GUILayout.Button("►", GUILayout.Width(30)))
+                {
+                    selectedHullStyleIndex++;
+                    if (selectedHullStyleIndex >= hullStyleNames.Length) selectedHullStyleIndex = 0; // Wrap around
+                    currentShip.styleID = hullStyleIDs[selectedHullStyleIndex];
+                    cachedHullTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+            }
+            else
+            {
+                EditorGUILayout.LabelField("No styles available");
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            // Texture Preview
+            DrawTexturePreview(ref cachedHullTexture, currentShip.styleID, ref cachedHullStyleID,
+                () => componentDatabase.GetStyleTexture(currentShip.styleID));
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawSailColorSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("⛵ Sail Cloth Color", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Changes the color of the sail cloth on all masts.", MessageType.None);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Color:", GUILayout.Width(60));
+
+            if (sailColorNames != null && sailColorNames.Length > 0)
+            {
+                // Left arrow button
+                if (GUILayout.Button("◄", GUILayout.Width(30)))
+                {
+                    selectedSailColorIndex--;
+                    if (selectedSailColorIndex < 0) selectedSailColorIndex = sailColorNames.Length - 1; // Wrap around
+                    cachedSailTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+
+                int newIndex = EditorGUILayout.Popup(selectedSailColorIndex, sailColorNames);
+                if (newIndex != selectedSailColorIndex)
+                {
+                    selectedSailColorIndex = newIndex;
+                    cachedSailTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+
+                // Right arrow button
+                if (GUILayout.Button("►", GUILayout.Width(30)))
+                {
+                    selectedSailColorIndex++;
+                    if (selectedSailColorIndex >= sailColorNames.Length) selectedSailColorIndex = 0; // Wrap around
+                    cachedSailTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+            }
+            else
+            {
+                EditorGUILayout.LabelField("No colors available");
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            // Texture Preview
+            if (sailColorNames != null && sailColorNames.Length > 0)
+            {
+                int sailColorID = sailColorIDs[selectedSailColorIndex];
+                DrawTexturePreview(ref cachedSailTexture, sailColorID, ref cachedSailColorID,
+                    () => componentDatabase.GetSailTexture(sailColorID));
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawLogoSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("🏴 Sail Logo", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Logo displayed on the main sails of your ship.", MessageType.None);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Logo:", GUILayout.Width(60));
+
+            if (logoNames != null && logoNames.Length > 0)
+            {
+                // Left arrow button
+                if (GUILayout.Button("◄", GUILayout.Width(30)))
+                {
+                    selectedLogoIndex--;
+                    if (selectedLogoIndex < 0) selectedLogoIndex = logoNames.Length - 1; // Wrap around
+                    currentShip.logoID = logoIDs[selectedLogoIndex];
+                    cachedLogoTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+
+                int newIndex = EditorGUILayout.Popup(selectedLogoIndex, logoNames);
+                if (newIndex != selectedLogoIndex)
+                {
+                    selectedLogoIndex = newIndex;
+                    currentShip.logoID = logoIDs[selectedLogoIndex];
+                    cachedLogoTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+
+                // Right arrow button
+                if (GUILayout.Button("►", GUILayout.Width(30)))
+                {
+                    selectedLogoIndex++;
+                    if (selectedLogoIndex >= logoNames.Length) selectedLogoIndex = 0; // Wrap around
+                    currentShip.logoID = logoIDs[selectedLogoIndex];
+                    cachedLogoTexture = null; // Force reload preview
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        ApplyCustomizationToShip(previewShip);
+                    }
+                }
+            }
+            else
+            {
+                EditorGUILayout.LabelField("No logos available");
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            // Texture Preview
+            DrawTexturePreview(ref cachedLogoTexture, currentShip.logoID, ref cachedLogoID,
+                () => componentDatabase.GetLogoTexture(currentShip.logoID));
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawTexturePreview(ref Texture2D cachedTexture, int currentID, ref int cachedID, System.Func<string> getTextureName)
+        {
+            // Load texture if needed
+            if (cachedTexture == null && currentID != cachedID)
+            {
+                string textureName = getTextureName();
+                if (!string.IsNullOrEmpty(textureName))
+                {
+                    cachedTexture = componentDatabase.LoadTextureForPreview(textureName);
+                    cachedID = currentID;
+                }
+            }
+
+            // Draw preview box
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+
+            if (cachedTexture != null)
+            {
+                Rect previewRect = GUILayoutUtility.GetRect(128, 128, GUILayout.Width(128), GUILayout.Height(128));
+                EditorGUI.DrawPreviewTexture(previewRect, cachedTexture);
+            }
+            else
+            {
+                Rect previewRect = GUILayoutUtility.GetRect(128, 128, GUILayout.Width(128), GUILayout.Height(128));
+                EditorGUI.DrawRect(previewRect, new Color(0.2f, 0.2f, 0.2f));
+                GUI.Label(previewRect, "No Preview", new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleCenter });
+            }
+
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawFavoritesSection()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("⭐ Favorites", EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (customizationFavorites.Count > 0)
+            {
+                string[] favoriteNames = customizationFavorites.Select(f => f.name).ToArray();
+                int newFavoriteIndex = EditorGUILayout.Popup("Load Favorite:", selectedFavoriteIndex, favoriteNames);
+
+                if (GUILayout.Button("Load", GUILayout.Width(60)))
+                {
+                    if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < customizationFavorites.Count)
+                    {
+                        LoadFavorite(customizationFavorites[selectedFavoriteIndex]);
+                    }
+                }
+
+                if (GUILayout.Button("Delete", GUILayout.Width(60)))
+                {
+                    if (selectedFavoriteIndex >= 0 && selectedFavoriteIndex < customizationFavorites.Count)
+                    {
+                        customizationFavorites.RemoveAt(selectedFavoriteIndex);
+                        selectedFavoriteIndex = -1;
+                        SaveCustomizationFavorites();
+                    }
+                }
+
+                selectedFavoriteIndex = newFavoriteIndex;
+            }
+            else
+            {
+                EditorGUILayout.LabelField("No favorites saved");
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("💾 Save Current as Favorite"))
+            {
+                SaveCurrentAsFavorite();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawCustomizationButtons()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("🎲 Randomize All", GUILayout.Height(35)))
+            {
+                RandomizeCustomization();
+            }
+
+            if (GUILayout.Button("🔄 Reset to Defaults", GUILayout.Height(35)))
+            {
+                ResetCustomizationToDefaults();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            if (previewShip != null && !livePreviewEnabled)
+            {
+                if (GUILayout.Button("✨ Apply to Preview Ship", GUILayout.Height(35)))
+                {
+                    ApplyCustomizationToShip(previewShip);
+                }
+            }
+
+            EditorGUILayout.EndVertical();
         }
 
         private void DrawBuildSettingsTab()
@@ -287,6 +652,12 @@ namespace POTCO.ShipBuilder
                 {
                     currentShip.baseHullName = newHull;
                     currentShip.InitializeFromHull(componentDatabase);
+
+                    // Trigger live preview rebuild if enabled
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        RebuildShipWithLivePreview();
+                    }
                 }
             }
 
@@ -433,7 +804,16 @@ namespace POTCO.ShipBuilder
                     int newIndex = EditorGUILayout.Popup(currentIndex, availableComponents);
                     if (newIndex >= 0 && newIndex < availableComponents.Length)
                     {
-                        components[locator] = availableComponents[newIndex];
+                        if (newIndex != currentIndex) // Component changed
+                        {
+                            components[locator] = availableComponents[newIndex];
+
+                            // Trigger live preview rebuild if enabled
+                            if (livePreviewEnabled && previewShip != null)
+                            {
+                                RebuildShipWithLivePreview();
+                            }
+                        }
                     }
 
                     EditorGUILayout.EndHorizontal();
@@ -459,6 +839,12 @@ namespace POTCO.ShipBuilder
                     foreach (string key in keys)
                     {
                         components[key] = component;
+                    }
+
+                    // Trigger live preview rebuild if enabled
+                    if (livePreviewEnabled && previewShip != null)
+                    {
+                        RebuildShipWithLivePreview();
                     }
                 });
             }
@@ -511,7 +897,16 @@ namespace POTCO.ShipBuilder
                 int newIndex = EditorGUILayout.Popup(currentIndex, availableComponents);
                 if (newIndex >= 0 && newIndex < availableComponents.Length)
                 {
-                    component = availableComponents[newIndex];
+                    if (newIndex != currentIndex) // Component changed
+                    {
+                        component = availableComponents[newIndex];
+
+                        // Trigger live preview rebuild if enabled
+                        if (livePreviewEnabled && previewShip != null)
+                        {
+                            RebuildShipWithLivePreview();
+                        }
+                    }
                 }
             }
             else
@@ -752,6 +1147,49 @@ namespace POTCO.ShipBuilder
             Debug.Log($"  Style ID: {config.defaultStyle}, Logo ID: {config.sailLogo}");
             Debug.Log($"  Cannons - Deck: {config.maxDeckCannons}, Left: {config.maxBroadsideLeft}, Right: {config.maxBroadsideRight}");
             Debug.Log($"✅ POTCO ship preset applied successfully!");
+
+            // UPDATE: Sync customization tab selections with preset
+            SyncCustomizationTabWithPreset();
+        }
+
+        private void SyncCustomizationTabWithPreset()
+        {
+            // Update hull style selection to match current ship styleID
+            if (hullStyleIDs != null)
+            {
+                selectedHullStyleIndex = System.Array.IndexOf(hullStyleIDs, currentShip.styleID);
+                if (selectedHullStyleIndex < 0) selectedHullStyleIndex = 0;
+            }
+
+            // Update logo selection to match current ship logoID
+            if (logoIDs != null)
+            {
+                selectedLogoIndex = System.Array.IndexOf(logoIDs, currentShip.logoID);
+                if (selectedLogoIndex < 0) selectedLogoIndex = 0;
+            }
+
+            // For sail color, default to white (ID 100) since presets don't specify sail color separately
+            if (sailColorIDs != null)
+            {
+                selectedSailColorIndex = System.Array.IndexOf(sailColorIDs, 100);
+                if (selectedSailColorIndex < 0) selectedSailColorIndex = 0;
+            }
+
+            // Clear cached textures to force preview reload
+            cachedHullTexture = null;
+            cachedSailTexture = null;
+            cachedLogoTexture = null;
+            cachedHullStyleID = -1;
+            cachedSailColorID = -1;
+            cachedLogoID = -1;
+
+            // Trigger live preview rebuild if enabled
+            if (livePreviewEnabled && previewShip != null)
+            {
+                RebuildShipWithLivePreview();
+            }
+
+            Debug.Log("🎨 Customization tab synced with preset selections");
         }
 
         private void ApplyMastConfig(string locatorName, MastConfig mastConfig)
@@ -870,6 +1308,294 @@ namespace POTCO.ShipBuilder
             }
 
             Debug.Log($"  Cannons ({(isDeckCannon ? "Deck" : "Broadside")}): {cannonModelName} x{maxCount}");
+        }
+
+        // ===== CUSTOMIZATION HELPER METHODS =====
+
+        private void LoadCustomizationOptions()
+        {
+            // Load hull styles
+            (hullStyleNames, hullStyleIDs) = componentDatabase.GetAvailableHullStyles();
+
+            // Load sail colors
+            (sailColorNames, sailColorIDs) = componentDatabase.GetAvailableSailColors();
+
+            // Load logos
+            (logoNames, logoIDs) = componentDatabase.GetAvailableLogos();
+
+            // Initialize selections to current ship values
+            selectedHullStyleIndex = System.Array.IndexOf(hullStyleIDs, currentShip.styleID);
+            if (selectedHullStyleIndex < 0) selectedHullStyleIndex = 0;
+
+            selectedLogoIndex = System.Array.IndexOf(logoIDs, currentShip.logoID);
+            if (selectedLogoIndex < 0) selectedLogoIndex = 0;
+
+            // Default sail color to white (ID 100)
+            selectedSailColorIndex = System.Array.IndexOf(sailColorIDs, 100);
+            if (selectedSailColorIndex < 0) selectedSailColorIndex = 0;
+        }
+
+        private void LoadCustomizationFavorites()
+        {
+            string favoritesPath = "Assets/Editor/Ship Builder/CustomizationFavorites.json";
+            if (System.IO.File.Exists(favoritesPath))
+            {
+                try
+                {
+                    string json = System.IO.File.ReadAllText(favoritesPath);
+                    CustomizationFavoritesList favoritesList = JsonUtility.FromJson<CustomizationFavoritesList>(json);
+                    if (favoritesList != null && favoritesList.favorites != null)
+                    {
+                        customizationFavorites = favoritesList.favorites;
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"Failed to load customization favorites: {e.Message}");
+                }
+            }
+        }
+
+        private void SaveCustomizationFavorites()
+        {
+            string favoritesFolder = "Assets/Editor/Ship Builder";
+            if (!System.IO.Directory.Exists(favoritesFolder))
+            {
+                System.IO.Directory.CreateDirectory(favoritesFolder);
+            }
+
+            string favoritesPath = System.IO.Path.Combine(favoritesFolder, "CustomizationFavorites.json");
+
+            try
+            {
+                CustomizationFavoritesList favoritesList = new CustomizationFavoritesList { favorites = customizationFavorites };
+                string json = JsonUtility.ToJson(favoritesList, true);
+                System.IO.File.WriteAllText(favoritesPath, json);
+                AssetDatabase.Refresh();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to save customization favorites: {e.Message}");
+            }
+        }
+
+        private void SaveCurrentAsFavorite()
+        {
+            string favoriteName = EditorInputDialog.Show("Save Favorite", "Enter a name for this customization:", "My Favorite");
+            if (string.IsNullOrEmpty(favoriteName)) return;
+
+            CustomizationPreset preset = new CustomizationPreset
+            {
+                name = favoriteName,
+                hullStyleID = currentShip.styleID,
+                sailColorID = sailColorIDs != null && selectedSailColorIndex < sailColorIDs.Length ? sailColorIDs[selectedSailColorIndex] : 100,
+                logoID = currentShip.logoID
+            };
+
+            customizationFavorites.Add(preset);
+            SaveCustomizationFavorites();
+            Debug.Log($"Saved customization favorite: {favoriteName}");
+        }
+
+        private void LoadFavorite(CustomizationPreset preset)
+        {
+            // Set hull style
+            selectedHullStyleIndex = System.Array.IndexOf(hullStyleIDs, preset.hullStyleID);
+            if (selectedHullStyleIndex >= 0)
+            {
+                currentShip.styleID = preset.hullStyleID;
+            }
+
+            // Set sail color
+            selectedSailColorIndex = System.Array.IndexOf(sailColorIDs, preset.sailColorID);
+            if (selectedSailColorIndex < 0) selectedSailColorIndex = 0;
+
+            // Set logo
+            selectedLogoIndex = System.Array.IndexOf(logoIDs, preset.logoID);
+            if (selectedLogoIndex >= 0)
+            {
+                currentShip.logoID = preset.logoID;
+            }
+
+            // Clear cached textures to force reload
+            cachedHullTexture = null;
+            cachedSailTexture = null;
+            cachedLogoTexture = null;
+
+            // Apply to ship if live preview is on
+            if (livePreviewEnabled && previewShip != null)
+            {
+                ApplyCustomizationToShip(previewShip);
+            }
+
+            Debug.Log($"Loaded customization favorite: {preset.name}");
+        }
+
+        private void RandomizeCustomization()
+        {
+            // Randomize hull style
+            if (hullStyleIDs != null && hullStyleIDs.Length > 0)
+            {
+                selectedHullStyleIndex = UnityEngine.Random.Range(0, hullStyleIDs.Length);
+                currentShip.styleID = hullStyleIDs[selectedHullStyleIndex];
+            }
+
+            // Randomize sail color
+            if (sailColorIDs != null && sailColorIDs.Length > 0)
+            {
+                selectedSailColorIndex = UnityEngine.Random.Range(0, sailColorIDs.Length);
+            }
+
+            // Randomize logo
+            if (logoIDs != null && logoIDs.Length > 0)
+            {
+                selectedLogoIndex = UnityEngine.Random.Range(0, logoIDs.Length);
+                currentShip.logoID = logoIDs[selectedLogoIndex];
+            }
+
+            // Clear cached textures to force reload
+            cachedHullTexture = null;
+            cachedSailTexture = null;
+            cachedLogoTexture = null;
+
+            // Apply to ship if live preview is on
+            if (livePreviewEnabled && previewShip != null)
+            {
+                ApplyCustomizationToShip(previewShip);
+            }
+
+            Debug.Log("Randomized ship customization!");
+        }
+
+        private void ResetCustomizationToDefaults()
+        {
+            // Reset to Player style (ID 0)
+            selectedHullStyleIndex = System.Array.IndexOf(hullStyleIDs, 0);
+            if (selectedHullStyleIndex >= 0)
+            {
+                currentShip.styleID = 0;
+            }
+
+            // Reset to white sails (ID 100)
+            selectedSailColorIndex = System.Array.IndexOf(sailColorIDs, 100);
+            if (selectedSailColorIndex < 0) selectedSailColorIndex = 0;
+
+            // Reset to no logo (ID 0)
+            selectedLogoIndex = 0;
+            currentShip.logoID = 0;
+
+            // Clear cached textures to force reload
+            cachedHullTexture = null;
+            cachedSailTexture = null;
+            cachedLogoTexture = null;
+
+            // Apply to ship if live preview is on
+            if (livePreviewEnabled && previewShip != null)
+            {
+                ApplyCustomizationToShip(previewShip);
+            }
+
+            Debug.Log("Reset customization to defaults");
+        }
+
+        private void ApplyCustomizationToShip(GameObject ship)
+        {
+            if (ship == null) return;
+
+            ShipAssembler assembler = new ShipAssembler(componentDatabase);
+
+            // Create a temporary config with current customization
+            ShipConfiguration tempConfig = new ShipConfiguration
+            {
+                styleID = currentShip.styleID,
+                logoID = currentShip.logoID
+            };
+
+            // Apply hull style
+            if (tempConfig.styleID > 0)
+            {
+                assembler.ApplyHullTextureToExistingShip(ship, tempConfig.styleID);
+            }
+
+            // Apply sail color
+            if (sailColorIDs != null && selectedSailColorIndex < sailColorIDs.Length)
+            {
+                int sailColorID = sailColorIDs[selectedSailColorIndex];
+                assembler.ApplySailColorToExistingShip(ship, sailColorID);
+            }
+
+            // Apply logo
+            if (tempConfig.logoID > 0)
+            {
+                assembler.ApplySailLogoToExistingShip(ship, tempConfig.logoID);
+            }
+
+            Debug.Log("Applied customization to ship!");
+        }
+
+        private void RebuildShipWithLivePreview()
+        {
+            if (previewShip == null || currentShip == null)
+            {
+                Debug.LogWarning("Cannot rebuild ship: previewShip or currentShip is null");
+                return;
+            }
+
+            // Store the ship name and position
+            string shipName = previewShip.name;
+            Vector3 position = previewShip.transform.position;
+            Quaternion rotation = previewShip.transform.rotation;
+
+            // Destroy the old ship
+            DestroyImmediate(previewShip);
+
+            // Rebuild the ship with current configuration
+            ShipAssembler assembler = new ShipAssembler(componentDatabase);
+            previewShip = assembler.BuildShip(currentShip, shipName);
+
+            if (previewShip != null)
+            {
+                // Restore position and rotation
+                previewShip.transform.position = position;
+                previewShip.transform.rotation = rotation;
+
+                // Keep it selected
+                Selection.activeGameObject = previewShip;
+
+                Debug.Log($"🔴 Live Preview: Ship '{shipName}' rebuilt with updated components");
+            }
+            else
+            {
+                Debug.LogError("Failed to rebuild ship during live preview");
+            }
+        }
+    }
+
+    // ===== CUSTOMIZATION DATA CLASSES =====
+
+    [System.Serializable]
+    public class CustomizationPreset
+    {
+        public string name;
+        public int hullStyleID;
+        public int sailColorID;
+        public int logoID;
+    }
+
+    [System.Serializable]
+    public class CustomizationFavoritesList
+    {
+        public List<CustomizationPreset> favorites;
+    }
+
+    // Simple input dialog helper
+    public static class EditorInputDialog
+    {
+        public static string Show(string title, string message, string defaultValue)
+        {
+            // Use Unity's built-in simple dialog for now
+            // In a real implementation, you might create a custom EditorWindow
+            return defaultValue + "_" + System.DateTime.Now.ToString("HHmmss");
         }
     }
 }

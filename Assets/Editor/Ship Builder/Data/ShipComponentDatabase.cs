@@ -334,6 +334,206 @@ namespace POTCO.ShipBuilder
             return null;
         }
 
+        // NEW: Get available hull styles for customization UI
+        public (string[] names, int[] ids) GetAvailableHullStyles()
+        {
+            if (!potcoDataLoaded || potcoParser == null)
+            {
+                return (new string[] { "Player (Default)" }, new int[] { 0 });
+            }
+
+            List<string> names = new List<string>();
+            List<int> ids = new List<int>();
+
+            // Filter hull styles (IDs 0-34, excluding sail-only colors 100+)
+            var hullStyles = potcoParser.StyleIDConstants
+                .Where(kvp => kvp.Value < 100)
+                .OrderBy(kvp => kvp.Value)
+                .ToList();
+
+            foreach (var kvp in hullStyles)
+            {
+                // Only include styles that have hull textures
+                if (potcoParser.StyleTextures.ContainsKey(kvp.Value))
+                {
+                    names.Add(FormatStyleName(kvp.Key));
+                    ids.Add(kvp.Value);
+                }
+            }
+
+            return (names.ToArray(), ids.ToArray());
+        }
+
+        // NEW: Get available sail colors for customization UI
+        public (string[] names, int[] ids) GetAvailableSailColors()
+        {
+            if (!potcoDataLoaded || potcoParser == null)
+            {
+                return (new string[] { "White (Default)" }, new int[] { 100 });
+            }
+
+            List<string> names = new List<string>();
+            List<int> ids = new List<int>();
+
+            // Get ALL styles that have sail textures (not just IDs 100+)
+            // ColorDict includes both low IDs (Navy, EITC, Treasure styles) and high IDs (SailWhite, etc.)
+            var sailColors = potcoParser.StyleIDConstants
+                .Where(kvp => potcoParser.SailTextures.ContainsKey(kvp.Value))
+                .OrderBy(kvp => kvp.Value)
+                .ToList();
+
+            foreach (var kvp in sailColors)
+            {
+                names.Add(FormatStyleName(kvp.Key));
+                ids.Add(kvp.Value);
+            }
+
+            return (names.ToArray(), ids.ToArray());
+        }
+
+        // NEW: Get available logos for customization UI
+        public (string[] names, int[] ids) GetAvailableLogos()
+        {
+            if (!potcoDataLoaded || potcoParser == null)
+            {
+                return (new string[] { "No Logo" }, new int[] { 0 });
+            }
+
+            List<string> names = new List<string>();
+            List<int> ids = new List<int>();
+
+            // Add "No Logo" option first
+            names.Add("No Logo");
+            ids.Add(0);
+
+            // Get all logos sorted by ID
+            var logos = potcoParser.LogoIDConstants
+                .OrderBy(kvp => kvp.Value)
+                .ToList();
+
+            foreach (var kvp in logos)
+            {
+                if (kvp.Value > 0 && potcoParser.LogoTextures.ContainsKey(kvp.Value))
+                {
+                    names.Add(FormatLogoName(kvp.Key));
+                    ids.Add(kvp.Value);
+                }
+            }
+
+            return (names.ToArray(), ids.ToArray());
+        }
+
+        // NEW: Format style name for display
+        private string FormatStyleName(string rawName)
+        {
+            // Convert "SailWhite" -> "White", "BountyHunter_A" -> "Bounty Hunter A", etc.
+            string name = rawName.Replace("Sail", "").Replace("_", " ");
+
+            // Add spaces before capital letters
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = 0; i < name.Length; i++)
+            {
+                if (i > 0 && char.IsUpper(name[i]) && !char.IsUpper(name[i - 1]))
+                {
+                    sb.Append(' ');
+                }
+                sb.Append(name[i]);
+            }
+
+            return sb.ToString();
+        }
+
+        // NEW: Format logo name for display
+        private string FormatLogoName(string rawName)
+        {
+            // Convert "Player_Hawk" -> "Player: Hawk", "Contest_Skull" -> "Contest: Skull", etc.
+            string name = rawName.Replace("_", ": ");
+
+            // Add spaces before capital letters
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = 0; i < name.Length; i++)
+            {
+                if (i > 0 && char.IsUpper(name[i]) && !char.IsUpper(name[i - 1]) && name[i - 1] != ':' && name[i - 1] != ' ')
+                {
+                    sb.Append(' ');
+                }
+                sb.Append(name[i]);
+            }
+
+            return sb.ToString();
+        }
+
+        // NEW: Load texture for preview in editor
+        public Texture2D LoadTextureForPreview(string textureName)
+        {
+            if (string.IsNullOrEmpty(textureName)) return null;
+
+            Debug.Log($"[LoadTextureForPreview] Searching for texture: {textureName}");
+
+            // Search for texture in Resources folders
+            string[] searchFolders = new string[]
+            {
+                "Assets/Resources/phase_2/models/textureCards",
+                "Assets/Resources/phase_3/models/textureCards",
+                "Assets/Resources/phase_4/models/textureCards",
+                "Assets/Resources/phase_5/models/textureCards",
+                "Assets/Resources/phase_3/models/shipparts",
+                "Assets/Resources/phase_4/models/shipparts",
+                "Assets/Resources/phase_5/models/shipparts"
+            };
+
+            // Try searching through all .egg files (including .bam converted to .egg)
+            foreach (string folder in searchFolders)
+            {
+                if (!System.IO.Directory.Exists(folder)) continue;
+
+                string[] eggFiles = System.IO.Directory.GetFiles(folder, "*.egg");
+
+                foreach (string file in eggFiles)
+                {
+                    string resourcePath = GetResourcePath(file);
+                    GameObject prefab = Resources.Load<GameObject>(resourcePath);
+
+                    if (prefab != null)
+                    {
+                        // Search through all children transforms (not just renderers)
+                        Transform[] allTransforms = prefab.GetComponentsInChildren<Transform>(true);
+                        foreach (Transform t in allTransforms)
+                        {
+                            // Check if this transform's name matches the texture name
+                            if (t.name == textureName)
+                            {
+                                // Try to get renderer from this specific transform
+                                Renderer renderer = t.GetComponent<Renderer>();
+                                if (renderer != null && renderer.sharedMaterial != null && renderer.sharedMaterial.mainTexture != null)
+                                {
+                                    Debug.Log($"✅ Found texture '{textureName}' in {file} on object '{t.name}'");
+                                    return renderer.sharedMaterial.mainTexture as Texture2D;
+                                }
+                            }
+                        }
+
+                        // Also search through all renderers (fallback)
+                        Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>(true);
+                        foreach (Renderer renderer in renderers)
+                        {
+                            if (renderer.sharedMaterial != null && renderer.sharedMaterial.mainTexture != null)
+                            {
+                                if (renderer.sharedMaterial.mainTexture.name == textureName)
+                                {
+                                    Debug.Log($"✅ Found texture '{textureName}' in {file} (via material check)");
+                                    return renderer.sharedMaterial.mainTexture as Texture2D;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Debug.LogWarning($"⚠️ Texture '{textureName}' not found in any Resources folders");
+            return null;
+        }
+
         public string[] GetAvailableHulls()
         {
             return shipHulls.Keys.OrderBy(x => x).ToArray();
