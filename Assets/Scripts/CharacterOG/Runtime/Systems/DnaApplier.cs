@@ -39,6 +39,10 @@ namespace CharacterOG.Runtime.Systems
             // Initialize systems
             rendererCache = new GroupRendererCache(characterRoot);
             materialBinder = new MaterialBinder();
+
+            // CRITICAL: Resolve OG patterns to exact mesh group names using the character's actual mesh
+            catalog.ResolvePatterns(rendererCache);
+
             assembler = new CharacterAssembler(rendererCache, materialBinder, catalog, palettes);
             bodyShapeApplier = new BodyShapeApplier(characterRoot.transform, headRoot, bodyRoot);
         }
@@ -54,12 +58,11 @@ namespace CharacterOG.Runtime.Systems
 
             currentDna = dna;
 
-            // 0. Hide all clothing groups first (important for clean slate)
+            // 0. Hide all clothing and show all body by default
             HideAllClothing();
 
-            // 0.5. Always show head/face
-            rendererCache.EnablePattern("**/body_head*", true);
-            rendererCache.EnablePattern("**/body*head*", true);
+            // 0.5. Always show head (will be handled by RecomputeBodyVisibility)
+            // Body parts are shown/hidden via exact names in CharacterAssembler
 
             // 1. Apply body shape
             if (bodyShapes.TryGetValue(dna.bodyShape, out var shape))
@@ -98,6 +101,9 @@ namespace CharacterOG.Runtime.Systems
             // 7. Apply tattoos
             ApplyTattoos(dna.tattoos);
 
+            // 8. Apply layer-to-layer hiding (AFTER all clothing is equipped)
+            ApplyClothingLayerHiding();
+
             Debug.Log($"DnaApplier: Applied DNA for '{dna.name}' ({dna.gender}, {dna.bodyShape})");
         }
 
@@ -118,24 +124,28 @@ namespace CharacterOG.Runtime.Systems
 
         private void HideAllClothing()
         {
-            // Hide all clothing layers to start with a clean slate
-            rendererCache.EnablePattern("**/clothing_layer1_*", false);
-            rendererCache.EnablePattern("**/clothing_layer2_*", false);
-            rendererCache.EnablePattern("**/clothing_layer3_*", false);
+            // STEP 1: Explicitly disable ALL clothing meshes (including orphaned ones not in any variant)
+            int clothingDisabled = 0;
+            foreach (var name in rendererCache.AllNames())
+            {
+                if (name.StartsWith("clothing_layer"))
+                {
+                    rendererCache.EnableExact(name, false);
+                    clothingDisabled++;
+                }
+            }
+            Debug.Log($"DnaApplier: Disabled {clothingDisabled} clothing meshes");
 
-            // Hide all hair/beard/mustache
-            rendererCache.EnablePattern("**/hair_*", false);
-            rendererCache.EnablePattern("**/beard_*", false);
-            rendererCache.EnablePattern("**/mustache_*", false);
+            // STEP 2: Clear all slots (this will disable all clothing groups via CharacterAssembler)
+            assembler.ClearAllSlots();
 
-            // Show body by default (hide later based on clothing)
-            rendererCache.EnablePattern("**/body*", true);
+            // STEP 3: Show all body parts (will be hidden later based on equipped clothing)
+            foreach (var name in ClothingCatalog.BodyIndexToGroup)
+            {
+                rendererCache.EnableExact(name, true);
+            }
 
-            // Hide accessories by default (show only when jewelry is worn)
-            rendererCache.EnablePattern("**/acc_*", false);
-            rendererCache.EnablePattern("**/jewelry_*", false);
-
-            Debug.Log("DnaApplier: Hid all clothing/hair, showed body");
+            Debug.Log("DnaApplier: Cleared all clothing slots, showed all body parts");
         }
 
         private void ApplyClothingSlot(Slot slot, int ogIndex, int textureIdx, int colorIdx)
@@ -157,29 +167,170 @@ namespace CharacterOG.Runtime.Systems
             // TODO: Replace with proper hide/show groups from clothing variants
         }
 
+        private void ApplyClothingLayerHiding()
+        {
+            var vestVariant = assembler.GetCurrentVariant(Slot.Vest);
+            var coatVariant = assembler.GetCurrentVariant(Slot.Coat);
+            var beltVariant = assembler.GetCurrentVariant(Slot.Belt);
+            var shirtVariant = assembler.GetCurrentVariant(Slot.Shirt);
+            var pantVariant = assembler.GetCurrentVariant(Slot.Pant);
+
+            // When vest is equipped: hide shirt parts based on vest type
+            if (vestVariant != null && vestVariant.ogIndex > 0 && shirtVariant != null && shirtVariant.showGroups.Count > 0)
+            {
+                int hiddenCount = 0;
+                foreach (var groupName in shirtVariant.showGroups)
+                {
+                    var renderers = rendererCache.GetExact(groupName);
+                    foreach (var r in renderers)
+                    {
+                        if (r == null) continue;
+                        var name = r.gameObject.name;
+
+                        // If vest ogIndex > 1: hide shirt parts with 'base', 'front', 'collar_v_low'
+                        // Else: hide shirt parts with 'base'
+                        if (vestVariant.ogIndex > 1)
+                        {
+                            if (name.Contains("base") || name.Contains("front") || name.Contains("collar_v_low"))
+                            {
+                                r.enabled = false;
+                                hiddenCount++;
+                            }
+                        }
+                        else
+                        {
+                            if (name.Contains("base"))
+                            {
+                                r.enabled = false;
+                                hiddenCount++;
+                            }
+                        }
+                    }
+                }
+                if (hiddenCount > 0)
+                {
+                    Debug.Log($"DnaApplier: Vest hid {hiddenCount} shirt submeshes");
+                }
+            }
+
+            // When belt is equipped: hide pant parts with 'belt'
+            if (beltVariant != null && beltVariant.ogIndex > 0 && pantVariant != null && pantVariant.showGroups.Count > 0)
+            {
+                int hiddenCount = 0;
+                foreach (var groupName in pantVariant.showGroups)
+                {
+                    var renderers = rendererCache.GetExact(groupName);
+                    foreach (var r in renderers)
+                    {
+                        if (r == null) continue;
+                        var name = r.gameObject.name;
+
+                        if (name.Contains("belt"))
+                        {
+                            r.enabled = false;
+                            hiddenCount++;
+                        }
+                    }
+                }
+                if (hiddenCount > 0)
+                {
+                    Debug.Log($"DnaApplier: Belt hid {hiddenCount} pant submeshes");
+                }
+            }
+
+            // When belt AND long vest (ogIndex == 3): hide vest parts with 'belt'
+            if (beltVariant != null && beltVariant.ogIndex > 0 && vestVariant != null && vestVariant.ogIndex == 3 && vestVariant.showGroups.Count > 0)
+            {
+                int hiddenCount = 0;
+                foreach (var groupName in vestVariant.showGroups)
+                {
+                    var renderers = rendererCache.GetExact(groupName);
+                    foreach (var r in renderers)
+                    {
+                        if (r == null) continue;
+                        var name = r.gameObject.name;
+
+                        if (name.Contains("belt"))
+                        {
+                            r.enabled = false;
+                            hiddenCount++;
+                        }
+                    }
+                }
+                if (hiddenCount > 0)
+                {
+                    Debug.Log($"DnaApplier: Belt hid {hiddenCount} vest submeshes");
+                }
+            }
+
+            // When coat is equipped: hide shirt/vest parts that don't contain 'front' or 'collar'
+            if (coatVariant != null && coatVariant.ogIndex > 0)
+            {
+                // Hide shirt parts that don't contain 'front' or 'collar'
+                if (shirtVariant != null && shirtVariant.showGroups.Count > 0)
+                {
+                    int hiddenCount = 0;
+                    foreach (var groupName in shirtVariant.showGroups)
+                    {
+                        var renderers = rendererCache.GetExact(groupName);
+                        foreach (var r in renderers)
+                        {
+                            if (r == null) continue;
+                            var name = r.gameObject.name;
+
+                            // Hide if doesn't contain 'front' AND doesn't contain 'collar'
+                            if (!name.Contains("front") && !name.Contains("collar"))
+                            {
+                                r.enabled = false;
+                                hiddenCount++;
+                            }
+                        }
+                    }
+                    if (hiddenCount > 0)
+                    {
+                        Debug.Log($"DnaApplier: Coat hid {hiddenCount} shirt submeshes");
+                    }
+                }
+
+                // Hide vest parts that don't contain 'front'
+                if (vestVariant != null && vestVariant.showGroups.Count > 0)
+                {
+                    int hiddenCount = 0;
+                    foreach (var groupName in vestVariant.showGroups)
+                    {
+                        var renderers = rendererCache.GetExact(groupName);
+                        foreach (var r in renderers)
+                        {
+                            if (r == null) continue;
+                            var name = r.gameObject.name;
+
+                            if (!name.Contains("front"))
+                            {
+                                r.enabled = false;
+                                hiddenCount++;
+                            }
+                        }
+                    }
+                    if (hiddenCount > 0)
+                    {
+                        Debug.Log($"DnaApplier: Coat hid {hiddenCount} vest submeshes");
+                    }
+                }
+            }
+        }
+
         private void ApplySkinColor(int skinColorIdx)
         {
             Color skinColor = palettes.GetSkinColor(skinColorIdx);
 
-            // Apply to body mesh groups (typically "body_*" groups)
-            var bodyGroups = new string[] { "body", "body_head", "body_torso", "body_arms", "body_legs" };
-
-            foreach (var groupName in bodyGroups)
+            // Apply to all body part groups using exact names
+            foreach (var bodyPartName in ClothingCatalog.BodyIndexToGroup)
             {
-                var renderers = rendererCache.GetRenderers(groupName);
-
+                var renderers = rendererCache.GetExact(bodyPartName);
                 foreach (var renderer in renderers)
                 {
                     materialBinder.ApplyDye(renderer, "base", skinColor);
                 }
-            }
-
-            // Also apply to pattern-matched body groups
-            var bodyRenderers = rendererCache.GetRenderersMatchingPattern("**/body*");
-
-            foreach (var renderer in bodyRenderers)
-            {
-                materialBinder.ApplyDye(renderer, "base", skinColor);
             }
         }
 
@@ -196,8 +347,8 @@ namespace CharacterOG.Runtime.Systems
                 {
                     string groupName = jewelryGroups[index];
 
-                    // Enable the jewelry group
-                    rendererCache.EnableGroup(groupName, true);
+                    // Enable the jewelry group (exact name)
+                    rendererCache.EnableExact(groupName, true);
 
                     Debug.Log($"DnaApplier: Enabled jewelry '{groupName}' in zone '{zone}'");
                 }
@@ -213,7 +364,7 @@ namespace CharacterOG.Runtime.Systems
 
                 foreach (var groupName in bodyGroups)
                 {
-                    var renderers = rendererCache.GetRenderers(groupName);
+                    var renderers = rendererCache.GetExact(groupName);
 
                     foreach (var renderer in renderers)
                     {

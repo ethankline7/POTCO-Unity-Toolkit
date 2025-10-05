@@ -4,6 +4,7 @@
 /// </summary>
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace CharacterOG.Models
@@ -26,7 +27,7 @@ namespace CharacterOG.Models
     [Serializable]
     public class SlotVariant
     {
-        /// <summary>Index in OG clothing arrays</summary>
+        /// <summary>Index in OG clothing arrays (from append() order)</summary>
         public int ogIndex = -1;
 
         /// <summary>Variant identifier (e.g., "tricorn")</summary>
@@ -35,16 +36,13 @@ namespace CharacterOG.Models
         /// <summary>Display name from OG data</summary>
         public string displayName;
 
-        /// <summary>Group pattern (e.g., "**/clothing_layer1_hat_tricorn*")</summary>
-        public string pattern;
+        /// <summary>OG patterns from POTCO source (before resolution)</summary>
+        public List<string> ogPatterns = new();
 
-        /// <summary>Explicit group names to enable</summary>
+        /// <summary>EXACT mesh group names to enable (resolved from ogPatterns at runtime)</summary>
         public List<string> showGroups = new();
 
-        /// <summary>Explicit group names to disable</summary>
-        public List<string> hideGroups = new();
-
-        /// <summary>NEW: indices from PirateMale/Female clothingsX lists (negative ints become positive here)</summary>
+        /// <summary>Body part indices to hide (from negative ints in POTCO append)</summary>
         public List<int> bodyHideIndices = new();
 
         /// <summary>Texture IDs available for this variant</summary>
@@ -128,6 +126,34 @@ namespace CharacterOG.Models
                 return null;
 
             return variants.Find(v => v.id == id);
+        }
+
+        /// <summary>Resolve all OG patterns to exact mesh group names using the character model's renderer cache</summary>
+        public void ResolvePatterns(CharacterOG.Runtime.Utils.GroupRendererCache cache)
+        {
+            int totalResolved = 0;
+            int debugCount = 0;
+            foreach (var slotKvp in variantsBySlot)
+            {
+                foreach (var variant in slotKvp.Value)
+                {
+                    if (variant.ogPatterns != null && variant.ogPatterns.Count > 0)
+                    {
+                        variant.showGroups = CharacterOG.Runtime.Utils.PatternResolver.ResolveToExact(cache, variant.ogPatterns);
+                        totalResolved += variant.showGroups.Count;
+
+                        // Debug first few resolutions
+                        if (debugCount < 10 && variant.showGroups.Count > 0)
+                        {
+                            string exactNames = string.Join(", ", variant.showGroups.Take(3));
+                            if (variant.showGroups.Count > 3) exactNames += "...";
+                            UnityEngine.Debug.Log($"[ResolvePatterns] {slotKvp.Key}[{variant.ogIndex}] '{variant.displayName}': {variant.ogPatterns.Count} patterns → {variant.showGroups.Count} exact ({exactNames})");
+                            debugCount++;
+                        }
+                    }
+                }
+            }
+            UnityEngine.Debug.Log($"[ResolvePatterns] Resolved {totalResolved} exact mesh group names from OG patterns");
         }
     }
 }

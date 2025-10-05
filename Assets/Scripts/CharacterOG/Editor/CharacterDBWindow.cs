@@ -374,14 +374,16 @@ namespace CharacterOG.Editor
 
             var cache = new GroupRendererCache(selectedCharacter);
 
-            if (!string.IsNullOrEmpty(variant.pattern))
+            // Resolve OG patterns to exact names if not already done
+            if (variant.showGroups.Count == 0 && variant.ogPatterns.Count > 0)
             {
-                cache.EnablePattern(variant.pattern, true);
+                variant.showGroups = CharacterOG.Runtime.Utils.PatternResolver.ResolveToExact(cache, variant.ogPatterns);
             }
 
+            // Enable exact group names only
             foreach (var groupName in variant.showGroups)
             {
-                cache.EnableGroup(groupName, true);
+                cache.EnableExact(groupName, true);
             }
 
             EditorUtility.SetDirty(selectedCharacter);

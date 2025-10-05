@@ -132,11 +132,8 @@ namespace CharacterOG.Data.PureCSharpBackend
                     ParseUnderwear(catalog, underwearDict);
                 }
 
-                // NEW: Parse layer lists and clothing arrays from gender file to get group patterns
+                // NEW: Parse layer lists and clothing arrays from gender file to get group patterns and body hides
                 ParseClothingPatterns(catalog, genderData, gender);
-
-                // AFTER populating variants, inject body hide masks:
-                InjectBodyHideMasksFromGenderFile(catalog, genderFile);
 
                 Debug.Log($"ClothingCatalog loaded: {catalog.variantsBySlot.Sum(kvp => kvp.Value.Count)} total variants across {catalog.variantsBySlot.Count} slots");
             }
@@ -412,70 +409,153 @@ namespace CharacterOG.Data.PureCSharpBackend
         {
             var text = File.ReadAllText(genderFilePath);
 
-            // Parse hairList
-            var hairMatches = Regex.Match(text, @"hairList = \[(.*?)\]", RegexOptions.Singleline);
-            if (hairMatches.Success)
+            // Parse layer lists (these contain the OG patterns)
+            var layer1Patterns = ExtractLayerList(text, "layer1List");
+            var layer2Patterns = ExtractLayerList(text, "layer2List");
+            var layer3Patterns = ExtractLayerList(text, "layer3List");
+            var hairPatterns = ExtractLayerList(text, "hairList");
+
+            Debug.Log($"Extracted layer lists: layer1={layer1Patterns.Count}, layer2={layer2Patterns.Count}, layer3={layer3Patterns.Count}, hair={hairPatterns.Count}");
+
+            // Parse append() calls for each slot to get layer indices and body hides
+            ParseClothingAppends(catalog, text, "Shirt", Slot.Shirt, layer1Patterns);
+            ParseClothingAppends(catalog, text, "Vest", Slot.Vest, layer2Patterns);
+            ParseClothingAppends(catalog, text, "Coat", Slot.Coat, layer3Patterns);
+            ParseClothingAppends(catalog, text, "Pant", Slot.Pant, layer1Patterns);
+            ParseClothingAppends(catalog, text, "Shoe", Slot.Shoe, layer1Patterns);
+            ParseClothingAppends(catalog, text, "Belt", Slot.Belt, layer2Patterns);
+            ParseClothingAppends(catalog, text, "Hat", Slot.Hat, layer1Patterns);
+
+            // Parse hair (special case - no append(), just use hairList directly)
+            ParseHairVariants(catalog, hairPatterns);
+        }
+
+        private List<string> ExtractLayerList(string text, string listName)
+        {
+            // Match listName = [ ... ]
+            var match = Regex.Match(text, $@"{listName}\s*=\s*\[(.*?)\]", RegexOptions.Singleline);
+            if (!match.Success)
+                return new List<string>();
+
+            return ExtractPatternList(match.Groups[1].Value);
+        }
+
+        private void ParseClothingAppends(ClothingCatalog catalog, string text, string pySlotName, Slot slot, List<string> layerPatterns)
+        {
+            // Match: self.clothings{SlotName}.append( [ ... ] )
+            // Use non-greedy matching and handle nested brackets properly
+            var pattern = $@"self\.clothings{pySlotName}\.append\s*\(";
+            var matches = Regex.Matches(text, pattern);
+
+            var variants = catalog.GetVariants(slot);
+            int ogIndex = 0;
+
+            foreach (Match m in matches)
             {
-                var patterns = ExtractPatternList(hairMatches.Groups[1].Value);
-                for (int i = 0; i < patterns.Count; i++)
+                // Find the matching closing parenthesis
+                int startPos = m.Index + m.Length;
+                int depth = 1;
+                int endPos = startPos;
+
+                for (int i = startPos; i < text.Length && depth > 0; i++)
                 {
-                    var variant = catalog.GetVariantByOgIndex(Slot.Hair, i);
-                    if (variant != null)
+                    if (text[i] == '(') depth++;
+                    else if (text[i] == ')') depth--;
+                    endPos = i;
+                }
+
+                if (depth != 0) continue; // Malformed
+
+                var fullPayload = text.Substring(startPos, endPos - startPos);
+
+                // Debug: Show first few raw payloads with escaped newlines
+                if (ogIndex < 3)
+                {
+                    string displayPayload = fullPayload.Substring(0, Math.Min(150, fullPayload.Length))
+                        .Replace("\r", "\\r")
+                        .Replace("\n", "\\n")
+                        .Replace("\t", "\\t");
+                    Debug.Log($"[ParseClothingAppends] {slot}[{ogIndex}] RAW (len={fullPayload.Length}): {displayPayload}");
+                }
+
+                // Parse the structure: [ [layerIdx...], -bodyHide, ... ]
+                // First, extract the inner list (layer indices)
+                var innerListMatch = Regex.Match(fullPayload, @"\[\s*\[(.*?)\]", RegexOptions.Singleline);
+                var layerIndices = new List<int>();
+
+                if (innerListMatch.Success)
+                {
+                    var innerContent = innerListMatch.Groups[1].Value;
+                    var intRx = new Regex(@"\d+");
+                    foreach (Match im in intRx.Matches(innerContent))
                     {
-                        // Don't set pattern for "none" variants (index 0) - we want them to hide everything
-                        if (i > 0)
-                        {
-                            variant.pattern = patterns[i];
-                        }
+                        if (int.TryParse(im.Value, out var n))
+                            layerIndices.Add(n);
                     }
                 }
-                Debug.Log($"Parsed {patterns.Count} hairList patterns");
+                else if (ogIndex < 3)
+                {
+                    Debug.LogWarning($"[ParseClothingAppends] {slot}[{ogIndex}]: Inner list regex did not match! Payload: {fullPayload.Replace("\n", "\\n").Substring(0, Math.Min(100, fullPayload.Length))}");
+                }
+
+                // Then extract all negative numbers (body hides)
+                var bodyHides = new List<int>();
+                var negRx = new Regex(@"-\s*(\d+)");
+                foreach (Match nm in negRx.Matches(fullPayload))
+                {
+                    if (int.TryParse(nm.Groups[1].Value, out var n))
+                        bodyHides.Add(n);
+                }
+
+                // Get or create variant for this ogIndex
+                SlotVariant variant = null;
+                if (ogIndex < variants.Count)
+                {
+                    variant = variants[ogIndex];
+                }
+                else
+                {
+                    // Create placeholder variant
+                    variant = new SlotVariant { ogIndex = ogIndex, id = $"{slot}_{ogIndex}", displayName = $"{slot} {ogIndex}" };
+                    catalog.variantsBySlot[slot].Add(variant);
+                }
+
+                // Collect OG patterns from layer indices
+                var ogPatterns = new List<string>();
+                foreach (var idx in layerIndices)
+                {
+                    if (idx >= 0 && idx < layerPatterns.Count)
+                        ogPatterns.Add(layerPatterns[idx]);
+                }
+
+                // Store OG patterns and body hides
+                variant.ogPatterns = ogPatterns;
+                variant.bodyHideIndices = bodyHides;
+
+                // Enhanced logging
+                string layerIdxStr = string.Join(",", layerIndices);
+                string bodyHideStr = string.Join(",", bodyHides);
+                string patternStr = ogPatterns.Count > 0 ? string.Join(" | ", ogPatterns.Take(2)) : "NONE";
+
+                Debug.Log($"[ParseClothingAppends] {slot}[{ogIndex}]: LayerIdx=[{layerIdxStr}] → Patterns={ogPatterns.Count} ({patternStr}), BodyHides=[{bodyHideStr}]");
+
+                ogIndex++;
             }
 
-            // Parse layer1List (contains hats, shirts, pants, shoes, etc.)
-            var layer1Matches = Regex.Match(text, @"layer1List = \[(.*?)\]", RegexOptions.Singleline);
-            if (layer1Matches.Success)
+            Debug.Log($"[ParseClothingAppends] Parsed {ogIndex} {slot} variants from append() calls");
+        }
+
+        private void ParseHairVariants(ClothingCatalog catalog, List<string> hairPatterns)
+        {
+            var variants = catalog.GetVariants(Slot.Hair);
+            for (int i = 0; i < hairPatterns.Count && i < variants.Count; i++)
             {
-                var patterns = ExtractPatternList(layer1Matches.Groups[1].Value);
-                Debug.Log($"Parsed {patterns.Count} layer1List patterns");
-
-                // Map layer1List indices to slot variants
-                // Based on the order in layer1List:
-                // 0-15: Shirt parts
-                // 16-21: Pant parts
-                // 22-27: Shoe parts
-                // 28-30: Apron parts
-                // 31+: Hat parts
-
-                // For now, just store them for manual mapping or debugging
-                for (int i = 0; i < patterns.Count; i++)
+                if (i > 0) // Skip index 0 (none)
                 {
-                    string pattern = patterns[i];
-
-                    // Shoes are indices 22-27
-                    if (i >= 22 && i <= 27)
-                    {
-                        int shoeIdx = i - 22;
-                        var variant = catalog.GetVariantByOgIndex(Slot.Shoe, shoeIdx);
-                        if (variant != null && shoeIdx > 0) // Skip index 0 (shoe_none)
-                        {
-                            variant.pattern = pattern;
-                            Debug.Log($"Shoe[{shoeIdx}]: {pattern}");
-                        }
-                    }
-                    // Hats start around index 31
-                    else if (i >= 31 && pattern.Contains("hat"))
-                    {
-                        int hatIdx = i - 31;
-                        var variant = catalog.GetVariantByOgIndex(Slot.Hat, hatIdx);
-                        if (variant != null)
-                        {
-                            variant.pattern = pattern;
-                            Debug.Log($"Hat[{hatIdx}]: {pattern}");
-                        }
-                    }
+                    variants[i].ogPatterns = new List<string> { hairPatterns[i] };
                 }
             }
+            Debug.Log($"Stored {hairPatterns.Count} hair patterns for runtime resolution");
         }
 
         private List<string> ExtractPatternList(string listContent)
@@ -554,14 +634,14 @@ namespace CharacterOG.Data.PureCSharpBackend
                     if (variant.ogIndex < 0)
                         continue;
 
-                    // Skip if pattern already set by ParseLayerListsFromSource
-                    if (!string.IsNullOrEmpty(variant.pattern))
+                    // Skip if patterns already set by ParseLayerListsFromSource
+                    if (variant.ogPatterns != null && variant.ogPatterns.Count > 0)
                         continue;
 
                     string pattern = BuildPatternForVariant(slot, variant, gender);
                     if (!string.IsNullOrEmpty(pattern))
                     {
-                        variant.pattern = pattern;
+                        variant.ogPatterns = new List<string> { pattern };
                         totalPatterns++;
 
                         // Debug log first few patterns
@@ -876,72 +956,5 @@ namespace CharacterOG.Data.PureCSharpBackend
             { "Belt",  Slot.Belt  },
         };
 
-        private void InjectBodyHideMasksFromGenderFile(ClothingCatalog catalog, string genderFilePath)
-        {
-            if (!File.Exists(genderFilePath))
-            {
-                Debug.LogWarning($"[CharacterOG] Gender file not found: {genderFilePath}");
-                return;
-            }
-
-            var text = File.ReadAllText(genderFilePath);
-
-            // Matches: self.clothingsShirt.append( [ ... ] )
-            var blockRx = new Regex(@"self\.clothings(?<slot>[A-Za-z]+)\.append\s*\(\s*(?<payload>\[.*?\])\s*\)",
-                RegexOptions.Singleline | RegexOptions.Compiled);
-
-            // Matches integers like -12 or 34 inside payload
-            var intRx = new Regex(@"[-+]?\d+", RegexOptions.Compiled);
-
-            // Variant order is the OG index, so we track how many append calls we've seen per slot
-            var variantIndexPerSlot = new Dictionary<Slot, int>();
-
-            foreach (Match m in blockRx.Matches(text))
-            {
-                var slotName = m.Groups["slot"].Value;           // e.g., "Shirt"
-                if (!_slotByPyName.TryGetValue(slotName, out var slot))
-                    continue;
-
-                if (!variantIndexPerSlot.TryGetValue(slot, out var ogIndex))
-                    ogIndex = 0;
-
-                // Extract all integers from the payload
-                var payload = m.Groups["payload"].Value;
-                var numbers = new List<int>();
-                foreach (Match im in intRx.Matches(payload))
-                {
-                    if (int.TryParse(im.Value, out var n))
-                        numbers.Add(n);
-                }
-
-                // In the OG, element[0] is a list of clothing part indices; the rest are negative body indices to hide.
-                // We only need the negative entries here and convert them to positive OG body indices.
-                var bodyHideIndices = new List<int>();
-                foreach (var n in numbers)
-                {
-                    if (n < 0) bodyHideIndices.Add(-n); // -(-5) -> 5
-                }
-
-                // Attach to our catalog variant with matching ogIndex
-                var variant = catalog.GetVariantByOgIndex(slot, ogIndex);
-                if (variant != null)
-                {
-                    variant.bodyHideIndices = bodyHideIndices;
-                }
-                else
-                {
-                    // If variants weren't built yet, ensure there's a stub so we don't lose the mask
-                    variant = new SlotVariant { ogIndex = ogIndex, id = $"{slot}_{ogIndex}", displayName = $"{slot} {ogIndex}" };
-                    variant.bodyHideIndices = bodyHideIndices;
-                    if (!catalog.variantsBySlot.ContainsKey(slot))
-                        catalog.variantsBySlot[slot] = new List<SlotVariant>();
-                    catalog.variantsBySlot[slot].Add(variant);
-                }
-
-                variantIndexPerSlot[slot] = ogIndex + 1; // increment OG index for this slot
-            }
-
-            Debug.Log($"[CharacterOG] Injected body hide masks from {Path.GetFileName(genderFilePath)}");
-        }
     }
 }

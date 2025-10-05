@@ -3,6 +3,7 @@
 /// Manages slot visibility using GroupRendererCache and applies textures/dyes via MaterialBinder.
 /// </summary>
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using CharacterOG.Models;
 using CharacterOG.Runtime.Utils;
@@ -60,7 +61,7 @@ namespace CharacterOG.Runtime.Systems
             SetSlot(slot, variant, textureIdx, dye);
         }
 
-        /// <summary>Set clothing for a slot by variant object</summary>
+        /// <summary>Set clothing for a slot by variant object (EXCLUSIVE TOGGLING)</summary>
         public void SetSlot(Slot slot, SlotVariant variant, int textureIdx = 0, Color? dye = null)
         {
             if (variant == null)
@@ -69,63 +70,72 @@ namespace CharacterOG.Runtime.Systems
                 return;
             }
 
-            // Clear current slot first
-            ClearSlot(slot);
+            // STEP 1: Disable all groups owned by this slot (slot exclusive behavior)
+            DisableAllGroupsForSlot(slot);
 
-            // Apply show/hide masks
-            ApplyMasksFor(slot, variant);
+            // STEP 2: Enable only the chosen variant's exact groups
+            rendererCache.EnableExactMany(variant.showGroups, true);
+            Debug.Log($"[SetSlot] {slot}: Enabled {variant.showGroups.Count} groups for '{variant.displayName}' (ogIndex {variant.ogIndex})");
 
-            // Apply textures and dyes to visible renderers
-            var renderers = GetRenderersForVariant(variant);
-
+            // STEP 3: Apply textures and dyes
             string textureId = null;
             if (textureIdx >= 0 && textureIdx < variant.textureIds.Count)
             {
                 textureId = variant.textureIds[textureIdx];
             }
 
-            foreach (var renderer in renderers)
+            // Get renderers for exact groups only
+            foreach (var groupName in variant.showGroups)
             {
-                if (!string.IsNullOrEmpty(textureId))
+                var renderers = GetRenderersForExactGroup(groupName);
+                foreach (var renderer in renderers)
                 {
-                    materialBinder.ApplyTexture(renderer, textureId);
-                }
+                    if (!string.IsNullOrEmpty(textureId))
+                    {
+                        materialBinder.ApplyTexture(renderer, textureId);
+                    }
 
-                if (dye.HasValue)
-                {
-                    materialBinder.ApplyDye(renderer, dye.Value);
+                    if (dye.HasValue)
+                    {
+                        materialBinder.ApplyDye(renderer, dye.Value);
+                    }
                 }
             }
 
-            // Track current slot state
+            // STEP 4: Track current slot state
             currentSlots[slot] = (variant, textureIdx, dye);
 
-            // Recompute body visibility
+            // STEP 5: Recompute body visibility (union all active variants' bodyHideIndices)
             RecomputeBodyVisibility();
 
             Debug.Log($"CharacterAssembler: Set {slot} to '{variant.displayName}' (tex:{textureIdx})");
         }
 
-        /// <summary>Clear a slot (hide all variants)</summary>
+        /// <summary>Clear a slot (disable all variants for that slot)</summary>
         public void ClearSlot(Slot slot)
         {
-            var (currentVariant, _, _) = currentSlots[slot];
+            DisableAllGroupsForSlot(slot);
+            currentSlots[slot] = (null, 0, null);
+            RecomputeBodyVisibility();
+        }
 
-            if (currentVariant != null)
+        /// <summary>Disable all mesh groups owned by a slot (from all variants)</summary>
+        private void DisableAllGroupsForSlot(Slot slot)
+        {
+            var variants = catalog.GetVariants(slot);
+            int totalDisabled = 0;
+            foreach (var variant in variants)
             {
-                // Hide current variant groups
-                foreach (var groupName in currentVariant.showGroups)
-                {
-                    rendererCache.EnableGroup(groupName, false);
-                }
-
-                if (!string.IsNullOrEmpty(currentVariant.pattern))
-                {
-                    rendererCache.EnablePattern(currentVariant.pattern, false);
-                }
-
-                currentSlots[slot] = (null, 0, null);
+                rendererCache.EnableExactMany(variant.showGroups, false);
+                totalDisabled += variant.showGroups.Count;
             }
+            Debug.Log($"[DisableAllGroupsForSlot] {slot}: Disabled {totalDisabled} mesh groups from {variants.Count} variants");
+        }
+
+        /// <summary>Get renderers for an exact group name</summary>
+        private List<Renderer> GetRenderersForExactGroup(string groupName)
+        {
+            return rendererCache.GetExact(groupName);
         }
 
         /// <summary>Clear all slots</summary>
@@ -137,64 +147,6 @@ namespace CharacterOG.Runtime.Systems
             }
         }
 
-        /// <summary>Apply show/hide masks for a variant</summary>
-        public void ApplyMasksFor(Slot slot, SlotVariant variant)
-        {
-            // First, use pattern if available
-            if (!string.IsNullOrEmpty(variant.pattern))
-            {
-                rendererCache.EnablePattern(variant.pattern, true);
-            }
-
-            // Then apply explicit show groups
-            foreach (var groupName in variant.showGroups)
-            {
-                rendererCache.EnableGroup(groupName, true);
-            }
-
-            // Then apply explicit hide groups
-            foreach (var groupName in variant.hideGroups)
-            {
-                rendererCache.EnableGroup(groupName, false);
-            }
-
-            // Apply catalog-level masks if available
-            if (catalog.masks.TryGetValue(slot, out var slotMasks))
-            {
-                if (slotMasks.TryGetValue(variant.id, out var mask))
-                {
-                    foreach (var groupName in mask.show)
-                    {
-                        rendererCache.EnableGroup(groupName, true);
-                    }
-
-                    foreach (var groupName in mask.hide)
-                    {
-                        rendererCache.EnableGroup(groupName, false);
-                    }
-                }
-            }
-        }
-
-        /// <summary>Get renderers affected by a variant</summary>
-        private List<Renderer> GetRenderersForVariant(SlotVariant variant)
-        {
-            var renderers = new List<Renderer>();
-
-            // Get from pattern
-            if (!string.IsNullOrEmpty(variant.pattern))
-            {
-                renderers.AddRange(rendererCache.GetRenderersMatchingPattern(variant.pattern));
-            }
-
-            // Get from explicit show groups
-            foreach (var groupName in variant.showGroups)
-            {
-                renderers.AddRange(rendererCache.GetRenderers(groupName));
-            }
-
-            return renderers;
-        }
 
         /// <summary>Get current variant for slot</summary>
         public SlotVariant GetCurrentVariant(Slot slot)
@@ -228,31 +180,47 @@ namespace CharacterOG.Runtime.Systems
             Debug.Log($"CharacterAssembler: Applied underwear for {gender}");
         }
 
-        /// <summary>Recompute body visibility based on current slots</summary>
+        /// <summary>
+        /// Recompute body visibility based on current slots.
+        /// Mirrors POTCO's handleLayer*Hiding: union all active variants' bodyHideIndices and disable those body parts.
+        /// </summary>
         private void RecomputeBodyVisibility()
         {
-            // Start by showing all body groups
-            for (int i = 0; i < ClothingCatalog.BodyIndexToGroup.Length; i++)
+            // STEP 1: Enable all body parts first
+            foreach (var name in ClothingCatalog.BodyIndexToGroup)
             {
-                string grp = ClothingCatalog.BodyIndexToGroup[i];
-                rendererCache.EnableGroup(grp, true);
+                rendererCache.EnableExact(name, true);
             }
 
-            // Then hide any body indices covered by active slots
+            // STEP 2: Union all hides from currently equipped clothing
+            var toHide = new HashSet<int>();
             foreach (var kvp in currentSlots)
             {
                 var (variant, _, _) = kvp.Value;
                 if (variant != null)
                 {
-                    foreach (var bodyIdx in variant.bodyHideIndices)
+                    foreach (var h in variant.bodyHideIndices)
                     {
-                        if (bodyIdx >= 0 && bodyIdx < ClothingCatalog.BodyIndexToGroup.Length)
-                        {
-                            string grp = ClothingCatalog.BodyIndexToGroup[bodyIdx];
-                            rendererCache.EnableGroup(grp, false);
-                        }
+                        toHide.Add(h);
                     }
                 }
+            }
+
+            // STEP 3: Disable those exact body groups
+            var hiddenParts = new List<string>();
+            foreach (var i in toHide)
+            {
+                if (i >= 0 && i < ClothingCatalog.BodyIndexToGroup.Length)
+                {
+                    string partName = ClothingCatalog.BodyIndexToGroup[i];
+                    rendererCache.EnableExact(partName, false);
+                    hiddenParts.Add(partName);
+                }
+            }
+
+            if (hiddenParts.Count > 0)
+            {
+                Debug.Log($"[RecomputeBodyVisibility] Hiding {hiddenParts.Count} body parts: {string.Join(", ", hiddenParts.Take(5))}");
             }
         }
 
