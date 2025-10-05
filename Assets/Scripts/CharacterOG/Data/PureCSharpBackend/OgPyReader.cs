@@ -336,6 +336,31 @@ namespace CharacterOG.Data.PureCSharpBackend
             if (double.TryParse(sb.ToString(), System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out double value))
             {
+                // Check for arithmetic operators (division, multiplication, etc.)
+                SkipWhitespace();
+                char op = Peek();
+
+                if (op == '/' || op == '*' || op == '+' || op == '-')
+                {
+                    Advance(); // consume operator
+                    SkipWhitespace();
+
+                    // Parse right side
+                    PyNumber rightSide = ParseNumber();
+
+                    // Compute result
+                    double result = op switch
+                    {
+                        '/' => value / rightSide.AsFloat(),
+                        '*' => value * rightSide.AsFloat(),
+                        '+' => value + rightSide.AsFloat(),
+                        '-' => value - rightSide.AsFloat(),
+                        _ => value
+                    };
+
+                    return new PyNumber(result);
+                }
+
                 return new PyNumber(value);
             }
 

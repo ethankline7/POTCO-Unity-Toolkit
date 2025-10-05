@@ -66,14 +66,16 @@ namespace CharacterOG.Runtime.Systems
             // Body parts are shown/hidden via exact names in CharacterAssembler
 
             // 1. Apply body shape
+            Debug.Log($"[DnaApplier] Attempting to apply body shape '{dna.bodyShape}' (available shapes: {bodyShapes.Count})");
             if (bodyShapes.TryGetValue(dna.bodyShape, out var shape))
             {
+                Debug.Log($"[DnaApplier] Found body shape '{dna.bodyShape}', applying to character...");
                 bodyShapeApplier.ApplyBodyShape(shape);
                 bodyShapeApplier.ApplyHeightBias(dna.bodyHeight);
             }
             else
             {
-                Debug.LogWarning($"DnaApplier: Body shape '{dna.bodyShape}' not found");
+                Debug.LogWarning($"DnaApplier: Body shape '{dna.bodyShape}' not found in available shapes: {string.Join(", ", bodyShapes.Keys)}");
             }
 
             // 2. Apply underwear defaults first
@@ -88,10 +90,10 @@ namespace CharacterOG.Runtime.Systems
             ApplyClothingSlot(Slot.Pant, dna.pants, dna.pantsTex, dna.botColorIdx);
             ApplyClothingSlot(Slot.Shoe, dna.shoes, dna.shoesTex, dna.botColorIdx);
 
-            // 4. Apply hair/facial hair
-            ApplyClothingSlot(Slot.Hair, dna.hair, 0, dna.hairColorIdx);
-            ApplyClothingSlot(Slot.Beard, dna.beard, 0, dna.hairColorIdx);
-            ApplyClothingSlot(Slot.Mustache, dna.mustache, 0, dna.hairColorIdx);
+            // 4. Apply hair/facial hair (with hair color palette, not dye palette)
+            ApplyHairSlot(Slot.Hair, dna.hair, dna.hairColorIdx);
+            ApplyHairSlot(Slot.Beard, dna.beard, dna.hairColorIdx);
+            ApplyHairSlot(Slot.Mustache, dna.mustache, dna.hairColorIdx);
 
             // 5. Apply skin color to body groups
             ApplySkinColor(dna.skinColorIdx);
@@ -200,6 +202,40 @@ namespace CharacterOG.Runtime.Systems
             // Hide body parts covered by clothing (or show if no covering)
             // Note: Body is shown by default in HideAllClothing()
             // TODO: Replace with proper hide/show groups from clothing variants
+        }
+
+        private void ApplyHairSlot(Slot slot, int ogIndex, int hairColorIdx)
+        {
+            if (ogIndex < 0)
+                return;
+
+            Color? hairColor = null;
+
+            if (hairColorIdx >= 0)
+            {
+                hairColor = palettes.GetHairColor(hairColorIdx);
+            }
+
+            assembler.SetSlotByIndex(slot, ogIndex, 0, hairColor);
+
+            // Apply hair color to eyebrows (only when applying hair slot, not beard/mustache)
+            if (slot == Slot.Hair && hairColor.HasValue)
+            {
+                var leftEyebrow = rendererCache.GetExact("hair_eyebrow_left");
+                var rightEyebrow = rendererCache.GetExact("hair_eyebrow_right");
+
+                foreach (var renderer in leftEyebrow)
+                {
+                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                }
+
+                foreach (var renderer in rightEyebrow)
+                {
+                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                }
+
+                Debug.Log($"DnaApplier: Applied hair color {hairColor.Value} to eyebrows");
+            }
         }
 
         private void ApplyClothingLayerHiding()
@@ -476,6 +512,19 @@ namespace CharacterOG.Runtime.Systems
                     materialBinder.ApplyDye(renderer, "base", skinColor);
                 }
             }
+
+            // Also apply to head/face meshes (not in body parts list)
+            string[] headMeshNames = { "body_master_face", "head", "face", "head_a", "head_b", "head_c", "head_d", "head_e" };
+            foreach (var headName in headMeshNames)
+            {
+                var renderers = rendererCache.GetExact(headName);
+                foreach (var renderer in renderers)
+                {
+                    materialBinder.ApplyDye(renderer, "base", skinColor);
+                }
+            }
+
+            Debug.Log($"DnaApplier: Applied skin color {skinColor} (index {skinColorIdx}) to body and head");
         }
 
         private void ApplyJewelry(Dictionary<string, int> jewelry, string gender)

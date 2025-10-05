@@ -139,7 +139,7 @@ namespace CharacterOG.Editor
                 }
 
                 // Load all required data
-                npcDatabase = dataSource.LoadNpcDna();
+                // IMPORTANT: Load body shapes FIRST so bodyShapeIndexMaps is populated before LoadNpcDna() needs it
                 bodyShapes = new Dictionary<string, BodyShapeDef>();
 
                 // Load both male and female body shapes
@@ -149,6 +149,9 @@ namespace CharacterOG.Editor
                 foreach (var shape in dataSource.LoadBodyShapes("f"))
                     if (!bodyShapes.ContainsKey(shape.Key))
                         bodyShapes[shape.Key] = shape.Value;
+
+                // Now load NPCs (which will use GetBodyShapeNameFromIndex)
+                npcDatabase = dataSource.LoadNpcDna();
 
                 clothingCatalog = dataSource.LoadClothingCatalog("m");
                 palettes = dataSource.LoadPalettesAndDyeRules();

@@ -18,6 +18,8 @@ namespace CharacterOG.Data.PureCSharpBackend
         public string BackendName => "Pure C# Parser";
         public bool IsAvailable => true;
 
+        private Dictionary<string, List<string>> bodyShapeIndexMaps = new Dictionary<string, List<string>>();
+
         public Dictionary<string, BodyShapeDef> LoadBodyShapes(string gender = "m")
         {
             var reader = new OgPyReader("", OgPaths.BodyDefs);
@@ -25,6 +27,32 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             var shapes = new Dictionary<string, BodyShapeDef>();
 
+            // Load MaleBodies and FemaleBodies lists (index → body shape name mapping)
+            if (data.TryGetValue("MaleBodies", out var maleBodiesNode) && maleBodiesNode is PyList maleBodiesList)
+            {
+                var maleBodyNames = new List<string>();
+                foreach (var item in maleBodiesList.items)
+                {
+                    if (item is PyVariable varRef)
+                        maleBodyNames.Add(varRef.name);
+                }
+                bodyShapeIndexMaps["m"] = maleBodyNames;
+                Debug.Log($"Loaded MaleBodies mapping: {string.Join(", ", maleBodyNames)}");
+            }
+
+            if (data.TryGetValue("FemaleBodies", out var femaleBodiesNode) && femaleBodiesNode is PyList femaleBodiesList)
+            {
+                var femaleBodyNames = new List<string>();
+                foreach (var item in femaleBodiesList.items)
+                {
+                    if (item is PyVariable varRef)
+                        femaleBodyNames.Add(varRef.name);
+                }
+                bodyShapeIndexMaps["f"] = femaleBodyNames;
+                Debug.Log($"Loaded FemaleBodies mapping: {string.Join(", ", femaleBodyNames)}");
+            }
+
+            // Load all body shape definitions
             foreach (var kvp in data)
             {
                 if (kvp.Value is PyDict dict)
@@ -36,42 +64,157 @@ namespace CharacterOG.Data.PureCSharpBackend
             return shapes;
         }
 
+        public string GetBodyShapeNameFromIndex(string gender, int index)
+        {
+            string genderKey = gender.ToLower();
+            if (bodyShapeIndexMaps.TryGetValue(genderKey, out var list))
+            {
+                if (index >= 0 && index < list.Count)
+                    return list[index];
+            }
+            // Fallback for old behavior
+            return index switch
+            {
+                7 => genderKey == "f" ? "FemaleIdeal" : "MaleIdeal",
+                _ => genderKey == "f" ? "FemaleIdeal" : "MaleIdeal"
+            };
+        }
+
         public Palettes LoadPalettesAndDyeRules()
         {
+            Debug.Log($"LoadPalettesAndDyeRules: Loading from {OgPaths.HumanDNA}");
+
             var reader = new OgPyReader("", OgPaths.HumanDNA);
             var data = reader.ParseFile(OgPaths.HumanDNA);
+
+            Debug.Log($"LoadPalettesAndDyeRules: Parsed {data.Count} top-level variables: {string.Join(", ", data.Keys)}");
 
             var palettes = new Palettes();
 
             // Load skin colors
-            if (data.TryGetValue("skinColors", out var skinNode) && skinNode is PyList skinList)
+            Debug.Log($"LoadPalettesAndDyeRules: Looking for skinColors...");
+            if (data.TryGetValue("skinColors", out var skinNode))
             {
-                foreach (var item in skinList.items)
+                Debug.Log($"Found skinColors! Type: {skinNode.GetType().Name}");
+                if (skinNode is PyList skinList)
                 {
-                    if (item is PyFunctionCall call)
-                        palettes.skin.Add(call.ToColor());
+                    Debug.Log($"skinColors is PyList with {skinList.items.Count} items");
+                    foreach (var item in skinList.items)
+                    {
+                        if (item is PyFunctionCall call)
+                            palettes.skin.Add(call.ToColor());
+                    }
                 }
+                else
+                {
+                    Debug.LogWarning($"skinColors is not PyList, it's {skinNode.GetType().Name}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("skinColors NOT FOUND in parsed data");
             }
 
             // Load hair colors
-            if (data.TryGetValue("hairColors", out var hairNode) && hairNode is PyList hairList)
+            Debug.Log($"LoadPalettesAndDyeRules: Looking for hairColors...");
+            if (data.TryGetValue("hairColors", out var hairNode))
             {
-                foreach (var item in hairList.items)
+                Debug.Log($"Found hairColors! Type: {hairNode.GetType().Name}");
+                if (hairNode is PyList hairList)
                 {
-                    if (item is PyFunctionCall call)
-                        palettes.hair.Add(call.ToColor());
+                    Debug.Log($"hairColors is PyList with {hairList.items.Count} items");
+                    foreach (var item in hairList.items)
+                    {
+                        if (item is PyFunctionCall call)
+                            palettes.hair.Add(call.ToColor());
+                    }
                 }
             }
+            else
+            {
+                Debug.LogWarning("hairColors NOT FOUND in parsed data");
+            }
 
-            // Load dye colors from hatColorsOld[0] (base dye palette)
+            // Load hat colors (hatColorsOld - array of arrays)
             if (data.TryGetValue("hatColorsOld", out var hatColorsNode) && hatColorsNode is PyList hatColorsList)
             {
+                foreach (var item in hatColorsList.items)
+                {
+                    if (item is PyList colorList)
+                    {
+                        var colors = new List<Color>();
+                        foreach (var colorItem in colorList.items)
+                        {
+                            if (colorItem is PyFunctionCall call)
+                                colors.Add(call.ToColor());
+                        }
+                        palettes.hatColors.Add(colors);
+                    }
+                }
+
+                // Also populate dye palette from first element for backward compatibility
                 if (hatColorsList.items.Count > 0 && hatColorsList.items[0] is PyList dyeList)
                 {
                     foreach (var item in dyeList.items)
                     {
                         if (item is PyFunctionCall call)
                             palettes.dye.Add(call.ToColor());
+                    }
+                }
+            }
+
+            // Load crazy skin colors
+            if (data.TryGetValue("crazySkinColors", out var crazySkinNode) && crazySkinNode is PyList crazySkinList)
+            {
+                foreach (var item in crazySkinList.items)
+                {
+                    if (item is PyFunctionCall call)
+                        palettes.crazySkin.Add(call.ToColor());
+                }
+            }
+
+            // Load jewelry colors
+            if (data.TryGetValue("jewelryColors", out var jewelryNode) && jewelryNode is PyList jewelryList)
+            {
+                foreach (var item in jewelryList.items)
+                {
+                    if (item is PyFunctionCall call)
+                        palettes.jewelry.Add(call.ToColor());
+                }
+            }
+
+            // Load top clothing colors (clothesTopColorsOld - array of arrays)
+            if (data.TryGetValue("clothesTopColorsOld", out var topColorsNode) && topColorsNode is PyList topColorsList)
+            {
+                foreach (var item in topColorsList.items)
+                {
+                    if (item is PyList colorList)
+                    {
+                        var colors = new List<Color>();
+                        foreach (var colorItem in colorList.items)
+                        {
+                            if (colorItem is PyFunctionCall call)
+                                colors.Add(call.ToColor());
+                        }
+                        palettes.clothesTopColors.Add(colors);
+                    }
+                }
+            }
+
+            // Load bottom clothing colors (clothesBotColorsOld - array of arrays)
+            if (data.TryGetValue("clothesBotColorsOld", out var botColorsNode) && botColorsNode is PyList botColorsList)
+            {
+                foreach (var item in botColorsList.items)
+                {
+                    if (item is PyList colorList)
+                    {
+                        var colors = new List<Color>();
+                        foreach (var colorItem in colorList.items)
+                        {
+                            if (colorItem is PyFunctionCall call)
+                                colors.Add(call.ToColor());
+                        }
+                        palettes.clothesBotColors.Add(colors);
                     }
                 }
             }
@@ -92,6 +235,10 @@ namespace CharacterOG.Data.PureCSharpBackend
                     }
                 }
             }
+
+            Debug.Log($"Loaded color palettes: {palettes.skin.Count} skin, {palettes.hair.Count} hair, {palettes.dye.Count} dye, " +
+                     $"{palettes.hatColors.Count} hat sets, {palettes.crazySkin.Count} crazy skin, {palettes.jewelry.Count} jewelry, " +
+                     $"{palettes.clothesTopColors.Count} top sets, {palettes.clothesBotColors.Count} bot sets");
 
             return palettes;
         }
@@ -947,12 +1094,30 @@ namespace CharacterOG.Data.PureCSharpBackend
 
                 case "setGender":
                     if (args.Get<PyString>(0) is PyString genderStr)
+                    {
                         dna.gender = genderStr.value;
+                        Debug.Log($"[ApplyNpcFunction] Set gender to '{dna.gender}' for NPC '{dna.name}'");
+                    }
                     break;
 
                 case "setBodyShape":
+                    // Body shape can be either a string (direct name) or number (index into MaleBodies/FemaleBodies)
+                    Debug.Log($"[ApplyNpcFunction] setBodyShape called for '{dna.name}', gender='{dna.gender}', arg type={args.items[0]?.GetType().Name}");
                     if (args.Get<PyString>(0) is PyString shapeStr)
+                    {
                         dna.bodyShape = shapeStr.value;
+                        Debug.Log($"[ApplyNpcFunction] Set body shape to string '{dna.bodyShape}'");
+                    }
+                    else if (args.Get<PyNumber>(0) is PyNumber shapeNum)
+                    {
+                        int shapeIndex = shapeNum.AsInt();
+                        dna.bodyShape = GetBodyShapeNameFromIndex(dna.gender, shapeIndex);
+                        Debug.Log($"[ApplyNpcFunction] Mapped body shape index {shapeIndex} (gender '{dna.gender}') → '{dna.bodyShape}'");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[ApplyNpcFunction] setBodyShape received unexpected type: {args.items[0]?.GetType().Name}");
+                    }
                     break;
 
                 case "setBodyHeight":
@@ -967,6 +1132,7 @@ namespace CharacterOG.Data.PureCSharpBackend
                     break;
 
                 case "setClothesHat":
+                case "setHatIdx":
                     if (args.Get<PyNumber>(0) is PyNumber hatIdx)
                         dna.hat = hatIdx.AsInt();
                     if (args.Count > 1 && args.Get<PyNumber>(1) is PyNumber hatTex)

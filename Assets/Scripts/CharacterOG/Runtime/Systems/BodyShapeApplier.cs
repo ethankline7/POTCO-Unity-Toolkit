@@ -4,6 +4,7 @@
 /// Non-destructive - stores original scales for reset.
 /// </summary>
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using CharacterOG.Models;
 
@@ -33,6 +34,8 @@ namespace CharacterOG.Runtime.Systems
             this.headRoot = headRoot;
             this.bodyRoot = bodyRoot;
 
+            Debug.Log($"[BodyShapeApplier] Initialized with rigRoot='{rigRoot?.name}', headRoot='{headRoot?.name}', bodyRoot='{bodyRoot?.name}'");
+
             BuildBoneCache();
         }
 
@@ -47,10 +50,16 @@ namespace CharacterOG.Runtime.Systems
 
             currentShape = shape;
 
+            Debug.Log($"[BodyShapeApplier] Applying shape '{shape.name}' with {shape.boneScales.Count} bone scales and {shape.boneOffsets.Count} offsets");
+
             // Reset to original scales first
             ResetToOriginal();
 
             // Apply bone scales
+            int bonesFound = 0;
+            int bonesNotFound = 0;
+            var notFoundBones = new System.Collections.Generic.List<string>();
+
             foreach (var kvp in shape.boneScales)
             {
                 string boneName = kvp.Key;
@@ -64,12 +73,30 @@ namespace CharacterOG.Runtime.Systems
                         originalScales[bone] = bone.localScale;
                     }
 
+                    Vector3 oldScale = bone.localScale;
                     // Apply scale as multiplier
                     bone.localScale = Vector3.Scale(originalScales[bone], scale);
+                    Debug.Log($"[BodyShapeApplier] Scaled bone '{boneName}': {oldScale} → {bone.localScale} (multiplier: {scale})");
+                    bonesFound++;
+                }
+                else
+                {
+                    notFoundBones.Add(boneName);
+                    bonesNotFound++;
                 }
             }
 
+            if (bonesNotFound > 0)
+            {
+                Debug.LogWarning($"[BodyShapeApplier] {bonesNotFound} bones NOT FOUND in cache: {string.Join(", ", notFoundBones)}");
+            }
+            Debug.Log($"[BodyShapeApplier] Bone scales: {bonesFound} applied, {bonesNotFound} not found");
+
             // Apply bone offsets (tr_* bones)
+            int offsetsFound = 0;
+            int offsetsNotFound = 0;
+            var notFoundOffsets = new System.Collections.Generic.List<string>();
+
             foreach (var kvp in shape.boneOffsets)
             {
                 string boneName = kvp.Key;
@@ -83,10 +110,24 @@ namespace CharacterOG.Runtime.Systems
                         originalPositions[bone] = bone.localPosition;
                     }
 
+                    Vector3 oldPos = bone.localPosition;
                     // Apply offset
                     bone.localPosition = originalPositions[bone] + offset;
+                    Debug.Log($"[BodyShapeApplier] Offset bone '{boneName}': {oldPos} → {bone.localPosition} (offset: {offset})");
+                    offsetsFound++;
+                }
+                else
+                {
+                    notFoundOffsets.Add(boneName);
+                    offsetsNotFound++;
                 }
             }
+
+            if (offsetsNotFound > 0)
+            {
+                Debug.LogWarning($"[BodyShapeApplier] {offsetsNotFound} offset bones NOT FOUND in cache: {string.Join(", ", notFoundOffsets)}");
+            }
+            Debug.Log($"[BodyShapeApplier] Bone offsets: {offsetsFound} applied, {offsetsNotFound} not found");
 
             // Apply head scale
             if (headRoot != null && shape.headScale != 1f)
@@ -96,7 +137,9 @@ namespace CharacterOG.Runtime.Systems
                     originalScales[headRoot] = headRoot.localScale;
                 }
 
+                Vector3 oldScale = headRoot.localScale;
                 headRoot.localScale = originalScales[headRoot] * shape.headScale;
+                Debug.Log($"[BodyShapeApplier] Head scale '{headRoot.name}': {oldScale} → {headRoot.localScale} (multiplier: {shape.headScale})");
             }
 
             // Apply body scale
@@ -107,7 +150,9 @@ namespace CharacterOG.Runtime.Systems
                     originalScales[bodyRoot] = bodyRoot.localScale;
                 }
 
+                Vector3 oldScale = bodyRoot.localScale;
                 bodyRoot.localScale = originalScales[bodyRoot] * shape.bodyScale;
+                Debug.Log($"[BodyShapeApplier] Body scale '{bodyRoot.name}': {oldScale} → {bodyRoot.localScale} (multiplier: {shape.bodyScale})");
             }
 
             // Apply head position offset
@@ -118,7 +163,9 @@ namespace CharacterOG.Runtime.Systems
                     originalPositions[headRoot] = headRoot.localPosition;
                 }
 
+                Vector3 oldPos = headRoot.localPosition;
                 headRoot.localPosition = originalPositions[headRoot] + shape.headPosition;
+                Debug.Log($"[BodyShapeApplier] Head position '{headRoot.name}': {oldPos} → {headRoot.localPosition} (offset: {shape.headPosition})");
             }
 
             Debug.Log($"BodyShapeApplier: Applied shape '{shape.name}' " +
@@ -184,7 +231,10 @@ namespace CharacterOG.Runtime.Systems
                 }
             }
 
-            Debug.Log($"BodyShapeApplier: Cached {boneCache.Count} bones");
+            Debug.Log($"[BodyShapeApplier] Cached {boneCache.Count} bones from rig root '{rigRoot.name}'");
+            // Log first 20 bone names for debugging
+            var boneNames = new System.Collections.Generic.List<string>(boneCache.Keys);
+            Debug.Log($"[BodyShapeApplier] Sample bones: {string.Join(", ", boneNames.Take(20))}");
         }
 
         /// <summary>Get diagnostic info</summary>

@@ -16,6 +16,7 @@ namespace CharacterOG.Runtime.Systems
         // Shader property names (customize based on your shaders)
         private static readonly int s_mainTexProp = Shader.PropertyToID("_MainTex");
         private static readonly int s_baseColorProp = Shader.PropertyToID("_BaseColor");
+        private static readonly int s_colorProp = Shader.PropertyToID("_Color"); // Built-in RP
         private static readonly int s_dyeColorProp = Shader.PropertyToID("_DyeColor");
         private static readonly int s_trimColorProp = Shader.PropertyToID("_TrimColor");
 
@@ -61,15 +62,43 @@ namespace CharacterOG.Runtime.Systems
 
             var block = GetOrCreatePropertyBlock(renderer);
 
-            // Route to appropriate shader property based on channel
-            int propertyId = channel.ToLower() switch
+            // For skin/body colors, use the material's main color property
+            // Try both URP (_BaseColor) and Built-in (_Color) properties
+            if (channel.ToLower() == "base")
             {
-                "base" => s_dyeColorProp,
-                "trim" => s_trimColorProp,
-                _ => s_dyeColorProp
-            };
+                // Check which property the material has
+                if (renderer.sharedMaterial != null)
+                {
+                    if (renderer.sharedMaterial.HasProperty(s_baseColorProp))
+                    {
+                        block.SetColor(s_baseColorProp, color);
+                    }
+                    else if (renderer.sharedMaterial.HasProperty(s_colorProp))
+                    {
+                        block.SetColor(s_colorProp, color);
+                    }
+                    else if (renderer.sharedMaterial.HasProperty(s_dyeColorProp))
+                    {
+                        block.SetColor(s_dyeColorProp, color);
+                    }
+                    else
+                    {
+                        // Fallback: try _BaseColor anyway (URP default)
+                        block.SetColor(s_baseColorProp, color);
+                    }
+                }
+            }
+            else
+            {
+                // For other channels (trim, etc.), use channel-specific properties
+                int propertyId = channel.ToLower() switch
+                {
+                    "trim" => s_trimColorProp,
+                    _ => s_dyeColorProp
+                };
+                block.SetColor(propertyId, color);
+            }
 
-            block.SetColor(propertyId, color);
             renderer.SetPropertyBlock(block);
         }
 
