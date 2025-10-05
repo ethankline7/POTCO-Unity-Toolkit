@@ -153,28 +153,58 @@ namespace CharacterOG.Data.PureCSharpBackend
             var reader = new OgPyReader("", genderFile);
             var data = reader.ParseFile(genderFile);
 
-            // Load jewelry_geos_face
+            // Load jewelry_geos_face (the parts array)
+            var jewelryFaceParts = new List<string>();
             if (data.TryGetValue("jewelry_geos_face", out var faceNode) && faceNode is PyList faceList)
             {
-                var faceGroups = new List<string>();
                 foreach (var item in faceList.items)
                 {
                     if (item is PyString str)
-                        faceGroups.Add(str.value);
+                        jewelryFaceParts.Add(str.value);
                 }
-                defs.jewelryGroupsByZone[$"{gender}_face"] = faceGroups;
             }
 
-            // Load jewelry_geos_body
+            // Load jewelry_geos_body (the parts array)
+            var jewelryBodyParts = new List<string>();
             if (data.TryGetValue("jewelry_geos_body", out var bodyNode) && bodyNode is PyList bodyList)
             {
-                var bodyGroups = new List<string>();
                 foreach (var item in bodyList.items)
                 {
                     if (item is PyString str)
-                        bodyGroups.Add(str.value);
+                        jewelryBodyParts.Add(str.value);
                 }
-                defs.jewelryGroupsByZone[$"{gender}_body"] = bodyGroups;
+            }
+
+            // Load jewelry_options and build jewelrySets (PirateMale.py lines 1914-1940)
+            if (data.TryGetValue("jewelry_options", out var optionsNode) && optionsNode is PyDict optionsDict)
+            {
+                foreach (var kvp in optionsDict.items)
+                {
+                    string zoneName = kvp.Key; // LEar, REar, LBrow, etc.
+                    if (!(kvp.Value is PyList piecesList)) continue;
+
+                    // Choose face or body parts based on zone
+                    var parts = (zoneName == "LHand" || zoneName == "RHand") ? jewelryBodyParts : jewelryFaceParts;
+
+                    var zoneGroups = new List<string>();
+                    foreach (var pieceNode in piecesList.items)
+                    {
+                        if (!(pieceNode is PyList piece)) continue;
+
+                        // Each piece is an array of indices into jewelry_geos_face/body
+                        // We take the first index as the primary group name
+                        if (piece.items.Count > 0 && piece.items[0] is PyNumber num)
+                        {
+                            int idx = num.AsInt();
+                            if (idx >= 0 && idx < parts.Count)
+                            {
+                                zoneGroups.Add(parts[idx]);
+                            }
+                        }
+                    }
+
+                    defs.jewelryGroupsByZone[zoneName] = zoneGroups;
+                }
             }
 
             // Load vector_tattoos for tattoo zone mapping (indices map to zones)
@@ -186,6 +216,7 @@ namespace CharacterOG.Data.PureCSharpBackend
                 }
             }
 
+            Debug.Log($"Loaded jewelry for {gender}: {string.Join(", ", defs.jewelryGroupsByZone.Keys)}");
             return defs;
         }
 
@@ -450,13 +481,13 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             // Parse hairList, layer1List from Python source
             string genderFile = OgPaths.GetPirateGenderFile(gender);
-            ParseLayerListsFromSource(catalog, genderFile);
+            ParseLayerListsFromSource(catalog, genderFile, gender);
 
             // Build patterns from variant names (fallback for items not in lists)
             BuildPatternsFromNames(catalog, gender);
         }
 
-        private void ParseLayerListsFromSource(ClothingCatalog catalog, string genderFilePath)
+        private void ParseLayerListsFromSource(ClothingCatalog catalog, string genderFilePath, string gender)
         {
             var text = File.ReadAllText(genderFilePath);
 
@@ -478,7 +509,10 @@ namespace CharacterOG.Data.PureCSharpBackend
             ParseClothingAppends(catalog, text, "Hat", Slot.Hat, layer1Patterns);
 
             // Parse hair (special case - no append(), just use hairList directly)
-            ParseHairVariants(catalog, hairPatterns);
+            ParseHairVariants(catalog, hairPatterns, text, gender);
+
+            // Parse beard and mustache patterns from Python source
+            ParseBeardMustachePatterns(catalog, text, gender);
         }
 
         private List<string> ExtractLayerList(string text, string listName)
@@ -596,17 +630,88 @@ namespace CharacterOG.Data.PureCSharpBackend
             Debug.Log($"[ParseClothingAppends] Parsed {ogIndex} {slot} variants from append() calls");
         }
 
-        private void ParseHairVariants(ClothingCatalog catalog, List<string> hairPatterns)
+        private void ParseHairVariants(ClothingCatalog catalog, List<string> hairPatterns, string text, string gender)
         {
             var variants = catalog.GetVariants(Slot.Hair);
-            for (int i = 0; i < hairPatterns.Count && i < variants.Count; i++)
+
+            if (gender.ToLower() == "f")
             {
-                if (i > 0) // Skip index 0 (none)
+                // Female hair: each style is a combination of hair pieces (PirateFemale.py lines 1569+)
+                // Parse self.hairs.append([...]) arrays
+                var hairCombos = new List<List<int>>();
+                var hairComboRx = new Regex(@"self\.hairs\.append\(\[([\d,\s]+)\]\)", RegexOptions.Compiled);
+                foreach (Match m in hairComboRx.Matches(text))
                 {
-                    variants[i].ogPatterns = new List<string> { hairPatterns[i] };
+                    var indices = new List<int>();
+                    var numRx = new Regex(@"\d+");
+                    foreach (Match nm in numRx.Matches(m.Groups[1].Value))
+                    {
+                        if (int.TryParse(nm.Value, out var idx))
+                            indices.Add(idx);
+                    }
+                    hairCombos.Add(indices);
                 }
+
+                // Map indices to patterns
+                for (int i = 0; i < hairCombos.Count && i < variants.Count; i++)
+                {
+                    var patterns = new List<string>();
+                    foreach (var idx in hairCombos[i])
+                    {
+                        if (idx >= 0 && idx < hairPatterns.Count)
+                            patterns.Add(hairPatterns[idx]);
+                    }
+                    variants[i].ogPatterns = patterns;
+                }
+                Debug.Log($"Stored {hairCombos.Count} female hair combinations from Python source");
             }
-            Debug.Log($"Stored {hairPatterns.Count} hair patterns for runtime resolution");
+            else
+            {
+                // Male hair: each style = one pattern
+                for (int i = 0; i < hairPatterns.Count && i < variants.Count; i++)
+                {
+                    if (i < variants.Count)
+                    {
+                        variants[i].ogPatterns = new List<string> { hairPatterns[i] };
+                    }
+                }
+                Debug.Log($"Stored {hairPatterns.Count} male hair patterns for runtime resolution");
+            }
+        }
+
+        private void ParseBeardMustachePatterns(ClothingCatalog catalog, string text, string gender)
+        {
+            // Extract beard patterns from self.beards.append() calls (PirateMale.py lines 1829-1839)
+            var beardPatterns = new List<string>();
+            var beardRx = new Regex(@"self\.beards\.append\(geom\.findAllMatches\('([^']+)'\)\)", RegexOptions.Compiled);
+            foreach (Match m in beardRx.Matches(text))
+            {
+                beardPatterns.Add(m.Groups[1].Value);
+            }
+
+            // Extract mustache patterns from self.mustaches.append() calls (PirateMale.py lines 1844-1850)
+            var mustachePatterns = new List<string>();
+            var mustacheRx = new Regex(@"self\.mustaches\.append\(geom\.findAllMatches\('([^']+)'\)\)", RegexOptions.Compiled);
+            foreach (Match m in mustacheRx.Matches(text))
+            {
+                mustachePatterns.Add(m.Groups[1].Value);
+            }
+
+            // Apply beard patterns to variants
+            var beardVariants = catalog.GetVariants(Slot.Beard);
+            for (int i = 0; i < beardPatterns.Count && i < beardVariants.Count; i++)
+            {
+                beardVariants[i].ogPatterns = new List<string> { beardPatterns[i] };
+            }
+
+            // Apply mustache patterns to variants
+            var mustacheVariants = catalog.GetVariants(Slot.Mustache);
+            for (int i = 0; i < mustachePatterns.Count && i < mustacheVariants.Count; i++)
+            {
+                mustacheVariants[i].ogPatterns = new List<string> { mustachePatterns[i] };
+            }
+
+            Debug.Log($"Loaded {beardPatterns.Count} beard and {mustachePatterns.Count} mustache patterns from {gender} Python source");
         }
 
         private List<string> ExtractPatternList(string listContent)
@@ -986,12 +1091,25 @@ namespace CharacterOG.Data.PureCSharpBackend
 
         private void ParseJewelry(PirateDNA dna, string funcName, PyTuple args)
         {
-            // Extract zone from function name (e.g., setJewelryZone1 → zone1)
-            string zone = funcName.Replace("setJewelry", "").ToLower();
+            // Extract zone number and map to zone name (PirateMale.py lines 3327-3334)
+            // Zone1=LEar, Zone2=REar, Zone3=LBrow, Zone4=RBrow, Zone5=Nose, Zone6=Mouth, Zone7=LHand, Zone8=RHand
+            string zoneNum = funcName.Replace("setJewelryZone", "");
+            string zoneName = zoneNum switch
+            {
+                "1" => "LEar",
+                "2" => "REar",
+                "3" => "LBrow",
+                "4" => "RBrow",
+                "5" => "Nose",
+                "6" => "Mouth",
+                "7" => "LHand",
+                "8" => "RHand",
+                _ => $"zone{zoneNum}"
+            };
 
             if (args.Get<PyNumber>(0) is PyNumber idxNum)
             {
-                dna.jewelry[zone] = idxNum.AsInt();
+                dna.jewelry[zoneName] = idxNum.AsInt();
             }
         }
 

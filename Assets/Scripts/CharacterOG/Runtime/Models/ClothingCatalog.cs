@@ -67,8 +67,8 @@ namespace CharacterOG.Models
         /// <summary>Gender-specific underwear defaults</summary>
         public Dictionary<string, Dictionary<Slot, (int idx, int texIdx, int colorIdx)>> underwear = new();
 
-        /// <summary>NEW: map OG body index -> the actual body_* group name (order mirrors PirateMale.py bodys list)</summary>
-        public static readonly string[] BodyIndexToGroup =
+        /// <summary>Male body index -> body_* group name (order mirrors PirateMale.py bodys list)</summary>
+        public static readonly string[] MaleBodyIndexToGroup =
         {
             "body_neck",         // 0  (note: Pirate uses body_neck* in findAllMatches)
             "body_torso_base",   // 1
@@ -93,6 +93,50 @@ namespace CharacterOG.Models
             "body_foot_right",    //20
             "body_foot_left"      //21
         };
+
+        /// <summary>Female body index -> body_* group name (order mirrors PirateFemale.py bodys list, lines 1998-2030)</summary>
+        public static readonly string[] FemaleBodyIndexToGroup =
+        {
+            "body_neck1",          // 0
+            "body_neck2",          // 1
+            "body_neck_back",      // 2
+            "body_collar1",        // 3
+            "body_chest_center",   // 4
+            "body_collar_round",   // 5
+            "body_chest_remain",   // 6
+            "body_ribs1",          // 7
+            "body_ribs2",          // 8
+            "body_torso_upper",    // 9
+            "body_clavicles",      // 10
+            "body_belly_button",   // 11
+            "body_waist_line",     // 12
+            "body_bicep_left",     // 13
+            "body_bicep_right",    // 14
+            "body_forearm_left",   // 15
+            "body_forearm_right",  // 16
+            "body_hand_left",      // 17
+            "body_hand_right",     // 18
+            "body_upper_hips",     // 19
+            "body_hips",           // 20
+            "body_thigh_left",     // 21
+            "body_thigh_right",    // 22
+            "body_knee_left",      // 23
+            "body_knee_right",     // 24
+            "body_uppercalf_left", // 25
+            "body_uppercalf_right",// 26
+            "body_lowercalf_left", // 27
+            "body_lowercalf_right",// 28
+            "body_foot_left",      // 29
+            "body_foot_right",     // 30
+            "body_armpit_left",    // 31
+            "body_armpit_right"    // 32
+        };
+
+        /// <summary>Get body parts array for gender</summary>
+        public static string[] GetBodyIndexToGroup(string gender)
+        {
+            return gender.ToLower() == "f" ? FemaleBodyIndexToGroup : MaleBodyIndexToGroup;
+        }
 
         public ClothingCatalog()
         {

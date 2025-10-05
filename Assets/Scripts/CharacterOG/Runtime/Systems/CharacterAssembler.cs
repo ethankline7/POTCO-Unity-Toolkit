@@ -16,15 +16,17 @@ namespace CharacterOG.Runtime.Systems
         private MaterialBinder materialBinder;
         private ClothingCatalog catalog;
         private Palettes palettes;
+        private string gender;
 
         private Dictionary<Slot, (SlotVariant variant, int texIdx, Color? dye)> currentSlots = new();
 
-        public CharacterAssembler(GroupRendererCache rendererCache, MaterialBinder materialBinder, ClothingCatalog catalog, Palettes palettes)
+        public CharacterAssembler(GroupRendererCache rendererCache, MaterialBinder materialBinder, ClothingCatalog catalog, Palettes palettes, string gender)
         {
             this.rendererCache = rendererCache;
             this.materialBinder = materialBinder;
             this.catalog = catalog;
             this.palettes = palettes;
+            this.gender = gender;
 
             // Initialize slot tracking
             foreach (Slot slot in System.Enum.GetValues(typeof(Slot)))
@@ -186,8 +188,11 @@ namespace CharacterOG.Runtime.Systems
         /// </summary>
         private void RecomputeBodyVisibility()
         {
+            // Get gender-specific body parts
+            var bodyParts = ClothingCatalog.GetBodyIndexToGroup(gender);
+
             // STEP 1: Enable all body parts first
-            foreach (var name in ClothingCatalog.BodyIndexToGroup)
+            foreach (var name in bodyParts)
             {
                 rendererCache.EnableExact(name, true);
             }
@@ -210,9 +215,9 @@ namespace CharacterOG.Runtime.Systems
             var hiddenParts = new List<string>();
             foreach (var i in toHide)
             {
-                if (i >= 0 && i < ClothingCatalog.BodyIndexToGroup.Length)
+                if (i >= 0 && i < bodyParts.Length)
                 {
-                    string partName = ClothingCatalog.BodyIndexToGroup[i];
+                    string partName = bodyParts[i];
                     rendererCache.EnableExact(partName, false);
                     hiddenParts.Add(partName);
                 }

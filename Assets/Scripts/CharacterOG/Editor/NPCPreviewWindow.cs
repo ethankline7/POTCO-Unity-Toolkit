@@ -318,6 +318,7 @@ namespace CharacterOG.Editor
                     genderClothing,
                     palettes,
                     genderJewelry,
+                    dna.gender,
                     headRoot,
                     bodyRoot
                 );
@@ -358,6 +359,7 @@ namespace CharacterOG.Editor
                     clothingCatalog,
                     palettes,
                     jewelryTattoos,
+                    dna.gender,
                     headRoot,
                     bodyRoot
                 );
