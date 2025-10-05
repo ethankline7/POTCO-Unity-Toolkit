@@ -52,6 +52,9 @@ namespace CharacterOG.Data
         /// <summary>Path to leveleditor/NPCList.py</summary>
         public static string NPCList => Path.Combine(PiratesRoot, "leveleditor", "NPCList.py");
 
+        /// <summary>Path to piratebase/PQuestStringsEnglish.py (NPC names)</summary>
+        public static string NPCNames => Path.Combine(PiratesRoot, "piratebase", "PQuestStringsEnglish.py");
+
         /// <summary>Get pirate gender file (Male or Female)</summary>
         public static string GetPirateGenderFile(string gender)
         {

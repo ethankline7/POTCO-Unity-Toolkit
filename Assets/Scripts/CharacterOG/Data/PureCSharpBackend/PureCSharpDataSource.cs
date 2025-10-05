@@ -199,6 +199,9 @@ namespace CharacterOG.Data.PureCSharpBackend
                 return npcs;
             }
 
+            // Load NPC display names from PQuestStringsEnglish.py
+            var npcNames = LoadNpcNames();
+
             var reader = new OgPyReader("", OgPaths.NPCList);
             Dictionary<string, PyNode> data;
 
@@ -229,6 +232,13 @@ namespace CharacterOG.Data.PureCSharpBackend
                     try
                     {
                         var dna = ConvertNpcDict(npcId, npcDict);
+
+                        // Use display name from PQuestStringsEnglish if available
+                        if (npcNames.TryGetValue(npcId, out string displayName))
+                        {
+                            dna.name = displayName;
+                        }
+
                         npcs[npcId] = dna;
                     }
                     catch (Exception ex)
@@ -238,7 +248,48 @@ namespace CharacterOG.Data.PureCSharpBackend
                 }
             }
 
+            Debug.Log($"Loaded {npcs.Count} NPCs, {npcNames.Count} have display names");
             return npcs;
+        }
+
+        private Dictionary<string, string> LoadNpcNames()
+        {
+            var names = new Dictionary<string, string>();
+
+            if (!File.Exists(OgPaths.NPCNames))
+            {
+                Debug.LogWarning($"PQuestStringsEnglish.py not found at: {OgPaths.NPCNames}");
+                return names;
+            }
+
+            try
+            {
+                var reader = new OgPyReader("", OgPaths.NPCNames);
+                var data = reader.ParseFile(OgPaths.NPCNames);
+
+                // Parse from NPCNames dictionary (line 7737+)
+                if (data.TryGetValue("NPCNames", out var npcNamesNode) && npcNamesNode is PyDict npcNamesDict)
+                {
+                    foreach (var kvp in npcNamesDict.items)
+                    {
+                        if (kvp.Value is PyString nameStr && !string.IsNullOrEmpty(nameStr.value))
+                        {
+                            names[kvp.Key] = nameStr.value;
+                        }
+                    }
+                    Debug.Log($"Loaded {names.Count} NPC display names from NPCNames in PQuestStringsEnglish.py");
+                }
+                else
+                {
+                    Debug.LogWarning("NPCNames dictionary not found in PQuestStringsEnglish.py");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"Failed to load NPC names from PQuestStringsEnglish.py: {ex.Message}");
+            }
+
+            return names;
         }
 
         // ===== CONVERSION HELPERS =====
