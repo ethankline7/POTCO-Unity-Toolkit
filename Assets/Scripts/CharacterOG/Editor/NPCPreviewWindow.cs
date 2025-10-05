@@ -41,7 +41,7 @@ namespace CharacterOG.Editor
         private const string MALE_MODEL_PATH = "phase_2/models/char/mp_2000";
         private const string FEMALE_MODEL_PATH = "phase_2/models/char/fp_2000";
 
-        [MenuItem("Window/POTCO/NPC Preview")]
+        [MenuItem("POTCO/Characters/NPC Preview")]
         public static void ShowWindow()
         {
             var window = GetWindow<NPCPreviewWindow>("NPC Preview");

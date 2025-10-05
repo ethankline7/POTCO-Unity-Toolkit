@@ -38,7 +38,7 @@ namespace CharacterOG.Editor
         private Slot previewSlot = Slot.Hat;
         private int previewVariantIdx = 0;
 
-        [MenuItem("Window/POTCO/Character Database")]
+        [MenuItem("POTCO/Characters/Character Database")]
         public static void ShowWindow()
         {
             var window = GetWindow<CharacterDBWindow>("Character DB");
