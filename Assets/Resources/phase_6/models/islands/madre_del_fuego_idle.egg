@@ -1,0 +1,13 @@
+<CoordinateSystem> { Z-Up }
+
+<Comment> {
+  "bam2egg 'C:\Users\Krent\Desktop\poc-resources-master\resources\phase_5\models\islands\madre_del_fuego_idle.bam' 'C:\Users\Krent\Desktop\poc-resources-master\eggs\phase_5\models\islands\madre_del_fuego_idle.egg'"
+}
+<Table> {
+  <Bundle> madre_del_fuego {
+    <Table> "<skeleton>" {
+    }
+    <Table> morph {
+    }
+  }
+}
