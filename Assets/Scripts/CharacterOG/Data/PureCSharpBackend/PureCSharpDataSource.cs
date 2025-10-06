@@ -811,49 +811,37 @@ namespace CharacterOG.Data.PureCSharpBackend
         {
             var variants = catalog.GetVariants(Slot.Hair);
 
-            if (gender.ToLower() == "f")
+            // Both male and female use self.hairs.append([...]) arrays
+            // Parse self.hairs.append([...]) to get hair piece combinations
+            var hairCombos = new List<List<int>>();
+            var hairComboRx = new Regex(@"self\.hairs\.append\(\[([\d,\s]+)\]\)", RegexOptions.Compiled);
+            foreach (Match m in hairComboRx.Matches(text))
             {
-                // Female hair: each style is a combination of hair pieces (PirateFemale.py lines 1569+)
-                // Parse self.hairs.append([...]) arrays
-                var hairCombos = new List<List<int>>();
-                var hairComboRx = new Regex(@"self\.hairs\.append\(\[([\d,\s]+)\]\)", RegexOptions.Compiled);
-                foreach (Match m in hairComboRx.Matches(text))
+                var indices = new List<int>();
+                var numRx = new Regex(@"\d+");
+                foreach (Match nm in numRx.Matches(m.Groups[1].Value))
                 {
-                    var indices = new List<int>();
-                    var numRx = new Regex(@"\d+");
-                    foreach (Match nm in numRx.Matches(m.Groups[1].Value))
-                    {
-                        if (int.TryParse(nm.Value, out var idx))
-                            indices.Add(idx);
-                    }
-                    hairCombos.Add(indices);
+                    if (int.TryParse(nm.Value, out var idx))
+                        indices.Add(idx);
                 }
+                hairCombos.Add(indices);
+            }
 
-                // Map indices to patterns
-                for (int i = 0; i < hairCombos.Count && i < variants.Count; i++)
-                {
-                    var patterns = new List<string>();
-                    foreach (var idx in hairCombos[i])
-                    {
-                        if (idx >= 0 && idx < hairPatterns.Count)
-                            patterns.Add(hairPatterns[idx]);
-                    }
-                    variants[i].ogPatterns = patterns;
-                }
-                Debug.Log($"Stored {hairCombos.Count} female hair combinations from Python source");
-            }
-            else
+            // Map indices to patterns using hairList (hairPatterns)
+            for (int i = 0; i < hairCombos.Count && i < variants.Count; i++)
             {
-                // Male hair: each style = one pattern
-                for (int i = 0; i < hairPatterns.Count && i < variants.Count; i++)
+                var patterns = new List<string>();
+                foreach (var idx in hairCombos[i])
                 {
-                    if (i < variants.Count)
-                    {
-                        variants[i].ogPatterns = new List<string> { hairPatterns[i] };
-                    }
+                    if (idx >= 0 && idx < hairPatterns.Count)
+                        patterns.Add(hairPatterns[idx]);
                 }
-                Debug.Log($"Stored {hairPatterns.Count} male hair patterns for runtime resolution");
+                variants[i].ogPatterns = patterns;
+
+                if (i < 5)
+                    Debug.Log($"Hair[{i}]: {string.Join(", ", patterns)} (indices: {string.Join(", ", hairCombos[i])})");
             }
+            Debug.Log($"Stored {hairCombos.Count} {gender} hair combinations from Python source (self.hairs.append)");
         }
 
         private void ParseBeardMustachePatterns(ClothingCatalog catalog, string text, string gender)

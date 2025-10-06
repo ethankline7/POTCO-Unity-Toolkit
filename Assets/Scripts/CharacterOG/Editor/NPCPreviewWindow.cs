@@ -279,6 +279,25 @@ namespace CharacterOG.Editor
             }
 
             EditorGUILayout.Space();
+
+            // Spawn all NPCs button
+            EditorGUILayout.LabelField("Batch Operations", EditorStyles.boldLabel);
+            if (GUILayout.Button("Spawn ALL NPCs in Grid (6 per row)", GUILayout.Height(30)))
+            {
+                if (npcDatabase == null || npcDatabase.Count == 0)
+                {
+                    EditorUtility.DisplayDialog("Error", "No NPCs loaded. Please reload the NPC database first.", "OK");
+                }
+                else if (EditorUtility.DisplayDialog("Spawn All NPCs",
+                    $"This will spawn all {npcDatabase.Count} NPCs in a grid pattern.\n\nThis may take a while. Continue?",
+                    "Yes", "Cancel"))
+                {
+                    SpawnAllNPCsInGrid();
+                }
+            }
+            EditorGUILayout.HelpBox($"Spawns all {npcDatabase?.Count ?? 0} NPCs organized in a grid (6 NPCs per row, 5 units spacing)", MessageType.Info);
+
+            EditorGUILayout.Space();
             EditorGUILayout.LabelField("Facial Morph Debugging", EditorStyles.boldLabel);
 
             // Coordinate conversion mode cycling
@@ -428,6 +447,163 @@ namespace CharacterOG.Editor
             {
                 DebugLogger.LogErrorNPCImport($"Failed to spawn NPC: {ex}");
                 EditorUtility.DisplayDialog("Error", $"Failed to spawn NPC:\n{ex.Message}", "OK");
+            }
+        }
+
+        private void SpawnAllNPCsInGrid()
+        {
+            const int NPCS_PER_ROW = 6;
+            const float SPACING = 5f;
+
+            int row = 0;
+            int col = 0;
+            int successCount = 0;
+            int failCount = 0;
+
+            // Create parent container
+            GameObject container = new GameObject("All_NPCs_Grid");
+            Vector3 startPos = Vector3.zero;
+
+            // If scene view is active, start at camera position
+            if (SceneView.lastActiveSceneView != null)
+            {
+                startPos = SceneView.lastActiveSceneView.camera.transform.position + SceneView.lastActiveSceneView.camera.transform.forward * 10f;
+            }
+
+            container.transform.position = startPos;
+
+            try
+            {
+                int totalNPCs = npcDatabase.Count;
+                int currentIndex = 0;
+
+                foreach (var kvp in npcDatabase)
+                {
+                    string npcId = kvp.Key;
+                    PirateDNA dna = kvp.Value;
+
+                    currentIndex++;
+
+                    // Show progress
+                    if (EditorUtility.DisplayCancelableProgressBar("Spawning NPCs",
+                        $"Spawning {dna.name} ({currentIndex}/{totalNPCs})",
+                        (float)currentIndex / totalNPCs))
+                    {
+                        DebugLogger.LogNPCImport($"User cancelled spawn at {currentIndex}/{totalNPCs}");
+                        break;
+                    }
+
+                    try
+                    {
+                        // Determine model path based on gender
+                        string modelPath = dna.gender.ToLower() == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+
+                        // Load model asset
+                        GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+                        if (modelPrefab == null)
+                        {
+                            DebugLogger.LogErrorNPCImport($"Failed to load model for {dna.name}: {modelPath}");
+                            failCount++;
+                            continue;
+                        }
+
+                        // Instantiate in scene
+                        GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                        if (character == null)
+                        {
+                            character = GameObject.Instantiate(modelPrefab);
+                        }
+
+                        // Name it after the NPC
+                        character.name = $"{dna.name}_{npcId}";
+
+                        // Position in grid
+                        Vector3 gridPosition = new Vector3(col * SPACING, 0, row * SPACING);
+                        character.transform.SetParent(container.transform, false);
+                        character.transform.localPosition = gridPosition;
+
+                        // Auto-find head and body roots
+                        Transform headRoot = null;
+                        Transform bodyRoot = null;
+
+                        Transform[] allTransforms = character.GetComponentsInChildren<Transform>();
+
+                        string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
+                        foreach (var candidate in headCandidates)
+                        {
+                            var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                            if (found != null)
+                            {
+                                headRoot = found;
+                                break;
+                            }
+                        }
+
+                        string[] bodyCandidates = { "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
+                        foreach (var candidate in bodyCandidates)
+                        {
+                            var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                            if (found != null)
+                            {
+                                bodyRoot = found;
+                                break;
+                            }
+                        }
+
+                        // Load clothing catalog for the correct gender
+                        ClothingCatalog genderClothing = dataSource.LoadClothingCatalog(dna.gender);
+                        JewelryTattooDefs genderJewelry = dataSource.LoadJewelryAndTattoos(dna.gender);
+                        FacialMorphDatabase facialMorphs = dataSource.LoadFacialMorphs(dna.gender);
+
+                        // Create DnaApplier
+                        var dnaApplier = new DnaApplier(
+                            character,
+                            bodyShapes,
+                            genderClothing,
+                            palettes,
+                            genderJewelry,
+                            facialMorphs,
+                            dna.gender,
+                            headRoot,
+                            bodyRoot
+                        );
+
+                        // Apply DNA
+                        dnaApplier.ApplyDNA(dna);
+
+                        successCount++;
+
+                        // Move to next grid position
+                        col++;
+                        if (col >= NPCS_PER_ROW)
+                        {
+                            col = 0;
+                            row++;
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        DebugLogger.LogErrorNPCImport($"Failed to spawn NPC '{dna.name}': {ex.Message}");
+                        failCount++;
+                    }
+                }
+
+                // Mark scene dirty
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(container.scene);
+
+                // Select the container
+                Selection.activeGameObject = container;
+
+                EditorUtility.DisplayDialog("Spawn Complete",
+                    $"Spawned {successCount} NPCs successfully!\nFailed: {failCount}\n\nAll NPCs are in '{container.name}' GameObject.",
+                    "OK");
+
+                DebugLogger.LogNPCImport($"Batch spawn complete: {successCount} success, {failCount} failed");
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
             }
         }
 
