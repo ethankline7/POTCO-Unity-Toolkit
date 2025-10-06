@@ -287,13 +287,16 @@ namespace CharacterOG.Editor
 
                 Transform[] allTransforms = character.GetComponentsInChildren<Transform>();
 
-                string[] headCandidates = { "def_head", "Head", "head", "HeadRoot" };
+                // POTCO characters use def_neck as the parent for all facial bones (def_trs_*, trs_face_*, etc.)
+                // The facial morphs modify bones like def_trs_left_forehead, def_trs_mid_jaw, etc which are children of def_neck
+                string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
                 foreach (var candidate in headCandidates)
                 {
                     var found = System.Array.Find(allTransforms, t => t.name == candidate);
                     if (found != null)
                     {
                         headRoot = found;
+                        DebugLogger.LogNPCImport($"Found head root bone: {headRoot.name}");
                         break;
                     }
                 }
@@ -314,6 +317,7 @@ namespace CharacterOG.Editor
                 // Load clothing catalog for the correct gender
                 ClothingCatalog genderClothing = dataSource.LoadClothingCatalog(dna.gender);
                 JewelryTattooDefs genderJewelry = dataSource.LoadJewelryAndTattoos(dna.gender);
+                FacialMorphDatabase facialMorphs = dataSource.LoadFacialMorphs(dna.gender);
 
                 // Create DnaApplier
                 var dnaApplier = new DnaApplier(
@@ -322,6 +326,7 @@ namespace CharacterOG.Editor
                     genderClothing,
                     palettes,
                     genderJewelry,
+                    facialMorphs,
                     dna.gender,
                     headRoot,
                     bodyRoot
@@ -356,6 +361,9 @@ namespace CharacterOG.Editor
 
             try
             {
+                // Load facial morphs for the correct gender
+                FacialMorphDatabase facialMorphs = dataSource.LoadFacialMorphs(dna.gender);
+
                 // Create DnaApplier
                 var dnaApplier = new DnaApplier(
                     selectedCharacter,
@@ -363,6 +371,7 @@ namespace CharacterOG.Editor
                     clothingCatalog,
                     palettes,
                     jewelryTattoos,
+                    facialMorphs,
                     dna.gender,
                     headRoot,
                     bodyRoot

@@ -1266,6 +1266,57 @@ namespace CharacterOG.Data.PureCSharpBackend
                 case string s when s.StartsWith("setJewelry"):
                     ParseJewelry(dna, funcName, args);
                     break;
+
+                // Facial morphs (setHeadWidth, setJawWidth, etc.)
+                case "setHeadWidth":
+                case "setHeadHeight":
+                case "setHeadSize":
+                case "setHeadRoundness":
+                case "setJawWidth":
+                case "setJawRoundness":
+                case "setJawAngle":
+                case "setJawLength":
+                case "setJawChinSize":
+                case "setMouthWidth":
+                case "setMouthLipThickness":
+                case "setMouthFrown":
+                case "setCheekBoneHeight":
+                case "setCheekBoneWidth":
+                case "setCheekFat":
+                case "setBrowWidth":
+                case "setBrowProtruding":
+                case "setBrowAngle":
+                case "setBrowHeight":
+                case "setEyeCorner":
+                case "setEyeOpeningSize":
+                case "setEyeBulge":
+                case "setNoseBridgeWidth":
+                case "setNoseNostrilWidth":
+                case "setNoseLength":
+                case "setNoseBump":
+                case "setNoseNostrilHeight":
+                case "setNoseNostrilAngle":
+                case "setNoseNostrilIndent":
+                case "setNoseBridgeBroke":
+                case "setNoseNostrilBroke":
+                case "setEarScale":
+                case "setEarFlapAngle":
+                case "setEarPosition":
+                case "setEarLobe":
+                    ParseFacialMorph(dna, funcName, args);
+                    break;
+            }
+        }
+
+        private void ParseFacialMorph(PirateDNA dna, string funcName, PyTuple args)
+        {
+            // Convert setter name to morph name (setHeadWidth → headWidth)
+            string morphName = funcName.Substring(3); // Remove "set" prefix
+            morphName = char.ToLower(morphName[0]) + morphName.Substring(1); // Lowercase first char
+
+            if (args.Get<PyNumber>(0) is PyNumber value)
+            {
+                dna.headMorphs[morphName] = value.AsFloat();
             }
         }
 
@@ -1310,6 +1361,14 @@ namespace CharacterOG.Data.PureCSharpBackend
             {
                 dna.jewelry[zoneName] = idxNum.AsInt();
             }
+        }
+
+        // ===== FACIAL MORPHS =====
+
+        public FacialMorphDatabase LoadFacialMorphs(string gender = "m")
+        {
+            string filePath = gender.ToLower() == "f" ? OgPaths.PirateFemale : OgPaths.PirateMale;
+            return FacialMorphParser.ParseFromFile(filePath, gender);
         }
 
         // ===== BODY HIDE MASK PARSING =====

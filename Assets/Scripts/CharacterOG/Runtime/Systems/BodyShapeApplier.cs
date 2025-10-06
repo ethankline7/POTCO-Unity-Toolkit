@@ -156,6 +156,10 @@ namespace CharacterOG.Runtime.Systems
             }
 
             // Apply head position offset
+            // DISABLED: The headPosition offset from POTCO BodyDefs (e.g., VBase3(-5, 0, 0)) doesn't work correctly in Unity
+            // It was moving the head to incorrect positions. The field is also misspelled in POTCO source as "headPostion"
+            // suggesting it may not be properly used in the original game.
+            /*
             if (headRoot != null && shape.headPosition != Vector3.zero)
             {
                 if (!originalPositions.ContainsKey(headRoot))
@@ -167,6 +171,7 @@ namespace CharacterOG.Runtime.Systems
                 headRoot.localPosition = originalPositions[headRoot] + shape.headPosition;
                 Debug.Log($"[BodyShapeApplier] Head position '{headRoot.name}': {oldPos} → {headRoot.localPosition} (offset: {shape.headPosition})");
             }
+            */
 
             Debug.Log($"BodyShapeApplier: Applied shape '{shape.name}' " +
                      $"(head:{shape.headScale}, body:{shape.bodyScale}, " +

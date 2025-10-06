@@ -581,6 +581,7 @@ namespace WorldDataImporter.Processors
                     var clothingCatalog = dataSource.LoadClothingCatalog(pirateDna.gender);
                     var palettes = dataSource.LoadPalettesAndDyeRules();
                     var jewelryTattoos = dataSource.LoadJewelryAndTattoos(pirateDna.gender);
+                    var facialMorphs = dataSource.LoadFacialMorphs(pirateDna.gender);
 
                     // Auto-find head and body roots
                     Transform headRoot = null;
@@ -616,6 +617,7 @@ namespace WorldDataImporter.Processors
                         clothingCatalog,
                         palettes,
                         jewelryTattoos,
+                        facialMorphs,
                         pirateDna.gender,
                         headRoot,
                         bodyRoot

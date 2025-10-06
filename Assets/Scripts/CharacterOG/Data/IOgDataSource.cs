@@ -24,6 +24,9 @@ namespace CharacterOG.Data
         /// <summary>Load NPC DNA presets from NPCList.py</summary>
         Dictionary<string, PirateDNA> LoadNpcDna();
 
+        /// <summary>Load facial morph definitions from PirateMale/Female.py ControlShapes</summary>
+        FacialMorphDatabase LoadFacialMorphs(string gender = "m");
+
         /// <summary>Backend name for debugging/selection</summary>
         string BackendName { get; }
 

@@ -104,7 +104,16 @@ namespace CharacterOG.Data.PureCSharpBackend
             catch (System.Exception ex)
             {
                 // Log parse failures for debugging large structures
-                UnityEngine.Debug.LogWarning($"Failed to parse {varName} at line {startLine}: {ex.Message}");
+                if (varName == "ControlShapes")
+                {
+                    UnityEngine.Debug.LogError($"[OgPyReader] CRITICAL: Failed to parse {varName} at line {startLine}: {ex.Message}");
+                    UnityEngine.Debug.LogError($"[OgPyReader] Exception type: {ex.GetType().Name}");
+                    UnityEngine.Debug.LogError($"[OgPyReader] Stack trace: {ex.StackTrace}");
+                }
+                else
+                {
+                    UnityEngine.Debug.LogWarning($"[OgPyReader] Failed to parse {varName} at line {startLine}: {ex.Message}");
+                }
 
                 pos = startPos;
                 line = startLine;
@@ -123,7 +132,47 @@ namespace CharacterOG.Data.PureCSharpBackend
             if (c == '[') return ParseList();
             if (c == '(') return ParseTupleOrParen();
             if (c == '\'' || c == '"') return ParseString();
-            if (c == '-' || char.IsDigit(c)) return ParseNumber();
+
+            // Handle unary minus followed by parentheses: -(expr)
+            if (c == '-')
+            {
+                int savedPos = pos;
+                Advance(); // consume '-'
+                SkipWhitespaceAndComments();
+
+                if (Peek() == '(')
+                {
+                    // This is -(expr), parse the expression and negate it
+                    var expr = ParseTupleOrParen();
+
+                    // If it's a single number in parens, negate it
+                    if (expr is PyNumber num)
+                    {
+                        return new PyNumber(-num.value);
+                    }
+                    // If it's a tuple with arithmetic, try to evaluate it
+                    else if (expr is PyTuple tuple && tuple.items.Count == 1 && tuple.items[0] is PyNumber tupleNum)
+                    {
+                        return new PyNumber(-tupleNum.value);
+                    }
+                    else
+                    {
+                        // Can't evaluate, restore position and try as number
+                        pos = savedPos;
+                        line = this.line;
+                        column = this.column;
+                        return ParseNumber();
+                    }
+                }
+                else
+                {
+                    // Not followed by '(', restore and parse as negative number
+                    pos = savedPos;
+                    return ParseNumber();
+                }
+            }
+
+            if (char.IsDigit(c)) return ParseNumber();
             if (char.IsLetter(c) || c == '_') return ParseIdentifierOrKeyword();
 
             throw Error($"Unexpected character: '{c}'");
@@ -239,6 +288,37 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             items.Add(ParseValue());
             SkipWhitespaceAndComments();
+
+            // Check for arithmetic operators (simple expression evaluation)
+            char op = Peek();
+            if (op == '+' || op == '-' || op == '*' || op == '/')
+            {
+                Advance(); // consume operator
+                SkipWhitespaceAndComments();
+
+                var right = ParseValue();
+                SkipWhitespaceAndComments();
+
+                // Evaluate simple binary arithmetic
+                if (items[0] is PyNumber left && right is PyNumber rightNum)
+                {
+                    double result = op switch
+                    {
+                        '+' => left.value + rightNum.value,
+                        '-' => left.value - rightNum.value,
+                        '*' => left.value * rightNum.value,
+                        '/' => left.value / rightNum.value,
+                        _ => throw Error($"Unknown operator: {op}")
+                    };
+
+                    Expect(')');
+                    return new PyNumber(result);
+                }
+                else
+                {
+                    throw Error($"Cannot evaluate arithmetic expression with non-numeric operands");
+                }
+            }
 
             bool isTuple = false;
 

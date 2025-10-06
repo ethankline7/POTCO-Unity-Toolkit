@@ -14,6 +14,7 @@ namespace CharacterOG.Runtime.Systems
     public class DnaApplier
     {
         private BodyShapeApplier bodyShapeApplier;
+        private FacialMorphApplier facialMorphApplier;
         private CharacterAssembler assembler;
         private GroupRendererCache rendererCache;
         private MaterialBinder materialBinder;
@@ -22,6 +23,7 @@ namespace CharacterOG.Runtime.Systems
         private ClothingCatalog catalog;
         private Palettes palettes;
         private JewelryTattooDefs jewelryTattoos;
+        private FacialMorphDatabase facialMorphs;
 
         private PirateDNA currentDna;
         private Color? currentHairColor;
@@ -32,6 +34,7 @@ namespace CharacterOG.Runtime.Systems
             ClothingCatalog catalog,
             Palettes palettes,
             JewelryTattooDefs jewelryTattoos,
+            FacialMorphDatabase facialMorphs,
             string gender,
             Transform headRoot = null,
             Transform bodyRoot = null)
@@ -40,6 +43,7 @@ namespace CharacterOG.Runtime.Systems
             this.catalog = catalog;
             this.palettes = palettes;
             this.jewelryTattoos = jewelryTattoos;
+            this.facialMorphs = facialMorphs;
 
             // Initialize systems
             rendererCache = new GroupRendererCache(characterRoot);
@@ -50,6 +54,22 @@ namespace CharacterOG.Runtime.Systems
 
             assembler = new CharacterAssembler(rendererCache, materialBinder, catalog, palettes, gender);
             bodyShapeApplier = new BodyShapeApplier(characterRoot.transform, headRoot, bodyRoot);
+
+            // Initialize facial morph applier if facial morphs database is provided
+            if (facialMorphs != null && headRoot != null)
+            {
+                Debug.Log($"[DnaApplier] Initializing FacialMorphApplier with headRoot '{headRoot.name}', rigRoot '{characterRoot.transform.name}' and {facialMorphs.morphs.Count} morphs");
+                facialMorphApplier = new FacialMorphApplier(headRoot, facialMorphs, characterRoot.transform);
+            }
+            else
+            {
+                if (facialMorphs == null)
+                    Debug.LogWarning("[DnaApplier] FacialMorphApplier NOT initialized - facialMorphs is null");
+                else if (facialMorphs.morphs.Count == 0)
+                    Debug.LogWarning("[DnaApplier] FacialMorphApplier NOT initialized - facialMorphs database is empty");
+                else if (headRoot == null)
+                    Debug.LogWarning("[DnaApplier] FacialMorphApplier NOT initialized - headRoot is null");
+            }
         }
 
         /// <summary>Apply complete DNA to character</summary>
@@ -132,6 +152,33 @@ namespace CharacterOG.Runtime.Systems
             // 8. Apply layer-to-layer hiding (AFTER all clothing is equipped)
             ApplyClothingLayerHiding();
 
+            // 9. Apply facial morphs (head customization)
+            if (dna.headMorphs != null && dna.headMorphs.Count > 0)
+            {
+                Debug.Log($"[DnaApplier] NPC '{dna.name}' has {dna.headMorphs.Count} facial morph values");
+
+                // Log first few morphs
+                var sampleMorphs = dna.headMorphs.Take(5).Select(kvp => $"{kvp.Key}={kvp.Value:F3}").ToList();
+                Debug.Log($"[DnaApplier] Sample morph values: {string.Join(", ", sampleMorphs)}");
+
+                if (facialMorphApplier != null && facialMorphs != null && facialMorphs.morphs.Count > 0)
+                {
+                    Debug.Log($"[DnaApplier] Applying facial morphs...");
+                    facialMorphApplier.ApplyMorphs(dna.headMorphs);
+                    Debug.Log($"[DnaApplier] Facial morphs applied successfully");
+                }
+                else
+                {
+                    Debug.LogWarning($"[DnaApplier] Cannot apply {dna.headMorphs.Count} facial morphs:");
+                    if (facialMorphApplier == null)
+                        Debug.LogWarning("  - facialMorphApplier is NULL");
+                    if (facialMorphs == null)
+                        Debug.LogWarning("  - facialMorphs database is NULL");
+                    else if (facialMorphs.morphs.Count == 0)
+                        Debug.LogWarning("  - facialMorphs database is EMPTY");
+                }
+            }
+
             Debug.Log($"DnaApplier: Applied DNA for '{dna.name}' ({dna.gender}, {dna.bodyShape})");
         }
 
@@ -149,6 +196,9 @@ namespace CharacterOG.Runtime.Systems
 
         /// <summary>Get body shape applier for advanced manipulation</summary>
         public BodyShapeApplier GetBodyShapeApplier() => bodyShapeApplier;
+
+        /// <summary>Get facial morph applier for advanced manipulation</summary>
+        public FacialMorphApplier GetFacialMorphApplier() => facialMorphApplier;
 
         private void HideAllClothing()
         {
@@ -201,6 +251,23 @@ namespace CharacterOG.Runtime.Systems
             }
 
             // STEP 4: Enable eyebrows (PirateMale.py line 1852: self.eyeBrows.unstash())
+            var leftEyebrowRenderers = rendererCache.GetExact("hair_eyebrow_left");
+            var rightEyebrowRenderers = rendererCache.GetExact("hair_eyebrow_right");
+
+            Debug.Log($"[DnaApplier] Eyebrow check: Found {leftEyebrowRenderers.Count} left and {rightEyebrowRenderers.Count} right eyebrow renderers");
+
+            // Check for any eyebrow-related meshes in the cache
+            var allNames = rendererCache.AllNames();
+            var eyebrowNames = allNames.Where(n => n.ToLower().Contains("eyebrow") || n.ToLower().Contains("brow")).ToList();
+            if (eyebrowNames.Count > 0)
+            {
+                Debug.Log($"[DnaApplier] Found {eyebrowNames.Count} eyebrow-related meshes: {string.Join(", ", eyebrowNames)}");
+            }
+            else
+            {
+                Debug.LogWarning("[DnaApplier] No eyebrow meshes found in character model!");
+            }
+
             rendererCache.EnableExact("hair_eyebrow_left", true);
             rendererCache.EnableExact("hair_eyebrow_right", true);
 
@@ -304,22 +371,25 @@ namespace CharacterOG.Runtime.Systems
             }
 
             // Apply hair color to eyebrows (only when applying hair slot, not beard/mustache)
-            if (slot == Slot.Hair && hairColor.HasValue)
+            if (slot == Slot.Hair)
             {
                 var leftEyebrow = rendererCache.GetExact("hair_eyebrow_left");
                 var rightEyebrow = rendererCache.GetExact("hair_eyebrow_right");
 
+                // Use hair color if available, otherwise use a default dark brown
+                Color eyebrowColor = hairColor ?? new Color(0.2f, 0.1f, 0.05f); // Dark brown default
+
                 foreach (var renderer in leftEyebrow)
                 {
-                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                    materialBinder.ApplyDye(renderer, "base", eyebrowColor);
                 }
 
                 foreach (var renderer in rightEyebrow)
                 {
-                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                    materialBinder.ApplyDye(renderer, "base", eyebrowColor);
                 }
 
-                Debug.Log($"DnaApplier: Applied hair color {hairColor.Value} to eyebrows");
+                Debug.Log($"DnaApplier: Applied eyebrow color {eyebrowColor} to {leftEyebrow.Count + rightEyebrow.Count} eyebrow renderers (hairColor was {(hairColor.HasValue ? "set" : "null")})");
             }
         }
 
@@ -354,20 +424,25 @@ namespace CharacterOG.Runtime.Systems
             Debug.Log($"DnaApplier: Applied {slot} color to {coloredCount} meshes as fallback");
 
             // Apply eyebrow color for hair
-            if (slot == Slot.Hair && hairColor.HasValue)
+            if (slot == Slot.Hair)
             {
                 var leftEyebrow = rendererCache.GetExact("hair_eyebrow_left");
                 var rightEyebrow = rendererCache.GetExact("hair_eyebrow_right");
 
+                // Use hair color if available, otherwise use a default dark brown
+                Color eyebrowColor = hairColor ?? new Color(0.2f, 0.1f, 0.05f); // Dark brown default
+
                 foreach (var renderer in leftEyebrow)
                 {
-                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                    materialBinder.ApplyDye(renderer, "base", eyebrowColor);
                 }
 
                 foreach (var renderer in rightEyebrow)
                 {
-                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                    materialBinder.ApplyDye(renderer, "base", eyebrowColor);
                 }
+
+                Debug.Log($"DnaApplier: Applied eyebrow color {eyebrowColor} (fallback path)");
             }
         }
 
@@ -838,6 +913,12 @@ namespace CharacterOG.Runtime.Systems
             sb.AppendLine();
             sb.AppendLine(bodyShapeApplier.GetDiagnosticInfo());
 
+            if (facialMorphApplier != null)
+            {
+                sb.AppendLine();
+                sb.AppendLine(facialMorphApplier.GetDiagnosticInfo());
+            }
+
             if (currentDna != null)
             {
                 sb.AppendLine();
@@ -847,6 +928,7 @@ namespace CharacterOG.Runtime.Systems
                 sb.AppendLine($"  Colors: Top={currentDna.topColorIdx}, Bot={currentDna.botColorIdx}, Hat={currentDna.hatColorIdx}");
                 sb.AppendLine($"  Jewelry: {currentDna.jewelry.Count} zones");
                 sb.AppendLine($"  Tattoos: {currentDna.tattoos.Count}");
+                sb.AppendLine($"  Facial Morphs: {currentDna.headMorphs.Count}");
             }
 
             return sb.ToString();
