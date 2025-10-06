@@ -3,6 +3,8 @@ using WorldDataImporter.Utilities;
 using WorldDataImporter.Data;
 using POTCO;
 using POTCO.Editor;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace WorldDataImporter.Processors
 {
@@ -33,7 +35,90 @@ namespace WorldDataImporter.Processors
             switch (key)
             {
                 case "Pos":
-                    if (currentGO != root) currentGO.transform.localPosition = ParsingUtilities.ParseVector3(val);
+                    if (currentGO != root)
+                    {
+                        Vector3 pos = ParsingUtilities.ParseVector3(val);
+
+                        // Store Pos value for NPCs (will check against GridPos later)
+                        if (objectData != null && settings?.importNPCs == true && objectData.objectType == "Townsperson")
+                        {
+                            // Check if GridPos was already processed
+                            if (objectData.gridPos.HasValue)
+                            {
+                                // GridPos already processed, compare now
+                                if (Vector3.Distance(pos, objectData.gridPos.Value) < 0.01f)
+                                {
+                                    // Pos = GridPos, both are world position - DON'T set position here, will convert in SpawnNPC
+                                    objectData.hasPos = false;
+                                    DebugLogger.LogNPCImport($"📍 Pos {pos} equals GridPos - will convert in SpawnNPC (leaving at 0,0,0 temporarily)");
+                                }
+                                else
+                                {
+                                    // Pos != GridPos, Pos is local position
+                                    currentGO.transform.localPosition = pos;
+                                    objectData.hasPos = true;
+                                    DebugLogger.LogNPCImport($"📍 Pos != GridPos - using Pos as local: {pos}");
+                                }
+                            }
+                            else
+                            {
+                                // GridPos not processed yet, store Pos for later comparison
+                                if (objectData.properties == null)
+                                    objectData.properties = new System.Collections.Generic.Dictionary<string, string>();
+                                objectData.properties["Pos_Vector"] = $"{pos.x},{pos.y},{pos.z}";
+                                DebugLogger.LogNPCImport($"📍 Stored Pos for later comparison: {pos}");
+                            }
+                        }
+                        else
+                        {
+                            // Not an NPC or NPC import disabled, set position normally
+                            currentGO.transform.localPosition = pos;
+                        }
+                    }
+                    break;
+                case "GridPos":
+                    // Store GridPos for NPCs (always world position)
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        objectData.gridPos = ParsingUtilities.ParseVector3(val);
+                        DebugLogger.LogNPCImport($"📍 Stored GridPos: {objectData.gridPos}");
+
+                        // Check if we have Pos stored
+                        if (objectData.properties != null && objectData.properties.ContainsKey("Pos_Vector"))
+                        {
+                            string[] posParts = objectData.properties["Pos_Vector"].Split(',');
+                            Vector3 posValue = new Vector3(
+                                float.Parse(posParts[0]),
+                                float.Parse(posParts[1]),
+                                float.Parse(posParts[2])
+                            );
+
+                            // Check if Pos equals GridPos
+                            if (Vector3.Distance(posValue, objectData.gridPos.Value) < 0.01f)
+                            {
+                                // Pos = GridPos, both are world position - DON'T set position here, will convert in SpawnNPC
+                                objectData.hasPos = false;
+                                DebugLogger.LogNPCImport($"📍 Pos {posValue} equals GridPos - will convert in SpawnNPC (leaving at 0,0,0 temporarily)");
+                            }
+                            else
+                            {
+                                // Pos != GridPos, Pos is local position
+                                currentGO.transform.localPosition = posValue;
+                                objectData.hasPos = true;
+                                DebugLogger.LogNPCImport($"📍 Pos != GridPos - using Pos as local: {posValue}");
+                            }
+                        }
+                        else if (currentGO != root)
+                        {
+                            // No Pos property exists, only GridPos - DON'T set position here, will convert in SpawnNPC
+                            objectData.hasPos = false; // Will be converted in SpawnNPC
+                            DebugLogger.LogNPCImport($"📍 Only GridPos (no Pos) - will convert in SpawnNPC: {objectData.gridPos.Value} (leaving at 0,0,0 temporarily)");
+                        }
+                    }
+                    else if (objectData != null)
+                    {
+                        objectData.gridPos = ParsingUtilities.ParseVector3(val);
+                    }
                     break;
                 case "Hpr":
                     if (currentGO != root)
@@ -52,9 +137,20 @@ namespace WorldDataImporter.Processors
                     {
                         // Store type as a tag/component instead of in the name
                         // This keeps the object ID clean for the exporter
-                        if (objectData != null) 
+                        if (objectData != null)
                         {
                             objectData.objectType = objectType;
+
+                            // For Townsperson, use object ID as DNA ID if no DNA property exists
+                            if (objectType == "Townsperson" && settings?.importNPCs == true)
+                            {
+                                if (string.IsNullOrEmpty(objectData.npcDnaId))
+                                {
+                                    objectData.npcDnaId = objectData.id;
+                                    DebugLogger.LogNPCImport($"👤 Using object ID as DNA ID: {objectData.id}");
+                                }
+                            }
+
                             // Update the existing ObjectListInfo component only if ImportObjectListData is enabled
                             if (settings != null && settings.importObjectListData)
                             {
@@ -72,7 +168,7 @@ namespace WorldDataImporter.Processors
                                 }
                             }
                         }
-                        
+
                         if (stats != null)
                         {
                             if (stats.objectTypeCount.ContainsKey(objectType))
@@ -310,6 +406,335 @@ namespace WorldDataImporter.Processors
                         objectData.flickRate = flickRate;
                     }
                     break;
+                case "DNA":
+                    // Store DNA ID for NPC spawning (overrides object ID)
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string dnaId = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcDnaId = dnaId;
+                        DebugLogger.LogNPCImport($"👤 Stored NPC DNA ID: {dnaId} (overriding object ID)");
+                    }
+                    break;
+                case "CustomModel":
+                    // Store custom model path for NPCs (ignore "None")
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string customModel = ParsingUtilities.ExtractStringValue(val);
+                        if (customModel != "None")
+                        {
+                            objectData.npcCustomModel = customModel;
+                            DebugLogger.LogNPCImport($"👤 Stored NPC custom model: {customModel}");
+                        }
+                    }
+                    break;
+                case "AnimSet":
+                    // Store animation set for NPCs
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string animSet = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcAnimSet = animSet;
+                        objectData.isReadyForNPCSpawn = true; // Mark as ready for spawning
+                        DebugLogger.LogNPCImport($"🎬 Stored NPC AnimSet: {animSet}");
+                    }
+                    break;
+            }
+
+            // Note: NPC spawning is now handled after all properties are processed
+            // (moved to SceneBuildingAlgorithm when object is complete)
+        }
+
+        public static void SpawnNPC(GameObject currentGO, ObjectData objectData, ImportStatistics stats)
+        {
+            try
+            {
+                // Determine if using DNA or CustomModel
+                // Note: Object ID is used as DNA ID when no DNA property exists (set in Type case)
+                bool useDNA = !string.IsNullOrEmpty(objectData.npcDnaId);
+                bool useCustomModel = !string.IsNullOrEmpty(objectData.npcCustomModel);
+
+                GameObject characterModel = null;
+
+                if (useCustomModel)
+                {
+                    // Use custom model path (e.g., "models/char/js_2000" for Jack Sparrow)
+                    string modelPath = objectData.npcCustomModel;
+                    characterModel = UnityEngine.Resources.Load<GameObject>(modelPath);
+
+                    if (characterModel == null)
+                    {
+                        DebugLogger.LogNPCImport($"❌ Failed to load custom NPC model: {modelPath}");
+                        return;
+                    }
+
+                    // Instantiate the custom model
+                    GameObject instance = UnityEditor.PrefabUtility.InstantiatePrefab(characterModel) as GameObject;
+                    if (instance == null)
+                    {
+                        instance = GameObject.Instantiate(characterModel);
+                    }
+
+                    instance.name = System.IO.Path.GetFileNameWithoutExtension(modelPath);
+
+                    // Debug: Check position values
+                    DebugLogger.LogNPCImport($"🔍 Spawn Check (Custom): gridPos={objectData.gridPos}, hasPos={objectData.hasPos}, currentPos={currentGO.transform.localPosition}");
+
+                    // Position parent GameObject if using GridPos (no Pos was set)
+                    if (objectData.gridPos.HasValue && !objectData.hasPos)
+                    {
+                        // Convert GridPos (world position) to local position
+                        if (currentGO.transform.parent != null)
+                        {
+                            Vector3 parentWorldPos = currentGO.transform.parent.position;
+                            Vector3 parentWorldRot = currentGO.transform.parent.eulerAngles;
+                            Vector3 localPos = currentGO.transform.parent.InverseTransformPoint(objectData.gridPos.Value);
+                            currentGO.transform.localPosition = localPos;
+                            DebugLogger.LogNPCImport($"📍 GridPos conversion (custom model):");
+                            DebugLogger.LogNPCImport($"  - GridPos (world): {objectData.gridPos.Value}");
+                            DebugLogger.LogNPCImport($"  - Parent world pos: {parentWorldPos}");
+                            DebugLogger.LogNPCImport($"  - Parent world rot: {parentWorldRot}");
+                            DebugLogger.LogNPCImport($"  - Calculated local: {localPos}");
+                        }
+                        else
+                        {
+                            currentGO.transform.localPosition = objectData.gridPos.Value;
+                        }
+                    }
+                    else if (objectData.properties != null && objectData.properties.ContainsKey("Pos_Vector"))
+                    {
+                        // Pos was stored but never applied (no GridPos to compare against)
+                        string[] posParts = objectData.properties["Pos_Vector"].Split(',');
+                        Vector3 posValue = new Vector3(
+                            float.Parse(posParts[0]),
+                            float.Parse(posParts[1]),
+                            float.Parse(posParts[2])
+                        );
+                        currentGO.transform.localPosition = posValue;
+                        DebugLogger.LogNPCImport($"📍 Applied stored Pos (no GridPos) for custom model: {posValue}");
+                    }
+
+                    // Parent NPC model to positioned GameObject
+                    instance.transform.SetParent(currentGO.transform, false);
+                    DebugLogger.LogNPCImport($"👤 Spawned custom NPC model: {modelPath}");
+
+                    // Apply animation set for custom models
+                    if (!string.IsNullOrEmpty(objectData.npcAnimSet))
+                    {
+                        // Determine gender from the model path
+                        string gender = modelPath.Contains("/fp_") ? "f" : "m";
+                        ApplyAnimationSet(instance, objectData.npcAnimSet, gender);
+                    }
+                }
+                else
+                {
+                    // Use DNA-based character spawning
+                    var dataSource = new CharacterOG.Data.PureCSharpBackend.PureCSharpDataSource();
+
+                    if (!dataSource.IsAvailable)
+                    {
+                        DebugLogger.LogNPCImport($"❌ NPC data source not available");
+                        return;
+                    }
+
+                    // Load NPC database
+                    var npcDatabase = dataSource.LoadNpcDna();
+
+                    // Object ID is used as DNA ID when no DNA property exists
+                    if (!npcDatabase.TryGetValue(objectData.npcDnaId, out var pirateDna))
+                    {
+                        DebugLogger.LogNPCImport($"❌ NPC DNA not found in database: {objectData.npcDnaId}");
+                        return;
+                    }
+
+                    DebugLogger.LogNPCImport($"👤 Found NPC DNA: {pirateDna.name} ({objectData.npcDnaId})");
+
+                    // Determine model path based on gender
+                    string modelPath = pirateDna.gender.ToLower() == "f"
+                        ? "phase_2/models/char/fp_2000"
+                        : "phase_2/models/char/mp_2000";
+
+                    characterModel = UnityEngine.Resources.Load<GameObject>(modelPath);
+
+                    if (characterModel == null)
+                    {
+                        DebugLogger.LogWorldImporter($"❌ Failed to load character model: {modelPath}");
+                        return;
+                    }
+
+                    // Instantiate character
+                    GameObject instance = UnityEditor.PrefabUtility.InstantiatePrefab(characterModel) as GameObject;
+                    if (instance == null)
+                    {
+                        instance = GameObject.Instantiate(characterModel);
+                    }
+
+                    instance.name = pirateDna.name;
+
+                    // Load body shapes for both genders
+                    var bodyShapes = new Dictionary<string, CharacterOG.Models.BodyShapeDef>();
+                    foreach (var shape in dataSource.LoadBodyShapes("m"))
+                        bodyShapes[shape.Key] = shape.Value;
+                    foreach (var shape in dataSource.LoadBodyShapes("f"))
+                        if (!bodyShapes.ContainsKey(shape.Key))
+                            bodyShapes[shape.Key] = shape.Value;
+
+                    // Load clothing catalog and other data
+                    var clothingCatalog = dataSource.LoadClothingCatalog(pirateDna.gender);
+                    var palettes = dataSource.LoadPalettesAndDyeRules();
+                    var jewelryTattoos = dataSource.LoadJewelryAndTattoos(pirateDna.gender);
+
+                    // Auto-find head and body roots
+                    Transform headRoot = null;
+                    Transform bodyRoot = null;
+                    Transform[] allTransforms = instance.GetComponentsInChildren<Transform>();
+
+                    string[] headCandidates = { "def_head", "Head", "head", "HeadRoot" };
+                    foreach (var candidate in headCandidates)
+                    {
+                        var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                        if (found != null)
+                        {
+                            headRoot = found;
+                            break;
+                        }
+                    }
+
+                    string[] bodyCandidates = { "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
+                    foreach (var candidate in bodyCandidates)
+                    {
+                        var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                        if (found != null)
+                        {
+                            bodyRoot = found;
+                            break;
+                        }
+                    }
+
+                    // Create DnaApplier and apply DNA
+                    var dnaApplier = new CharacterOG.Runtime.Systems.DnaApplier(
+                        instance,
+                        bodyShapes,
+                        clothingCatalog,
+                        palettes,
+                        jewelryTattoos,
+                        pirateDna.gender,
+                        headRoot,
+                        bodyRoot
+                    );
+
+                    dnaApplier.ApplyDNA(pirateDna);
+
+                    // Debug: Check position values
+                    DebugLogger.LogNPCImport($"🔍 Spawn Check: gridPos={objectData.gridPos}, hasPos={objectData.hasPos}, currentPos={currentGO.transform.localPosition}");
+
+                    // Position parent GameObject if using GridPos (no Pos was set)
+                    if (objectData.gridPos.HasValue && !objectData.hasPos)
+                    {
+                        // Convert GridPos (world position) to local position relative to parent
+                        if (currentGO.transform.parent != null)
+                        {
+                            Vector3 parentWorldPos = currentGO.transform.parent.position;
+                            Vector3 parentWorldRot = currentGO.transform.parent.eulerAngles;
+                            Vector3 localPos = currentGO.transform.parent.InverseTransformPoint(objectData.gridPos.Value);
+                            currentGO.transform.localPosition = localPos;
+                            DebugLogger.LogNPCImport($"📍 GridPos conversion:");
+                            DebugLogger.LogNPCImport($"  - GridPos (world): {objectData.gridPos.Value}");
+                            DebugLogger.LogNPCImport($"  - Parent world pos: {parentWorldPos}");
+                            DebugLogger.LogNPCImport($"  - Parent world rot: {parentWorldRot}");
+                            DebugLogger.LogNPCImport($"  - Calculated local: {localPos}");
+                        }
+                        else
+                        {
+                            currentGO.transform.localPosition = objectData.gridPos.Value;
+                        }
+                    }
+                    else if (objectData.properties != null && objectData.properties.ContainsKey("Pos_Vector"))
+                    {
+                        // Pos was stored but never applied (no GridPos to compare against)
+                        string[] posParts = objectData.properties["Pos_Vector"].Split(',');
+                        Vector3 posValue = new Vector3(
+                            float.Parse(posParts[0]),
+                            float.Parse(posParts[1]),
+                            float.Parse(posParts[2])
+                        );
+                        currentGO.transform.localPosition = posValue;
+                        DebugLogger.LogNPCImport($"📍 Applied stored Pos (no GridPos): {posValue}");
+                    }
+
+                    // Parent NPC model to positioned GameObject
+                    instance.transform.SetParent(currentGO.transform, false);
+                    DebugLogger.LogNPCImport($"👤 Spawned NPC: {pirateDna.name} (DNA: {objectData.npcDnaId})");
+
+                    // Apply animation set if specified
+                    if (!string.IsNullOrEmpty(objectData.npcAnimSet))
+                    {
+                        ApplyAnimationSet(instance, objectData.npcAnimSet, pirateDna.gender);
+                    }
+                }
+
+                if (stats != null)
+                {
+                    // Track NPC spawns in stats
+                    if (!stats.objectTypeCount.ContainsKey("NPC_Spawned"))
+                        stats.objectTypeCount["NPC_Spawned"] = 0;
+                    stats.objectTypeCount["NPC_Spawned"]++;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogNPCImport($"❌ Failed to spawn NPC: {ex.Message}");
+                Debug.LogError($"NPC spawn error: {ex}");
+            }
+        }
+
+        private static void ApplyAnimationSet(GameObject character, string animSet, string gender)
+        {
+            try
+            {
+                // Animation naming convention: mp_* for male, fp_* for female
+                string prefix = gender.ToLower() == "f" ? "fp_" : "mp_";
+
+                // Common animation set names and their corresponding animation files
+                // AnimSet from world data (e.g., "bar_talk01", "default", "idle") maps to animation files
+                string animationName = $"{prefix}{animSet}";
+
+                // Try to load animation clip from Resources
+                AnimationClip clip = UnityEngine.Resources.Load<AnimationClip>($"phase_2/models/char/{animationName}");
+
+                if (clip != null)
+                {
+                    // Add Animator component if not present
+                    Animator animator = character.GetComponent<Animator>();
+                    if (animator == null)
+                    {
+                        animator = character.AddComponent<Animator>();
+                    }
+
+                    // Create a simple runtime animator controller
+                    var controller = UnityEditor.Animations.AnimatorController.CreateAnimatorControllerAtPath($"Assets/GeneratedAnimators/{character.name}_{animSet}.controller");
+                    var stateMachine = controller.layers[0].stateMachine;
+                    var state = stateMachine.AddState(animSet);
+                    state.motion = clip;
+                    stateMachine.defaultState = state;
+
+                    animator.runtimeAnimatorController = controller;
+
+                    DebugLogger.LogNPCImport($"🎬 Applied animation: {animationName} to {character.name}");
+                }
+                else
+                {
+                    // Animation clip not found, just add Animation component and log
+                    Animation anim = character.GetComponent<Animation>();
+                    if (anim == null)
+                    {
+                        anim = character.AddComponent<Animation>();
+                    }
+
+                    DebugLogger.LogNPCImport($"⚠️ Animation clip not found: {animationName} (AnimSet: {animSet})");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogNPCImport($"❌ Failed to apply animation set {animSet}: {ex.Message}");
             }
         }
     }

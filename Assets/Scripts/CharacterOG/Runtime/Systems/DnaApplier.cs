@@ -4,6 +4,7 @@
 /// to apply a complete PirateDNA to a character model.
 /// </summary>
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using CharacterOG.Models;
 using CharacterOG.Runtime.Utils;
@@ -18,10 +19,12 @@ namespace CharacterOG.Runtime.Systems
         private MaterialBinder materialBinder;
 
         private Dictionary<string, BodyShapeDef> bodyShapes;
+        private ClothingCatalog catalog;
         private Palettes palettes;
         private JewelryTattooDefs jewelryTattoos;
 
         private PirateDNA currentDna;
+        private Color? currentHairColor;
 
         public DnaApplier(
             GameObject characterRoot,
@@ -34,6 +37,7 @@ namespace CharacterOG.Runtime.Systems
             Transform bodyRoot = null)
         {
             this.bodyShapes = bodyShapes;
+            this.catalog = catalog;
             this.palettes = palettes;
             this.jewelryTattoos = jewelryTattoos;
 
@@ -82,18 +86,39 @@ namespace CharacterOG.Runtime.Systems
             assembler.ApplyUnderwear(dna.gender);
 
             // 3. Apply clothing slots
+            // Note: Index 0 typically means "underwear/default" so we use > 0 check
+            // Hat is exception - index 0 means "no hat" which is fine
             ApplyClothingSlot(Slot.Hat, dna.hat, dna.hatTex, dna.hatColorIdx);
-            ApplyClothingSlot(Slot.Shirt, dna.shirt, dna.shirtTex, dna.topColorIdx);
-            ApplyClothingSlot(Slot.Vest, dna.vest, dna.vestTex, dna.topColorIdx);
-            ApplyClothingSlot(Slot.Coat, dna.coat, dna.coatTex, dna.topColorIdx);
-            ApplyClothingSlot(Slot.Belt, dna.belt, dna.beltTex, -1);
-            ApplyClothingSlot(Slot.Pant, dna.pants, dna.pantsTex, dna.botColorIdx);
-            ApplyClothingSlot(Slot.Shoe, dna.shoes, dna.shoesTex, dna.botColorIdx);
+
+            // Only override underwear if index > 0 (0 means keep underwear default)
+            Debug.Log($"[DNA Values] shirt={dna.shirt}, vest={dna.vest}, coat={dna.coat}, pants={dna.pants}");
+
+            if (dna.shirt > 0)
+                ApplyClothingSlot(Slot.Shirt, dna.shirt, dna.shirtTex, dna.topColorIdx);
+
+            if (dna.vest > 0)
+                ApplyClothingSlot(Slot.Vest, dna.vest, dna.vestTex, dna.topColorIdx);
+
+            if (dna.coat > 0)
+                ApplyClothingSlot(Slot.Coat, dna.coat, dna.coatTex, dna.topColorIdx);
+
+            if (dna.belt > 0)
+                ApplyClothingSlot(Slot.Belt, dna.belt, dna.beltTex, -1);
+
+            if (dna.pants > 0)
+                ApplyClothingSlot(Slot.Pant, dna.pants, dna.pantsTex, dna.botColorIdx);
+
+            if (dna.shoes > 0)
+                ApplyClothingSlot(Slot.Shoe, dna.shoes, dna.shoesTex, dna.botColorIdx);
 
             // 4. Apply hair/facial hair (with hair color palette, not dye palette)
             ApplyHairSlot(Slot.Hair, dna.hair, dna.hairColorIdx);
             ApplyHairSlot(Slot.Beard, dna.beard, dna.hairColorIdx);
             ApplyHairSlot(Slot.Mustache, dna.mustache, dna.hairColorIdx);
+
+            // 4.5. Apply hair cuts for hat (PirateMale.py handleHeadHiding logic)
+            // This shows cut versions of hair and hides full versions based on hat type
+            ApplyHairCutsForHat(dna.hat);
 
             // 5. Apply skin color to body groups
             ApplySkinColor(dna.skinColorIdx);
@@ -187,8 +212,18 @@ namespace CharacterOG.Runtime.Systems
 
         private void ApplyClothingSlot(Slot slot, int ogIndex, int textureIdx, int colorIdx)
         {
+            Debug.Log($"[ApplyClothingSlot] {slot}: ogIndex={ogIndex}, textureIdx={textureIdx}, colorIdx={colorIdx}");
+
             if (ogIndex < 0)
                 return;
+
+            // Check if variant exists in catalog before applying
+            var variant = catalog.GetVariant(slot, ogIndex);
+            if (variant == null)
+            {
+                Debug.LogWarning($"DnaApplier: {slot} variant at index {ogIndex} not found in catalog, skipping");
+                return;
+            }
 
             Color? dye = null;
 
@@ -216,7 +251,57 @@ namespace CharacterOG.Runtime.Systems
                 hairColor = palettes.GetHairColor(hairColorIdx);
             }
 
+            // Store hair color for later use when applying hair cuts
+            if (slot == Slot.Hair)
+            {
+                currentHairColor = hairColor;
+            }
+
+            // Try to apply from catalog, but don't fail if variant not found
+            // Hair meshes might exist in model even if catalog doesn't list them
+            var variant = catalog.GetVariant(slot, ogIndex);
+            if (variant == null)
+            {
+                Debug.Log($"DnaApplier: {slot} variant at index {ogIndex} not in catalog, attempting direct mesh activation");
+
+                // Try to enable hair meshes directly by pattern matching
+                // For hair index N, enable all hair_* meshes that match the hair pieces for that index
+                // This is a fallback when catalog doesn't have the variant
+                ApplyHairDirectly(slot, ogIndex, hairColor);
+                return;
+            }
+
             assembler.SetSlotByIndex(slot, ogIndex, 0, hairColor);
+
+            // CRITICAL: Also apply color to ALL hair/beard/mustache meshes (including cut versions)
+            // The assembler only colors the specific variant's showGroups, but cut versions
+            // are separate meshes that need coloring too
+            if (hairColor.HasValue)
+            {
+                int extraColoredCount = 0;
+                foreach (var name in rendererCache.AllNames())
+                {
+                    bool matchesSlot = false;
+                    if (slot == Slot.Hair && name.StartsWith("hair_") && !name.StartsWith("hair_eyebrow_"))
+                        matchesSlot = true;
+                    else if (slot == Slot.Beard && name.StartsWith("beard_"))
+                        matchesSlot = true;
+                    else if (slot == Slot.Mustache && name.StartsWith("mustache_"))
+                        matchesSlot = true;
+
+                    if (matchesSlot)
+                    {
+                        var renderers = rendererCache.GetExact(name);
+                        foreach (var renderer in renderers)
+                        {
+                            materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                            extraColoredCount++;
+                        }
+                    }
+                }
+
+                Debug.Log($"DnaApplier: Applied {slot} color to {extraColoredCount} total meshes (including cut versions)");
+            }
 
             // Apply hair color to eyebrows (only when applying hair slot, not beard/mustache)
             if (slot == Slot.Hair && hairColor.HasValue)
@@ -235,6 +320,54 @@ namespace CharacterOG.Runtime.Systems
                 }
 
                 Debug.Log($"DnaApplier: Applied hair color {hairColor.Value} to eyebrows");
+            }
+        }
+
+        private void ApplyHairDirectly(Slot slot, int ogIndex, Color? hairColor)
+        {
+            // Hair variant not in catalog - catalog data may be incomplete
+            // Apply color to ALL hair pieces as a fallback (hat cuts will hide the right ones later)
+            Debug.LogWarning($"DnaApplier: {slot} variant at index {ogIndex} not found in catalog. Applying color to all {slot} meshes as fallback.");
+
+            int coloredCount = 0;
+            foreach (var name in rendererCache.AllNames())
+            {
+                bool matchesSlot = false;
+                if (slot == Slot.Hair && name.StartsWith("hair_") && !name.StartsWith("hair_eyebrow_"))
+                    matchesSlot = true;
+                else if (slot == Slot.Beard && name.StartsWith("beard_"))
+                    matchesSlot = true;
+                else if (slot == Slot.Mustache && name.StartsWith("mustache_"))
+                    matchesSlot = true;
+
+                if (matchesSlot && hairColor.HasValue)
+                {
+                    var renderers = rendererCache.GetExact(name);
+                    foreach (var renderer in renderers)
+                    {
+                        materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                        coloredCount++;
+                    }
+                }
+            }
+
+            Debug.Log($"DnaApplier: Applied {slot} color to {coloredCount} meshes as fallback");
+
+            // Apply eyebrow color for hair
+            if (slot == Slot.Hair && hairColor.HasValue)
+            {
+                var leftEyebrow = rendererCache.GetExact("hair_eyebrow_left");
+                var rightEyebrow = rendererCache.GetExact("hair_eyebrow_right");
+
+                foreach (var renderer in leftEyebrow)
+                {
+                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                }
+
+                foreach (var renderer in rightEyebrow)
+                {
+                    materialBinder.ApplyDye(renderer, "base", hairColor.Value);
+                }
             }
         }
 
@@ -578,6 +711,117 @@ namespace CharacterOG.Runtime.Systems
 
                 Debug.Log($"DnaApplier: Applied tattoo {tattoo.idx} to zone{tattoo.zone}");
             }
+        }
+
+        private void ApplyHairCutsForHat(int hatIndex)
+        {
+            // Hat cuts mapping from PirateMale.py lines 4310-4330
+            // Each hat has a specific cut name that determines which hair pieces to show/hide
+            string[] cuts = new[]
+            {
+                "cut_none",          // 0 - No hat
+                "cut_captain",       // 1
+                "cut_tricorn",       // 2
+                "cut_navy",          // 3
+                "cut_admiral",       // 4
+                "cut_admiral",       // 5
+                "cut_bandanna_full", // 6
+                "cut_bandanna",      // 7
+                "cut_beanie",        // 8
+                "cut_admiral",       // 9
+                "cut_bandanna_full", // 10
+                "cut_bandanna_full", // 11
+                "cut_bandanna_full", // 12
+                "cut_bandanna_full", // 13
+                "cut_bandanna_full", // 14
+                "cut_bandanna_full", // 15
+                "cut_bandanna_full", // 16
+                "cut_bandanna_full", // 17
+                "cut_bandanna_full", // 18
+                "cut_bandanna_full"  // 19
+            };
+
+            if (hatIndex < 0 || hatIndex >= cuts.Length)
+                return;
+
+            string cutName = cuts[hatIndex];
+
+            // If no hat (hatIndex == 0), show all hair normally
+            if (hatIndex == 0)
+                return;
+
+            // PirateMale.py logic (lines 4360-4380):
+            // For each hair piece index:
+            // - partIdx == 1 (hair_base): ALWAYS show, never cut
+            // - partIdx > 0: If cut version exists, show cut, hide full. Otherwise hide.
+            // - partIdx == 0 (hair_none): Always hidden
+
+            int cutVersionsShown = 0;
+            int fullVersionsHidden = 0;
+            var allNames = rendererCache.AllNames().ToList();
+
+            // Step 1: Process all non-cut hair pieces
+            foreach (var name in allNames)
+            {
+                // Only process full hair meshes (not cuts, not eyebrows, not beard/mustache)
+                if (!name.StartsWith("hair_") || name.Contains("_cut_") || name.StartsWith("hair_eyebrow_"))
+                    continue;
+
+                // Male-specific: hair_base (index 1) always shows (PirateMale.py line 4364: partIdx == 1)
+                // Females don't have hair_base
+                if (name.Contains("hair_base"))
+                {
+                    rendererCache.EnableExact(name, true);
+                    Debug.Log($"DnaApplier: Keeping base hair '{name}' visible (always shown)");
+                    continue;
+                }
+
+                // hair_none (index 0) always hidden
+                if (name.Contains("hair_none"))
+                {
+                    rendererCache.EnableExact(name, false);
+                    continue;
+                }
+
+                // For other hair pieces, check if cut version exists
+                // Cut versions have names like: hair_a0_cut_navy, hair_i0_cut_tricorn, etc.
+                string cutVersion = name + "_" + cutName;
+                bool hasCutVersion = allNames.Any(n => n == cutVersion);
+
+                if (hasCutVersion)
+                {
+                    // Hide full version, cut version will be shown in step 2
+                    rendererCache.EnableExact(name, false);
+                    fullVersionsHidden++;
+                }
+                else
+                {
+                    // No cut version exists for this hat type - hide the hair piece
+                    // Exception: Special cases in PirateMale.py line 4371 (hat==7 OR certain part indices)
+                    rendererCache.EnableExact(name, false);
+                    fullVersionsHidden++;
+                }
+            }
+
+            // Step 2: Show only cut versions that match this hat
+            // (Color was already applied in ApplyHairSlot to all hair meshes)
+            foreach (var name in allNames)
+            {
+                if (!name.Contains("_cut_"))
+                    continue;
+
+                // This is a cut version - show it only if it matches the current hat's cut
+                bool shouldShow = name.Contains("_" + cutName);
+                rendererCache.EnableExact(name, shouldShow);
+
+                if (shouldShow)
+                {
+                    cutVersionsShown++;
+                    Debug.Log($"DnaApplier: Showing cut hair '{name}' for hat cut '{cutName}'");
+                }
+            }
+
+            Debug.Log($"DnaApplier: Applied hair cuts for hat {hatIndex} (cut: {cutName}) - {cutVersionsShown} cut versions shown, {fullVersionsHidden} full versions hidden");
         }
 
         /// <summary>Get diagnostic info</summary>

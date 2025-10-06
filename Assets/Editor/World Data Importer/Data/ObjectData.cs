@@ -26,6 +26,14 @@ namespace WorldDataImporter.Data
         public float? dropOff;
         public bool? flickering;
         public float? flickRate;
+
+        // NPC properties
+        public string npcDnaId;         // DNA ID from NPCList.py
+        public string npcCustomModel;   // Custom model path (e.g., "models/char/js_2000")
+        public string npcAnimSet;       // Animation set to apply
+        public Vector3? gridPos;        // Absolute world position (GridPos)
+        public bool hasPos;             // Track if Pos was set
+        public bool isReadyForNPCSpawn; // Track if all NPC properties are loaded
     }
     
     [System.Serializable]

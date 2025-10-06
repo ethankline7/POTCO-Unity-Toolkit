@@ -17,6 +17,7 @@ namespace WorldDataImporter.Data
         public bool importCollisions = true;
         public bool addLighting = true;
         public bool importNodes = false;
+        public bool importNPCs = false;
         
         [Header("Filtering Options")]
         public bool importHolidayObjects = true;

@@ -12,6 +12,7 @@ using CharacterOG.Data.PureCSharpBackend;
 using CharacterOG.Models;
 using CharacterOG.Runtime.Systems;
 using CharacterOG.Runtime.Utils;
+using POTCO.Editor;
 
 namespace CharacterOG.Editor
 {
@@ -159,13 +160,13 @@ namespace CharacterOG.Editor
 
                 dataLoaded = true;
                 loadError = null;
-                Debug.Log($"NPC Preview: Loaded {npcDatabase.Count} NPCs");
+                DebugLogger.LogNPCImport($"NPC Preview: Loaded {npcDatabase.Count} NPCs");
             }
             catch (System.Exception ex)
             {
                 loadError = ex.Message;
                 dataLoaded = false;
-                Debug.LogError($"NPC Preview Load Error: {ex}");
+                DebugLogger.LogErrorNPCImport($"NPC Preview Load Error: {ex}");
             }
         }
 
@@ -260,7 +261,7 @@ namespace CharacterOG.Editor
                 if (modelPrefab == null)
                 {
                     EditorUtility.DisplayDialog("Error", $"Could not load character model at:\nResources/{modelPath}\n\nMake sure the .egg file has been imported.", "OK");
-                    Debug.LogError($"Failed to load character model: Resources/{modelPath}");
+                    DebugLogger.LogErrorNPCImport($"Failed to load character model: Resources/{modelPath}");
                     return;
                 }
 
@@ -308,7 +309,7 @@ namespace CharacterOG.Editor
                     }
                 }
 
-                Debug.Log($"Auto-Find Roots: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
+                DebugLogger.LogNPCImport($"Auto-Find Roots: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
 
                 // Load clothing catalog for the correct gender
                 ClothingCatalog genderClothing = dataSource.LoadClothingCatalog(dna.gender);
@@ -335,12 +336,12 @@ namespace CharacterOG.Editor
                 // Mark scene dirty
                 UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(character.scene);
 
-                Debug.Log($"Successfully spawned and applied NPC '{dna.name}' ({dna.gender}) at {character.transform.position}");
+                DebugLogger.LogNPCImport($"Successfully spawned and applied NPC '{dna.name}' ({dna.gender}) at {character.transform.position}");
                 EditorUtility.DisplayDialog("Success", $"Spawned NPC '{dna.name}' in scene!\n\nGender: {dna.gender}\nModel: {modelPath}", "OK");
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"Failed to spawn NPC: {ex}");
+                DebugLogger.LogErrorNPCImport($"Failed to spawn NPC: {ex}");
                 EditorUtility.DisplayDialog("Error", $"Failed to spawn NPC:\n{ex.Message}", "OK");
             }
         }
@@ -370,14 +371,14 @@ namespace CharacterOG.Editor
                 // Apply DNA
                 dnaApplier.ApplyDNA(dna);
 
-                Debug.Log($"Successfully applied NPC '{dna.name}' to {selectedCharacter.name}");
+                DebugLogger.LogNPCImport($"Successfully applied NPC '{dna.name}' to {selectedCharacter.name}");
                 EditorUtility.DisplayDialog("Success", $"Applied NPC '{dna.name}' to {selectedCharacter.name}", "OK");
 
                 EditorUtility.SetDirty(selectedCharacter);
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"Failed to apply NPC: {ex}");
+                DebugLogger.LogErrorNPCImport($"Failed to apply NPC: {ex}");
                 EditorUtility.DisplayDialog("Error", $"Failed to apply NPC:\n{ex.Message}", "OK");
             }
         }
@@ -414,7 +415,7 @@ namespace CharacterOG.Editor
                 }
             }
 
-            Debug.Log($"Auto-Find: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
+            DebugLogger.LogNPCImport($"Auto-Find: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
         }
     }
 }

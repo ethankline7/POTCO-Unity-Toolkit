@@ -13,6 +13,7 @@ using CharacterOG.Data.PureCSharpBackend;
 using CharacterOG.Models;
 using CharacterOG.Runtime.Systems;
 using CharacterOG.Runtime.Utils;
+using POTCO.Editor;
 
 namespace CharacterOG.Editor
 {
@@ -135,13 +136,13 @@ namespace CharacterOG.Editor
 
                 dataLoaded = true;
                 loadError = null;
-                Debug.Log($"Character DB: Loaded data using {dataSource.BackendName}");
+                DebugLogger.LogNPCImport($"Character DB: Loaded data using {dataSource.BackendName}");
             }
             catch (System.Exception ex)
             {
                 loadError = ex.Message;
                 dataLoaded = false;
-                Debug.LogError($"Character DB Load Error: {ex}");
+                DebugLogger.LogErrorNPCImport($"Character DB Load Error: {ex}");
             }
         }
 
@@ -370,7 +371,7 @@ namespace CharacterOG.Editor
                 return;
 
             // This is a simplified preview - full implementation would use DnaApplier
-            Debug.Log($"Apply {variant.displayName} to {selectedCharacter.name}");
+            DebugLogger.LogNPCImport($"Apply {variant.displayName} to {selectedCharacter.name}");
 
             var cache = new GroupRendererCache(selectedCharacter);
 

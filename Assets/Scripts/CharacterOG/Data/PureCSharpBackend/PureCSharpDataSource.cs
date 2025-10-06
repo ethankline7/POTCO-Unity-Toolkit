@@ -585,6 +585,19 @@ namespace CharacterOG.Data.PureCSharpBackend
 
         private void ParseUnderwear(ClothingCatalog catalog, PyDict underwearDict)
         {
+            // Map constant names to slot numbers (from ClothingGlobals.py lines 8-15)
+            var constantToSlot = new Dictionary<string, int>
+            {
+                { "HAT", 0 },
+                { "SHIRT", 1 },
+                { "VEST", 2 },
+                { "COAT", 3 },
+                { "PANT", 4 },
+                { "BELT", 5 },
+                { "SOCK", 6 },
+                { "SHOE", 7 }
+            };
+
             foreach (var genderKvp in underwearDict.items)
             {
                 string gender = genderKvp.Key;
@@ -593,10 +606,25 @@ namespace CharacterOG.Data.PureCSharpBackend
                 {
                     var underwearSet = new Dictionary<Slot, (int idx, int texIdx, int colorIdx)>();
 
+                    Debug.Log($"[ParseUnderwear] Gender '{gender}': Found {slotsDict.items.Count} slots, keys: {string.Join(", ", slotsDict.items.Keys)}");
+
                     foreach (var slotKvp in slotsDict.items)
                     {
-                        if (!int.TryParse(slotKvp.Key, out int slotNum))
-                            continue;
+                        int slotNum;
+
+                        // Try to parse as number first, then try constant name
+                        if (!int.TryParse(slotKvp.Key, out slotNum))
+                        {
+                            if (constantToSlot.TryGetValue(slotKvp.Key, out slotNum))
+                            {
+                                Debug.Log($"[ParseUnderwear] Gender '{gender}': Converted constant '{slotKvp.Key}' to slot number {slotNum}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[ParseUnderwear] Gender '{gender}': Unknown constant '{slotKvp.Key}'");
+                                continue;
+                            }
+                        }
 
                         Slot slot = (Slot)slotNum;
 
@@ -607,10 +635,12 @@ namespace CharacterOG.Data.PureCSharpBackend
                             int colorIdx = (tuple.Get<PyNumber>(2))?.AsInt() ?? 0;
 
                             underwearSet[slot] = (idx, texIdx, colorIdx);
+                            Debug.Log($"[ParseUnderwear] Gender '{gender}': {slot} = ({idx}, {texIdx}, {colorIdx})");
                         }
                     }
 
                     catalog.underwear[gender] = underwearSet;
+                    Debug.Log($"[ParseUnderwear] Gender '{gender}': Loaded {underwearSet.Count} underwear slots");
                 }
             }
         }
@@ -880,22 +910,21 @@ namespace CharacterOG.Data.PureCSharpBackend
 
         private void AddHairBeardMustacheVariants(ClothingCatalog catalog, string gender)
         {
-            // Hair styles - actual count matches hairList in PirateMale.py (12 items)
-            string[] hairNames = new[]
-            {
-                "None", "Base", "A0", "A1", "A2", "B1",
-                "D0", "E1", "F0", "G0", "H0", "I0"
-            };
+            // Hair styles - Males have 14 (indices 0-13), Females have 20 (indices 0-19)
+            // Create enough slots to cover both genders
+            int hairCount = gender.ToLower() == "f" ? 20 : 14;
 
-            for (int i = 0; i < hairNames.Length; i++)
+            for (int i = 0; i < hairCount; i++)
             {
                 catalog.variantsBySlot[Slot.Hair].Add(new SlotVariant
                 {
                     id = $"hair_{i}",
-                    displayName = hairNames[i],
+                    displayName = $"Hair {i}",
                     ogIndex = i
                 });
             }
+
+            Debug.Log($"AddHairBeardMustacheVariants: Created {hairCount} hair slots for gender '{gender}'");
 
             // Beard styles (placeholder - actual count varies, increase to 20 to be safe)
             for (int i = 0; i < 20; i++)
@@ -919,7 +948,7 @@ namespace CharacterOG.Data.PureCSharpBackend
                 });
             }
 
-            Debug.Log($"Added Hair: {hairNames.Length}, Beard: 20, Mustache: 10 variants");
+            Debug.Log($"AddHairBeardMustacheVariants: Created Beard: 20, Mustache: 10 variants");
         }
 
         private void BuildPatternsFromNames(ClothingCatalog catalog, string gender)
@@ -1148,7 +1177,11 @@ namespace CharacterOG.Data.PureCSharpBackend
 
                 case "setClothesVest":
                     if (args.Get<PyNumber>(0) is PyNumber vestIdx)
+                    {
                         dna.vest = vestIdx.AsInt();
+                        int texValue = args.Count > 1 ? (args.Get<PyNumber>(1)?.AsInt() ?? -1) : -1;
+                        Debug.Log($"[ApplyNpcFunction] setClothesVest: vest={dna.vest}, tex={texValue}");
+                    }
                     if (args.Count > 1 && args.Get<PyNumber>(1) is PyNumber vestTex)
                         dna.vestTex = vestTex.AsInt();
                     break;

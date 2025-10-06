@@ -116,6 +116,12 @@ public class WorldSceneBuilderEditor : EditorWindow
             if (settings.importNodes) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Import spawn points, locators, and other node objects (usually not needed for visuals)", EditorStyles.miniLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            settings.importNPCs = EditorGUILayout.Toggle("Import NPCs", settings.importNPCs);
+            if (settings.importNPCs) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Spawn Townsperson NPCs with DNA and animations (requires character models)", EditorStyles.miniLabel);
             
             GUILayout.Space(5);
             GUILayout.Label("Filtering Options", EditorStyles.boldLabel);
