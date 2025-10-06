@@ -27,6 +27,7 @@ namespace CharacterOG.Editor
         private JewelryTattooDefs jewelryTattoos;
 
         private Vector2 scrollPos;
+        private Vector2 mainScrollPos;
         private string searchFilter = "";
         private bool dataLoaded = false;
         private string loadError;
@@ -101,6 +102,9 @@ namespace CharacterOG.Editor
 
             EditorGUILayout.Space();
 
+            // Main scroll view for entire content area
+            mainScrollPos = EditorGUILayout.BeginScrollView(mainScrollPos);
+
             // NPC list
             EditorGUILayout.LabelField($"NPCs ({GetFilteredNPCs().Count()})", EditorStyles.boldLabel);
 
@@ -120,7 +124,9 @@ namespace CharacterOG.Editor
                 DrawSelectedNPCDetails();
             }
 
-            // Status bar
+            EditorGUILayout.EndScrollView(); // End main scroll view
+
+            // Status bar (outside scroll view, always visible at bottom)
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField($"✓ Loaded {npcDatabase?.Count ?? 0} NPCs", EditorStyles.miniLabel);
             EditorGUILayout.EndVertical();
@@ -190,7 +196,11 @@ namespace CharacterOG.Editor
 
             EditorGUILayout.BeginVertical();
             EditorGUILayout.LabelField(dna.name, EditorStyles.boldLabel);
-            EditorGUILayout.LabelField($"{dna.gender} | {dna.bodyShape} | ID: {npcId}", EditorStyles.miniLabel);
+
+            // Show facial morph count
+            int morphCount = dna.headMorphs?.Count ?? 0;
+            string morphInfo = morphCount > 0 ? $"[{morphCount} facial morphs]" : "[no facial morphs]";
+            EditorGUILayout.LabelField($"{dna.gender} | {dna.bodyShape} | {morphInfo} | ID: {npcId}", EditorStyles.miniLabel);
             EditorGUILayout.EndVertical();
 
             if (GUILayout.Button("Select", GUILayout.Width(60)))
@@ -239,10 +249,73 @@ namespace CharacterOG.Editor
             EditorGUILayout.LabelField($"Tattoos: {selectedNpcDna.tattoos.Count}");
 
             EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Facial Morphs:", EditorStyles.boldLabel);
+            if (selectedNpcDna.headMorphs != null && selectedNpcDna.headMorphs.Count > 0)
+            {
+                // Show non-zero morphs
+                var nonZeroMorphs = selectedNpcDna.headMorphs.Where(kvp => !Mathf.Approximately(kvp.Value, 0f)).ToList();
+                EditorGUILayout.LabelField($"  Total: {selectedNpcDna.headMorphs.Count} ({nonZeroMorphs.Count} non-zero)");
+
+                // Show first 5 non-zero morphs
+                foreach (var morph in nonZeroMorphs.Take(5))
+                {
+                    EditorGUILayout.LabelField($"  {morph.Key}: {morph.Value:F3}", EditorStyles.miniLabel);
+                }
+                if (nonZeroMorphs.Count > 5)
+                {
+                    EditorGUILayout.LabelField($"  ... and {nonZeroMorphs.Count - 5} more", EditorStyles.miniLabel);
+                }
+            }
+            else
+            {
+                EditorGUILayout.LabelField("  None");
+            }
+
+            EditorGUILayout.Space();
 
             if (GUILayout.Button("Spawn NPC in Scene", GUILayout.Height(30)))
             {
                 SpawnAndApplyNPC(selectedNpcDna, selectedNpcId);
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Facial Morph Debugging", EditorStyles.boldLabel);
+
+            // Coordinate conversion mode cycling
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"Coordinate: {FacialMorphApplier.CurrentPermutation}", GUILayout.Width(200));
+            if (GUILayout.Button("Cycle Mode", GUILayout.Width(100)))
+            {
+                CycleCoordinateMode();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // Coordinate conversion testing toggles
+            EditorGUILayout.LabelField("Coordinate Conversion Flags:", EditorStyles.miniBoldLabel);
+            EditorGUILayout.HelpBox("POTCO Coordinate System (from CoordinateConverter):\n• Position/Scale: Swap Y↔Z (no negation)\n• Rotation: Swap Y↔Z + negate ALL\n\nCurrent: XZY (standard POTCO)", MessageType.Info);
+
+            // Re-apply facial morphs with current mode
+            if (GUILayout.Button("Re-Apply Facial Morphs to Selected Character", GUILayout.Height(30)))
+            {
+                ReapplyFacialMorphsToSelected();
+            }
+
+            EditorGUILayout.Space();
+
+            // Spawn all combinations for comparison
+            EditorGUILayout.LabelField("Batch Testing:", EditorStyles.miniBoldLabel);
+            if (GUILayout.Button("Spawn NPC With All Coordinate Combinations", GUILayout.Height(30)))
+            {
+                SpawnAllCombinations();
+            }
+            EditorGUILayout.HelpBox("Spawns 48 NPCs (6 axis permutations × 8 sign patterns) testing all coordinate conversions", MessageType.Info);
+
+            EditorGUILayout.Space();
+
+            // Debugging button to dump all bones
+            if (GUILayout.Button("Debug: Dump All Bones in Selected Character"))
+            {
+                DumpAllBonesInSelected();
             }
 
             EditorGUILayout.EndVertical();
@@ -252,6 +325,13 @@ namespace CharacterOG.Editor
         {
             try
             {
+                if (dataSource == null)
+                {
+                    EditorUtility.DisplayDialog("Error", "Data source not loaded. Please reload the NPC database first.", "OK");
+                    DebugLogger.LogErrorNPCImport("SpawnAndApplyNPC failed: dataSource is null");
+                    return;
+                }
+
                 // Determine model path based on gender
                 string modelPath = dna.gender.ToLower() == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
 
@@ -425,6 +505,350 @@ namespace CharacterOG.Editor
             }
 
             DebugLogger.LogNPCImport($"Auto-Find: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
+        }
+
+        private void CycleCoordinateMode()
+        {
+            // Cycle through 6 axis permutations
+            int currentPerm = (int)FacialMorphApplier.CurrentPermutation;
+            int permCount = System.Enum.GetValues(typeof(AxisPermutation)).Length;
+
+            currentPerm = (currentPerm + 1) % permCount;
+            FacialMorphApplier.CurrentPermutation = (AxisPermutation)currentPerm;
+
+            DebugLogger.LogNPCImport($"Switched to: {FacialMorphApplier.CurrentPermutation}");
+            Repaint();
+        }
+
+        private void ReapplyFacialMorphsToSelected()
+        {
+            GameObject character = Selection.activeGameObject;
+
+            if (character == null)
+            {
+                EditorUtility.DisplayDialog("Error", "No character selected in hierarchy.\n\nPlease select a spawned NPC character first.", "OK");
+                return;
+            }
+
+            if (selectedNpcDna == null)
+            {
+                EditorUtility.DisplayDialog("Error", "No NPC DNA selected.\n\nPlease select an NPC from the list first.", "OK");
+                return;
+            }
+
+            if (dataSource == null)
+            {
+                EditorUtility.DisplayDialog("Error", "Data source not loaded. Please reload the NPC database first.", "OK");
+                DebugLogger.LogErrorNPCImport("ReapplyFacialMorphsToSelected failed: dataSource is null");
+                return;
+            }
+
+            try
+            {
+                // Find head and body roots
+                Transform[] allTransforms = character.GetComponentsInChildren<Transform>();
+
+                Transform headRoot = null;
+                string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
+                foreach (var candidate in headCandidates)
+                {
+                    var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                    if (found != null)
+                    {
+                        headRoot = found;
+                        break;
+                    }
+                }
+
+                if (headRoot == null)
+                {
+                    EditorUtility.DisplayDialog("Error", "Could not find head root bone (def_neck) in character.\n\nMake sure this is a POTCO character model.", "OK");
+                    return;
+                }
+
+                // Load facial morphs for the correct gender
+                FacialMorphDatabase facialMorphs = dataSource.LoadFacialMorphs(selectedNpcDna.gender);
+
+                if (facialMorphs == null || facialMorphs.morphs.Count == 0)
+                {
+                    EditorUtility.DisplayDialog("Error", "Failed to load facial morphs database.", "OK");
+                    return;
+                }
+
+                // Create facial morph applier
+                var facialMorphApplier = new FacialMorphApplier(headRoot, facialMorphs, character.transform);
+
+                // Apply facial morphs
+                if (selectedNpcDna.headMorphs != null && selectedNpcDna.headMorphs.Count > 0)
+                {
+                    // Count non-zero morphs
+                    var nonZeroMorphs = selectedNpcDna.headMorphs.Where(kvp => !Mathf.Approximately(kvp.Value, 0f)).ToList();
+
+                    if (nonZeroMorphs.Count > 0)
+                    {
+                        facialMorphApplier.ApplyMorphs(selectedNpcDna.headMorphs);
+                        DebugLogger.LogNPCImport($"Re-applied {nonZeroMorphs.Count} non-zero facial morphs to {character.name} using: {FacialMorphApplier.CurrentPermutation}");
+                        EditorUtility.DisplayDialog("Success", $"Re-applied facial morphs to {character.name}\n\nPermutation: {FacialMorphApplier.CurrentPermutation}\nTotal morphs: {selectedNpcDna.headMorphs.Count}\nNon-zero: {nonZeroMorphs.Count}", "OK");
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("Info", $"Selected NPC has {selectedNpcDna.headMorphs.Count} facial morphs, but all are zero (no facial customization).\n\nTry selecting a different NPC with non-zero morph values.", "OK");
+                    }
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("Info", "Selected NPC has no facial morph data.\n\nTry selecting a different NPC from the list.", "OK");
+                }
+
+                EditorUtility.SetDirty(character);
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(character.scene);
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogErrorNPCImport($"Failed to re-apply facial morphs: {ex}");
+                EditorUtility.DisplayDialog("Error", $"Failed to re-apply facial morphs:\n{ex.Message}", "OK");
+            }
+        }
+
+        private void DumpAllBonesInSelected()
+        {
+            GameObject character = Selection.activeGameObject;
+
+            if (character == null)
+            {
+                EditorUtility.DisplayDialog("Error", "No character selected in hierarchy.\n\nPlease select a spawned NPC character first.", "OK");
+                return;
+            }
+
+            Transform[] allTransforms = character.GetComponentsInChildren<Transform>(includeInactive: true);
+
+            // Expected bones from ControlShapes (from PirateMale.py)
+            string[] expectedBones = {
+                "def_trs_forehead", "def_trs_left_cheek", "def_trs_left_ear", "def_trs_left_forehead",
+                "def_trs_left_jaw1", "def_trs_left_jaw2", "def_trs_mid_jaw", "def_trs_mid_nose_bot",
+                "def_trs_mid_nose_top", "def_trs_right_cheek", "def_trs_right_ear", "def_trs_right_forehead",
+                "def_trs_right_jaw1", "def_trs_right_jaw2", "trs_face_bottom", "trs_left_eyebrow",
+                "trs_left_eyesocket", "trs_lip_bot", "trs_lip_left1", "trs_lip_left2", "trs_lip_left3",
+                "trs_lip_right1", "trs_lip_right2", "trs_lip_right3", "trs_lip_top", "trs_lips_bot",
+                "trs_lips_top", "trs_right_eyebrow", "trs_right_eyesocket"
+            };
+
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine($"=== BONE DUMP FOR {character.name} ===");
+            sb.AppendLine($"Total transforms: {allTransforms.Length}");
+            sb.AppendLine();
+
+            sb.AppendLine("=== CHECKING EXPECTED FACIAL BONES ===");
+            int foundCount = 0;
+            int missingCount = 0;
+            foreach (var boneName in expectedBones)
+            {
+                var found = System.Array.Find(allTransforms, t => t.name == boneName);
+                if (found != null)
+                {
+                    sb.AppendLine($"✓ {boneName}");
+                    foundCount++;
+                }
+                else
+                {
+                    sb.AppendLine($"✗ MISSING: {boneName}");
+                    missingCount++;
+                }
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"Summary: {foundCount} found, {missingCount} missing");
+            sb.AppendLine();
+
+            sb.AppendLine("=== ALL FACIAL-RELATED BONES IN MODEL ===");
+            var facialBones = allTransforms.Where(t =>
+                t.name.Contains("trs_") ||
+                t.name.Contains("def_trs_") ||
+                t.name.Contains("jaw") ||
+                t.name.Contains("nose") ||
+                t.name.Contains("eye") ||
+                t.name.Contains("brow") ||
+                t.name.Contains("lip") ||
+                t.name.Contains("ear") ||
+                t.name.Contains("cheek") ||
+                t.name.Contains("forehead")
+            ).OrderBy(t => t.name).ToList();
+
+            foreach (var bone in facialBones)
+            {
+                sb.AppendLine($"  {bone.name}");
+            }
+
+            string report = sb.ToString();
+            Debug.Log(report);
+
+            EditorUtility.DisplayDialog("Bone Dump Complete", $"Dumped {allTransforms.Length} total bones\n\nExpected facial bones: {foundCount}/{expectedBones.Length} found\n\nFacial-related bones in model: {facialBones.Count}\n\nSee Console for full list.", "OK");
+        }
+
+        private void SpawnAllCombinations()
+        {
+            if (selectedNpcDna == null)
+            {
+                EditorUtility.DisplayDialog("Error", "No NPC selected.\n\nPlease select an NPC from the list first.", "OK");
+                return;
+            }
+
+            if (dataSource == null)
+            {
+                EditorUtility.DisplayDialog("Error", "Data source not loaded. Please reload the NPC database first.", "OK");
+                return;
+            }
+
+            // Check if NPC has facial morphs
+            if (selectedNpcDna.headMorphs == null || selectedNpcDna.headMorphs.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Error", "Selected NPC has no facial morphs.\n\nPlease select an NPC with facial morphs.", "OK");
+                return;
+            }
+
+            var nonZeroMorphs = selectedNpcDna.headMorphs.Where(kvp => !Mathf.Approximately(kvp.Value, 0f)).ToList();
+            if (nonZeroMorphs.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Error", "Selected NPC has no non-zero facial morphs.\n\nPlease select an NPC with visible facial features.", "OK");
+                return;
+            }
+
+            // Confirm with user
+            if (!EditorUtility.DisplayDialog("Spawn All Permutations",
+                $"This will spawn 6 NPCs ({selectedNpcDna.name}) testing axis permutations.\n\n" +
+                $"NPC has {nonZeroMorphs.Count} non-zero facial morphs.\n\n" +
+                "XYZ, XZY (POTCO standard), YXZ, YZX, ZXY, ZYX\n\n" +
+                "Continue?", "Spawn", "Cancel"))
+            {
+                return;
+            }
+
+            try
+            {
+                // Store original settings
+                var originalPermutation = FacialMorphApplier.CurrentPermutation;
+
+                // Load model
+                string modelPath = selectedNpcDna.gender.ToLower() == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+                GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+                if (modelPrefab == null)
+                {
+                    EditorUtility.DisplayDialog("Error", $"Could not load character model at:\nResources/{modelPath}", "OK");
+                    return;
+                }
+
+                // Load required data
+                ClothingCatalog genderClothing = dataSource.LoadClothingCatalog(selectedNpcDna.gender);
+                JewelryTattooDefs genderJewelry = dataSource.LoadJewelryAndTattoos(selectedNpcDna.gender);
+                FacialMorphDatabase facialMorphs = dataSource.LoadFacialMorphs(selectedNpcDna.gender);
+
+                // Create parent container
+                GameObject container = new GameObject($"Facial_Morph_Comparison_{selectedNpcDna.name}");
+                Undo.RegisterCreatedObjectUndo(container, "Spawn All Permutations");
+
+                // Grid layout: 6 NPCs in a row
+                float spacing = 3f;
+
+                int index = 0;
+                var permutations = System.Enum.GetValues(typeof(AxisPermutation));
+
+                foreach (AxisPermutation perm in permutations)
+                {
+                    // Calculate grid position
+                    Vector3 position = new Vector3(index * spacing, 0, 0);
+
+                    // Spawn NPC
+                    GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                    if (character == null)
+                        character = GameObject.Instantiate(modelPrefab);
+
+                    character.transform.SetParent(container.transform);
+                    character.transform.localPosition = position;
+
+                    // Name with settings
+                    character.name = $"{index}_{perm}";
+
+                    // Find bones
+                    Transform[] allTransforms = character.GetComponentsInChildren<Transform>();
+                    Transform headRoot = null;
+                    Transform bodyRoot = null;
+
+                    string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
+                    foreach (var candidate in headCandidates)
+                    {
+                        var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                        if (found != null)
+                        {
+                            headRoot = found;
+                            break;
+                        }
+                    }
+
+                    string[] bodyCandidates = { "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
+                    foreach (var candidate in bodyCandidates)
+                    {
+                        var found = System.Array.Find(allTransforms, t => t.name == candidate);
+                        if (found != null)
+                        {
+                            bodyRoot = found;
+                            break;
+                        }
+                    }
+
+                    // Apply DNA with current settings
+                    FacialMorphApplier.CurrentPermutation = perm;
+
+                    var dnaApplier = new DnaApplier(
+                        character,
+                        bodyShapes,
+                        genderClothing,
+                        palettes,
+                        genderJewelry,
+                        facialMorphs,
+                        selectedNpcDna.gender,
+                        headRoot,
+                        bodyRoot
+                    );
+
+                    dnaApplier.ApplyDNA(selectedNpcDna);
+
+                    // Add text label
+                    GameObject label = new GameObject("Label");
+                    label.transform.SetParent(character.transform);
+                    label.transform.localPosition = new Vector3(0, 2.2f, 0);
+
+                    var textMesh = label.AddComponent<TextMesh>();
+                    textMesh.text = $"{index}\n{perm}";
+                    textMesh.fontSize = 10;
+                    textMesh.characterSize = 0.05f;
+                    textMesh.color = Color.white;
+                    textMesh.anchor = TextAnchor.MiddleCenter;
+                    textMesh.alignment = TextAlignment.Center;
+
+                    index++;
+                }
+
+                // Restore original settings
+                FacialMorphApplier.CurrentPermutation = originalPermutation;
+
+                // Position camera to view all NPCs
+                if (SceneView.lastActiveSceneView != null)
+                {
+                    SceneView.lastActiveSceneView.Frame(new Bounds(container.transform.position + new Vector3(2.5f * spacing, 0, 0), new Vector3(6 * spacing, 5, 3)), false);
+                }
+
+                Selection.activeGameObject = container;
+                UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(container.scene);
+
+                DebugLogger.LogNPCImport($"Spawned 6 NPC permutations for '{selectedNpcDna.name}'");
+                EditorUtility.DisplayDialog("Success", $"Spawned 6 NPCs testing axis permutations!\n\nNPC: {selectedNpcDna.name}\nNon-zero morphs: {nonZeroMorphs.Count}\n\n#1 (XZY) is the standard POTCO conversion.", "OK");
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogErrorNPCImport($"Failed to spawn all combinations: {ex}");
+                EditorUtility.DisplayDialog("Error", $"Failed to spawn combinations:\n{ex.Message}", "OK");
+            }
         }
     }
 }

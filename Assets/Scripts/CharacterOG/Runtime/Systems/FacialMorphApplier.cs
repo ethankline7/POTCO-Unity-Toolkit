@@ -10,8 +10,67 @@ using CharacterOG.Models;
 
 namespace CharacterOG.Runtime.Systems
 {
+    /// <summary>
+    /// Axis permutation modes - which Unity axis each POTCO axis maps to
+    /// </summary>
+    public enum AxisPermutation
+    {
+        XYZ = 0,  // POTCO X→Unity X, Y→Y, Z→Z
+        XZY = 1,  // POTCO X→Unity X, Y→Z, Z→Y
+        YXZ = 2,  // POTCO X→Unity Y, Y→X, Z→Z
+        YZX = 3,  // POTCO X→Unity Y, Y→Z, Z→X
+        ZXY = 4,  // POTCO X→Unity Z, Y→X, Z→Y
+        ZYX = 5,  // POTCO X→Unity Z, Y→Y, Z→X
+    }
+
+    /// <summary>
+    /// Sign pattern - which axes to negate
+    /// </summary>
+    public struct SignPattern
+    {
+        public bool negateX;
+        public bool negateY;
+        public bool negateZ;
+
+        public SignPattern(bool x, bool y, bool z)
+        {
+            negateX = x;
+            negateY = y;
+            negateZ = z;
+        }
+
+        public override string ToString() => $"{(negateX ? "-" : "+")}X{(negateY ? "-" : "+")}Y{(negateZ ? "-" : "+")}Z";
+    }
+
+    /// <summary>
+    /// Complete coordinate conversion combining permutation and signs
+    /// </summary>
+    public struct CoordinateConversion
+    {
+        public AxisPermutation permutation;
+        public SignPattern signs;
+
+        public CoordinateConversion(AxisPermutation perm, SignPattern sign)
+        {
+            permutation = perm;
+            signs = sign;
+        }
+
+        public override string ToString() => $"{permutation}_{signs}";
+    }
+
     public class FacialMorphApplier
     {
+        // Dampening factors - ControlShapes base values represent MAXIMUM deltas, need scaling
+        private const float TRANSLATION_SCALE = 0.25f;  // Translations need heavy dampening
+        private const float ROTATION_SCALE = 1.0f;      // Rotations use full values
+        private const float SCALE_DAMPENING = 0.1f;     // Scales need heavy dampening
+
+        // Coordinate conversion for facial morphs (determined by testing)
+        // XYZ (no swapping) works best for facial bone transforms
+        // Rotation: ALL negated (matches CoordinateConverter)
+        public static AxisPermutation CurrentPermutation = AxisPermutation.XYZ;  // No axis swapping
+
         private Transform headRoot;
         private Transform rigRoot;
         private FacialMorphDatabase database;
@@ -21,15 +80,10 @@ namespace CharacterOG.Runtime.Systems
         private Dictionary<Transform, Vector3> originalScales = new();
         private Dictionary<string, Transform> boneCache = new();
 
-        private Dictionary<string, float> currentMorphs = new();
+        // Track accumulated rotation deltas (in Euler angles) for proper additive application
+        private Dictionary<Transform, Vector3> rotationDeltas = new();
 
-        // BLEND SHAPE TO BONE TRANSFORM CONVERSION SCALE
-        // POTCO uses blend shapes (vertex morphs). We're approximating with bone transforms.
-        // Adjust this value to match POTCO's visual appearance:
-        // - Too high = exaggerated features
-        // - Too low = subtle/no effect
-        // Recommended range: 0.1 to 0.5
-        private const float BLEND_TO_BONE_SCALE = 0.25f;
+        private Dictionary<string, float> currentMorphs = new();
 
         /// <summary>
         /// Initialize applier.
@@ -43,7 +97,8 @@ namespace CharacterOG.Runtime.Systems
             this.database = database;
             this.rigRoot = rigRoot ?? headRoot;
 
-            Debug.Log($"[FacialMorphApplier] Initialized with headRoot='{headRoot?.name}', rigRoot='{this.rigRoot?.name}', gender='{database?.gender}', BLEND_TO_BONE_SCALE={BLEND_TO_BONE_SCALE}");
+            Debug.Log($"[FacialMorphApplier] Initialized with headRoot='{headRoot?.name}', rigRoot='{this.rigRoot?.name}', gender='{database?.gender}' " +
+                     $"(dampening: trans={TRANSLATION_SCALE}, rot={ROTATION_SCALE}, scale={SCALE_DAMPENING})");
 
             BuildBoneCache();
         }
@@ -67,6 +122,9 @@ namespace CharacterOG.Runtime.Systems
             // Reset to original transforms first
             ResetToOriginal();
 
+            // Clear rotation deltas for new application
+            rotationDeltas.Clear();
+
             int totalApplied = 0;
             int totalSkipped = 0;
             int totalTransformsApplied = 0;
@@ -84,6 +142,22 @@ namespace CharacterOG.Runtime.Systems
                     continue;
                 }
 
+                // Apply scaling to reduce extreme values (bones != blend shapes)
+                // Blend shapes have natural smoothing; bone transforms need manual reduction
+                float sign = Mathf.Sign(morphValue);
+                float abs = Mathf.Abs(morphValue);
+                float smoothed;
+                if (abs <= 0.7f)
+                {
+                    smoothed = abs; // Linear up to 0.7
+                }
+                else
+                {
+                    // Scale extreme values: 0.8→0.24, 0.9→0.27, 1.0→0.30
+                    smoothed = abs * 0.30f;
+                }
+                morphValue = sign * smoothed;
+
                 var morphDef = database.GetMorph(morphName);
                 if (morphDef == null)
                 {
@@ -94,14 +168,13 @@ namespace CharacterOG.Runtime.Systems
 
                 // Apply morph based on sign
                 var transforms = morphValue > 0 ? morphDef.positiveTransforms : morphDef.negativeTransforms;
-                float absValue = Mathf.Abs(morphValue);
 
                 Debug.Log($"[FacialMorphApplier] Processing morph '{morphName}' = {morphValue} (using {(morphValue > 0 ? "positive" : "negative")} transforms, count={transforms.Count})");
 
                 int transformsForThisMorph = 0;
                 foreach (var boneTransform in transforms)
                 {
-                    bool applied = ApplyBoneTransform(boneTransform, absValue);
+                    bool applied = ApplyBoneTransform(boneTransform, morphValue);
                     if (applied)
                         transformsForThisMorph++;
                     else
@@ -117,6 +190,23 @@ namespace CharacterOG.Runtime.Systems
             if (totalBonesNotFound > 0)
             {
                 Debug.LogWarning($"[FacialMorphApplier] {totalBonesNotFound} bones were not found in the character model - facial morphs may be incomplete");
+            }
+
+            // Apply accumulated rotation deltas (POTCO: hprF = hprI + hprDelta)
+            foreach (var kvp in rotationDeltas)
+            {
+                Transform bone = kvp.Key;
+                Vector3 eulerDelta = kvp.Value;
+
+                if (bone != null && originalRotations.ContainsKey(bone))
+                {
+                    // Convert original rotation to Euler, add delta, convert back
+                    Vector3 originalEuler = originalRotations[bone].eulerAngles;
+                    Vector3 finalEuler = originalEuler + eulerDelta;
+                    bone.localRotation = Quaternion.Euler(finalEuler);
+
+                    Debug.Log($"[FacialMorphApplier] '{bone.name}' Final Rotation: {originalEuler} + {eulerDelta} = {finalEuler}");
+                }
             }
         }
 
@@ -139,22 +229,34 @@ namespace CharacterOG.Runtime.Systems
                 originalScales[bone] = bone.localScale;
             }
 
-            // Calculate delta
-            // For translations (TX/TY/TZ) and rotations (RX/RY/RZ): use value directly
-            // For scales (SX/SY/SZ): POTCO values like 1.1 mean "scale to 1.1x", so we need delta from 1.0
+            // Calculate delta using POTCO's formula with Unity-side dampening
+            // POTCO: dr = base * r
+            //        if (r < 0 && isScale): add = dr / base = r
+            //        else: add = dr = base * r
             float delta;
             bool isScale = boneTransform.transformType >= TransformType.SX; // SX, SY, SZ
+            bool isRotation = boneTransform.transformType >= TransformType.RX && boneTransform.transformType <= TransformType.RZ;
 
-            if (isScale)
+            if (isScale && morphValue < 0)
             {
-                // Scale values in ControlShapes are target scales (e.g., 1.1 = 110% scale)
-                // Convert to additive delta: (targetScale - 1.0) * morphValue * blendToBoneScale
-                delta = (boneTransform.value - 1.0f) * morphValue * BLEND_TO_BONE_SCALE;
+                // Negative scale: dr = base * r, add = dr / base = r
+                // Simplified: just add morphValue directly
+                delta = morphValue * SCALE_DAMPENING;
+            }
+            else if (isScale)
+            {
+                // Positive scale: delta = base * r * dampening
+                delta = boneTransform.value * morphValue * SCALE_DAMPENING;
+            }
+            else if (isRotation)
+            {
+                // Rotation: delta = base * r * dampening
+                delta = boneTransform.value * morphValue * ROTATION_SCALE;
             }
             else
             {
-                // Translations and rotations are direct deltas: baseValue * morphValue * blendToBoneScale
-                delta = boneTransform.value * morphValue * BLEND_TO_BONE_SCALE;
+                // Translation: delta = base * r * dampening
+                delta = boneTransform.value * morphValue * TRANSLATION_SCALE;
             }
 
             // Capture BEFORE values
@@ -162,55 +264,126 @@ namespace CharacterOG.Runtime.Systems
             Quaternion beforeRot = bone.localRotation;
             Vector3 beforeScale = bone.localScale;
 
-            // Apply transform based on type
-            // COORDINATE CONVERSION: POTCO (Panda3D) uses Y=forward, Z=up. Unity uses Y=up, Z=forward. Swap Y and Z.
-            switch (boneTransform.transformType)
-            {
-                case TransformType.TX:
-                    bone.localPosition += new Vector3(delta, 0, 0);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' TX: {beforePos} + ({delta},0,0) = {bone.localPosition} [value={boneTransform.value} * morph={morphValue}]");
-                    break;
-                case TransformType.TY:
-                    // POTCO TY (forward/back) → Unity TZ (forward/back)
-                    bone.localPosition += new Vector3(0, 0, delta);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' TY: {beforePos} + (0,0,{delta}) = {bone.localPosition} [value={boneTransform.value} * morph={morphValue}] [POTCO Y→Unity Z]");
-                    break;
-                case TransformType.TZ:
-                    // POTCO TZ (up/down) → Unity TY (up/down)
-                    bone.localPosition += new Vector3(0, delta, 0);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' TZ: {beforePos} + (0,{delta},0) = {bone.localPosition} [value={boneTransform.value} * morph={morphValue}] [POTCO Z→Unity Y]");
-                    break;
-                case TransformType.RX:
-                    bone.localRotation *= Quaternion.Euler(delta, 0, 0);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' RX: {beforeRot.eulerAngles} + ({delta},0,0) = {bone.localRotation.eulerAngles} [value={boneTransform.value} * morph={morphValue}]");
-                    break;
-                case TransformType.RY:
-                    // POTCO RY (pitch around forward axis) → Unity RZ (pitch around forward axis)
-                    bone.localRotation *= Quaternion.Euler(0, 0, delta);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' RY: {beforeRot.eulerAngles} + (0,0,{delta}) = {bone.localRotation.eulerAngles} [value={boneTransform.value} * morph={morphValue}] [POTCO Y→Unity Z]");
-                    break;
-                case TransformType.RZ:
-                    // POTCO RZ (roll around up axis) → Unity RY (roll around up axis)
-                    bone.localRotation *= Quaternion.Euler(0, delta, 0);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' RZ: {beforeRot.eulerAngles} + (0,{delta},0) = {bone.localRotation.eulerAngles} [value={boneTransform.value} * morph={morphValue}] [POTCO Z→Unity Y]");
-                    break;
-                case TransformType.SX:
-                    bone.localScale += new Vector3(delta, 0, 0);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' SX: {beforeScale} + ({delta},0,0) = {bone.localScale} [value={boneTransform.value} * morph={morphValue}]");
-                    break;
-                case TransformType.SY:
-                    // POTCO SY (scale forward) → Unity SZ (scale forward)
-                    bone.localScale += new Vector3(0, 0, delta);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' SY: {beforeScale} + (0,0,{delta}) = {bone.localScale} [value={boneTransform.value} * morph={morphValue}] [POTCO Y→Unity Z]");
-                    break;
-                case TransformType.SZ:
-                    // POTCO SZ (scale up) → Unity SY (scale up)
-                    bone.localScale += new Vector3(0, delta, 0);
-                    Debug.Log($"[FacialMorphApplier] '{bone.name}' SZ: {beforeScale} + (0,{delta},0) = {bone.localScale} [value={boneTransform.value} * morph={morphValue}] [POTCO Z→Unity Y]");
-                    break;
-            }
+            // Apply transform based on type using selected coordinate conversion mode
+            ApplyTransformWithMode(bone, boneTransform.transformType, delta, beforePos, beforeScale, boneTransform.value, morphValue);
 
             return true;
+        }
+
+        /// <summary>Apply transform with selected coordinate conversion mode</summary>
+        private void ApplyTransformWithMode(Transform bone, TransformType transformType, float delta, Vector3 beforePos, Vector3 beforeScale, float baseValue, float morphValue)
+        {
+            string modeName = $"{CurrentPermutation}";
+
+            switch (transformType)
+            {
+                case TransformType.TX:
+                    ApplyPositionDelta(bone, delta, 0, beforePos, baseValue, morphValue, "TX", modeName);
+                    break;
+                case TransformType.TY:
+                    ApplyPositionDelta(bone, delta, 1, beforePos, baseValue, morphValue, "TY", modeName);
+                    break;
+                case TransformType.TZ:
+                    ApplyPositionDelta(bone, delta, 2, beforePos, baseValue, morphValue, "TZ", modeName);
+                    break;
+                case TransformType.RX:
+                    ApplyRotationDelta(bone, delta, 0, baseValue, morphValue, "RX", modeName);
+                    break;
+                case TransformType.RY:
+                    ApplyRotationDelta(bone, delta, 1, baseValue, morphValue, "RY", modeName);
+                    break;
+                case TransformType.RZ:
+                    ApplyRotationDelta(bone, delta, 2, baseValue, morphValue, "RZ", modeName);
+                    break;
+                case TransformType.SX:
+                    ApplyScaleDelta(bone, delta, 0, beforeScale, baseValue, morphValue, "SX", modeName);
+                    break;
+                case TransformType.SY:
+                    ApplyScaleDelta(bone, delta, 1, beforeScale, baseValue, morphValue, "SY", modeName);
+                    break;
+                case TransformType.SZ:
+                    ApplyScaleDelta(bone, delta, 2, beforeScale, baseValue, morphValue, "SZ", modeName);
+                    break;
+            }
+        }
+
+        /// <summary>Apply position delta based on conversion mode</summary>
+        private void ApplyPositionDelta(Transform bone, float delta, int potcoAxis, Vector3 beforePos, float baseValue, float morphValue, string axisName, string modeName)
+        {
+            int unityAxis = ConvertAxis(potcoAxis, CurrentPermutation);
+
+            // Positions are NOT negated in POTCO (only rotations are negated)
+            float finalDelta = delta;
+
+            Vector3 deltaVec = Vector3.zero;
+            deltaVec[unityAxis] = finalDelta;
+            bone.localPosition += deltaVec;
+            Debug.Log($"[FacialMorphApplier] '{bone.name}' {axisName}: {beforePos} + delta[{unityAxis}]={finalDelta} = {bone.localPosition} [mode={modeName}]");
+        }
+
+        /// <summary>Apply rotation delta based on conversion mode</summary>
+        private void ApplyRotationDelta(Transform bone, float delta, int potcoAxis, float baseValue, float morphValue, string axisName, string modeName)
+        {
+            int unityAxis = ConvertAxis(potcoAxis, CurrentPermutation);
+            if (!rotationDeltas.ContainsKey(bone))
+                rotationDeltas[bone] = Vector3.zero;
+
+            // POTCO→Unity rotation conversion: ALL rotations are negated (matches CoordinateConverter)
+            // This is the ONLY transform type that gets negated
+            float finalDelta = -delta;
+
+            Vector3 deltaVec = rotationDeltas[bone];
+            deltaVec[unityAxis] += finalDelta;
+            rotationDeltas[bone] = deltaVec;
+            Debug.Log($"[FacialMorphApplier] '{bone.name}' {axisName}: accumulating delta[{unityAxis}]={finalDelta} (from {delta}) [mode={modeName}]");
+        }
+
+        /// <summary>Apply scale delta based on conversion mode</summary>
+        private void ApplyScaleDelta(Transform bone, float delta, int potcoAxis, Vector3 beforeScale, float baseValue, float morphValue, string axisName, string modeName)
+        {
+            int unityAxis = ConvertAxis(potcoAxis, CurrentPermutation);
+
+            // Scales are NOT negated in POTCO (only rotations are negated)
+            float finalDelta = delta;
+
+            Vector3 deltaVec = Vector3.zero;
+            deltaVec[unityAxis] = finalDelta;
+            bone.localScale += deltaVec;
+            Debug.Log($"[FacialMorphApplier] '{bone.name}' {axisName}: {beforeScale} + delta[{unityAxis}]={finalDelta} = {bone.localScale} [mode={modeName}]");
+        }
+
+        /// <summary>Convert POTCO axis (0=X, 1=Y, 2=Z) to Unity axis based on permutation</summary>
+        private int ConvertAxis(int potcoAxis, AxisPermutation permutation)
+        {
+            switch (permutation)
+            {
+                case AxisPermutation.XYZ:
+                    // X→X, Y→Y, Z→Z
+                    return potcoAxis;
+
+                case AxisPermutation.XZY:
+                    // X→X, Y→Z, Z→Y (standard POTCO)
+                    return potcoAxis == 0 ? 0 : (potcoAxis == 1 ? 2 : 1);
+
+                case AxisPermutation.YXZ:
+                    // X→Y, Y→X, Z→Z
+                    return potcoAxis == 0 ? 1 : (potcoAxis == 1 ? 0 : 2);
+
+                case AxisPermutation.YZX:
+                    // X→Y, Y→Z, Z→X
+                    return potcoAxis == 0 ? 1 : (potcoAxis == 1 ? 2 : 0);
+
+                case AxisPermutation.ZXY:
+                    // X→Z, Y→X, Z→Y
+                    return potcoAxis == 0 ? 2 : (potcoAxis == 1 ? 0 : 2);
+
+                case AxisPermutation.ZYX:
+                    // X→Z, Y→Y, Z→X
+                    return potcoAxis == 0 ? 2 : (potcoAxis == 2 ? 0 : 1);
+
+                default:
+                    return potcoAxis;
+            }
         }
 
         /// <summary>Reset all bones to original transforms</summary>

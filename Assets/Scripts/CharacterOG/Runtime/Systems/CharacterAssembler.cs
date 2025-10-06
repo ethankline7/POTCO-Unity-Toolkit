@@ -108,7 +108,7 @@ namespace CharacterOG.Runtime.Systems
             currentSlots[slot] = (variant, textureIdx, dye);
 
             // STEP 5: Recompute body visibility (union all active variants' bodyHideIndices)
-            RecomputeBodyVisibility();
+            RecomputeBodyVisibilityInternal();
 
             Debug.Log($"CharacterAssembler: Set {slot} to '{variant.displayName}' (tex:{textureIdx})");
         }
@@ -118,7 +118,7 @@ namespace CharacterOG.Runtime.Systems
         {
             DisableAllGroupsForSlot(slot);
             currentSlots[slot] = (null, 0, null);
-            RecomputeBodyVisibility();
+            RecomputeBodyVisibilityInternal();
         }
 
         /// <summary>Disable all mesh groups owned by a slot (from all variants)</summary>
@@ -190,10 +190,19 @@ namespace CharacterOG.Runtime.Systems
         }
 
         /// <summary>
+        /// Public method to recompute body visibility, optionally excluding certain slots.
+        /// Used when clothing layer hiding rules override normal body hide behavior.
+        /// </summary>
+        public void RecomputeBodyVisibility(HashSet<Slot> excludeSlots = null)
+        {
+            RecomputeBodyVisibilityInternal(excludeSlots);
+        }
+
+        /// <summary>
         /// Recompute body visibility based on current slots.
         /// Mirrors POTCO's handleLayer*Hiding: union all active variants' bodyHideIndices and disable those body parts.
         /// </summary>
-        private void RecomputeBodyVisibility()
+        private void RecomputeBodyVisibilityInternal(HashSet<Slot> excludeSlots = null)
         {
             // Get gender-specific body parts
             var bodyParts = ClothingCatalog.GetBodyIndexToGroup(gender);
@@ -208,6 +217,13 @@ namespace CharacterOG.Runtime.Systems
             var toHide = new HashSet<int>();
             foreach (var kvp in currentSlots)
             {
+                // Skip excluded slots (e.g., shirt when vest >= 3 hides it completely)
+                if (excludeSlots != null && excludeSlots.Contains(kvp.Key))
+                {
+                    Debug.Log($"[RecomputeBodyVisibility] Skipping {kvp.Key} (excluded from body hide calculation)");
+                    continue;
+                }
+
                 var (variant, _, _) = kvp.Value;
                 if (variant != null && variant.bodyHideIndices.Count > 0)
                 {
