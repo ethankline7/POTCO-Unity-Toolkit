@@ -170,6 +170,13 @@ namespace CharacterOG.Runtime.Systems
                 Slot slot = kvp.Key;
                 var (idx, texIdx, colorIdx) = kvp.Value;
 
+                var variant = catalog.GetVariant(slot, idx);
+                string bodyHideStr = variant != null && variant.bodyHideIndices.Count > 0
+                    ? string.Join(",", variant.bodyHideIndices)
+                    : "NONE";
+
+                Debug.Log($"[ApplyUnderwear] {gender}: {slot} index={idx}, tex={texIdx}, color={colorIdx}, bodyHides=[{bodyHideStr}]");
+
                 Color? dye = null;
                 if (colorIdx >= 0)
                 {
@@ -202,8 +209,9 @@ namespace CharacterOG.Runtime.Systems
             foreach (var kvp in currentSlots)
             {
                 var (variant, _, _) = kvp.Value;
-                if (variant != null)
+                if (variant != null && variant.bodyHideIndices.Count > 0)
                 {
+                    Debug.Log($"[RecomputeBodyVisibility] {kvp.Key} variant '{variant.displayName}' (ogIndex {variant.ogIndex}) has {variant.bodyHideIndices.Count} body hides: {string.Join(",", variant.bodyHideIndices)}");
                     foreach (var h in variant.bodyHideIndices)
                     {
                         toHide.Add(h);
@@ -220,12 +228,21 @@ namespace CharacterOG.Runtime.Systems
                     string partName = bodyParts[i];
                     rendererCache.EnableExact(partName, false);
                     hiddenParts.Add(partName);
+                    Debug.Log($"[RecomputeBodyVisibility] Hiding body part index {i}: {partName}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[RecomputeBodyVisibility] Invalid body hide index {i} (bodyParts.Length={bodyParts.Length})");
                 }
             }
 
             if (hiddenParts.Count > 0)
             {
-                Debug.Log($"[RecomputeBodyVisibility] Hiding {hiddenParts.Count} body parts: {string.Join(", ", hiddenParts.Take(5))}");
+                Debug.Log($"[RecomputeBodyVisibility] Total hidden: {hiddenParts.Count} body parts: {string.Join(", ", hiddenParts)}");
+            }
+            else
+            {
+                Debug.Log($"[RecomputeBodyVisibility] No body parts hidden (toHide was empty)");
             }
         }
 
