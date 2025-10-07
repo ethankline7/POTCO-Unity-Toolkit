@@ -81,9 +81,16 @@ namespace CharacterOG.Runtime.Systems
 
             // STEP 3: Apply textures and dyes
             string textureId = null;
-            if (textureIdx >= 0 && textureIdx < variant.textureIds.Count)
+            if (textureIdx > 0 && textureIdx < variant.textureIds.Count)
             {
+                // Note: textureIdx > 0 (not >= 0) because index 0 often means "use default material texture"
+                // Only apply custom textures for index 1+
                 textureId = variant.textureIds[textureIdx];
+                Debug.Log($"[SetSlot] {slot}: Using texture index {textureIdx} = '{textureId}'");
+            }
+            else if (textureIdx == 0)
+            {
+                Debug.Log($"[SetSlot] {slot}: Texture index 0 - using default material texture (not applying custom texture)");
             }
 
             // Get renderers for exact groups only

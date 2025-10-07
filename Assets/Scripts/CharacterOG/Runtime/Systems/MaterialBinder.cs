@@ -25,16 +25,54 @@ namespace CharacterOG.Runtime.Systems
 
         public MaterialBinder()
         {
-            // Default texture loader (tries Resources)
-            TextureLoader = (texName) => Resources.Load<Texture2D>(texName);
+            // Default texture loader - tries multiple common paths for clothing textures
+            TextureLoader = (texName) =>
+            {
+                // Try multiple paths where textures might be located
+                string[] searchPaths = new[]
+                {
+                    $"Textures/Clothing/{texName}",           // Organized folder
+                    $"phase_2/maps/{texName}",                 // POTCO phase structure
+                    $"models/misc/textures/{texName}",         // Misc textures
+                    texName                                     // Direct name in Resources root
+                };
+
+                foreach (var path in searchPaths)
+                {
+                    var tex = Resources.Load<Texture2D>(path);
+                    if (tex != null)
+                    {
+                        Debug.Log($"MaterialBinder: Loaded texture '{texName}' from '{path}'");
+                        return tex;
+                    }
+                }
+
+                return null;
+            };
         }
 
-        /// <summary>Apply texture to renderer</summary>
+        // Additional shader properties for dual textures
+        private static readonly int s_overlayTexProp = Shader.PropertyToID("_OverlayTex");
+        private static readonly int s_detailTexProp = Shader.PropertyToID("_DetailTex");
+
+        /// <summary>Apply texture to renderer (supports dual textures with '+' separator)</summary>
         public void ApplyTexture(Renderer renderer, string textureId)
         {
             if (renderer == null || string.IsNullOrEmpty(textureId))
                 return;
 
+            // Check for dual textures (e.g., "hat_barbossa+hat_barbossa_feather")
+            if (textureId.Contains("+"))
+            {
+                var texNames = textureId.Split('+');
+                if (texNames.Length == 2)
+                {
+                    ApplyDualTexture(renderer, texNames[0].Trim(), texNames[1].Trim());
+                    return;
+                }
+            }
+
+            // Single texture
             var tex = GetTexture(textureId);
 
             if (tex == null)
@@ -46,6 +84,50 @@ namespace CharacterOG.Runtime.Systems
             var block = GetOrCreatePropertyBlock(renderer);
             block.SetTexture(s_mainTexProp, tex);
             renderer.SetPropertyBlock(block);
+        }
+
+        /// <summary>Apply two textures (base + overlay/detail) - used for hats with feathers, etc.</summary>
+        private void ApplyDualTexture(Renderer renderer, string baseTexId, string overlayTexId)
+        {
+            var baseTex = GetTexture(baseTexId);
+            var overlayTex = GetTexture(overlayTexId);
+
+            if (baseTex == null && overlayTex == null)
+            {
+                Debug.LogWarning($"MaterialBinder: Neither texture found: '{baseTexId}' or '{overlayTexId}'");
+                return;
+            }
+
+            var block = GetOrCreatePropertyBlock(renderer);
+
+            // Apply base texture to _MainTex
+            if (baseTex != null)
+            {
+                block.SetTexture(s_mainTexProp, baseTex);
+            }
+
+            // Apply overlay texture to _OverlayTex or _DetailTex
+            // Try _OverlayTex first (custom shader), then _DetailTex (standard Unity)
+            if (overlayTex != null)
+            {
+                if (renderer.sharedMaterial != null && renderer.sharedMaterial.HasProperty(s_overlayTexProp))
+                {
+                    block.SetTexture(s_overlayTexProp, overlayTex);
+                }
+                else if (renderer.sharedMaterial != null && renderer.sharedMaterial.HasProperty(s_detailTexProp))
+                {
+                    block.SetTexture(s_detailTexProp, overlayTex);
+                }
+                else
+                {
+                    // Fallback: apply to main tex if no overlay slot available
+                    Debug.LogWarning($"MaterialBinder: Material doesn't have _OverlayTex or _DetailTex property, overlay '{overlayTexId}' may not appear correctly");
+                }
+            }
+
+            renderer.SetPropertyBlock(block);
+
+            Debug.Log($"MaterialBinder: Applied dual texture '{baseTexId}' + '{overlayTexId}' to {renderer.name}");
         }
 
         /// <summary>Apply dye color to renderer (base channel)</summary>

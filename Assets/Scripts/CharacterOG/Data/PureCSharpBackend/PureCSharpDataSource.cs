@@ -282,6 +282,17 @@ namespace CharacterOG.Data.PureCSharpBackend
                 // NEW: Parse layer lists and clothing arrays from gender file to get group patterns and body hides
                 ParseClothingPatterns(catalog, genderData, gender);
 
+                // Parse textures from ClothingGlobals.py
+                if (globalsData.TryGetValue("textures", out var texturesNode) && texturesNode is PyDict texturesDict)
+                {
+                    Debug.Log($"Found textures dictionary");
+                    ParseClothingTextures(catalog, texturesDict, gender);
+                }
+                else
+                {
+                    Debug.LogWarning($"textures not found in ClothingGlobals.py");
+                }
+
                 Debug.Log($"ClothingCatalog loaded: {catalog.variantsBySlot.Sum(kvp => kvp.Value.Count)} total variants across {catalog.variantsBySlot.Count} slots");
             }
             catch (Exception ex)
@@ -641,6 +652,87 @@ namespace CharacterOG.Data.PureCSharpBackend
 
                     catalog.underwear[gender] = underwearSet;
                     Debug.Log($"[ParseUnderwear] Gender '{gender}': Loaded {underwearSet.Count} underwear slots");
+                }
+            }
+        }
+
+        private void ParseClothingTextures(ClothingCatalog catalog, PyDict texturesDict, string gender)
+        {
+            // Map part names to slot numbers
+            var partToSlot = new Dictionary<string, Slot>
+            {
+                { "HAT", Slot.Hat },
+                { "SHIRT", Slot.Shirt },
+                { "VEST", Slot.Vest },
+                { "COAT", Slot.Coat },
+                { "PANT", Slot.Pant },
+                { "BELT", Slot.Belt },
+                { "SOCK", Slot.Sock },
+                { "SHOE", Slot.Shoe }
+            };
+
+            string genderKey = gender.ToUpper() == "F" ? "FEMALE" : "MALE";
+
+            // Get gender-specific textures
+            if (!texturesDict.items.TryGetValue(genderKey, out var genderNode) || !(genderNode is PyDict genderDict))
+            {
+                Debug.LogWarning($"[ParseClothingTextures] No textures found for gender '{genderKey}'");
+                return;
+            }
+
+            Debug.Log($"[ParseClothingTextures] Parsing textures for gender '{genderKey}'");
+
+            foreach (var partKvp in genderDict.items)
+            {
+                string partName = partKvp.Key;
+
+                if (!partToSlot.TryGetValue(partName, out Slot slot))
+                {
+                    Debug.LogWarning($"[ParseClothingTextures] Unknown part '{partName}', skipping");
+                    continue;
+                }
+
+                if (!(partKvp.Value is PyList modelsListNode))
+                {
+                    Debug.LogWarning($"[ParseClothingTextures] Part '{partName}' is not a list");
+                    continue;
+                }
+
+                var variants = catalog.GetVariants(slot);
+
+                // Iterate through models (each model index matches a variant ogIndex)
+                for (int modelIdx = 0; modelIdx < modelsListNode.items.Count; modelIdx++)
+                {
+                    if (!(modelsListNode.items[modelIdx] is PyList texturesListNode))
+                    {
+                        Debug.LogWarning($"[ParseClothingTextures] {partName}[{modelIdx}] is not a list");
+                        continue;
+                    }
+
+                    // Find matching variant
+                    var variant = variants.FirstOrDefault(v => v.ogIndex == modelIdx);
+                    if (variant == null)
+                    {
+                        Debug.LogWarning($"[ParseClothingTextures] No variant found for {partName} modelIdx {modelIdx}");
+                        continue;
+                    }
+
+                    // Parse texture options for this model
+                    foreach (var texNode in texturesListNode.items)
+                    {
+                        if (!(texNode is PyList texEntry) || texEntry.items.Count < 1)
+                            continue;
+
+                        // First element is texture name (possibly with '+' for dual textures)
+                        if (texEntry.items[0] is PyString texNameStr)
+                        {
+                            variant.textureIds.Add(texNameStr.value);
+                        }
+
+                        // Second element is VBase4 lowLOD color (we can ignore for now, or store if needed)
+                    }
+
+                    Debug.Log($"[ParseClothingTextures] {partName}[{modelIdx}] '{variant.displayName}': Loaded {variant.textureIds.Count} textures");
                 }
             }
         }
