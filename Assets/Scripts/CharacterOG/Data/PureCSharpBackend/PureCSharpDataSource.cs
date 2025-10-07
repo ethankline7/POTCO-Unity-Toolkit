@@ -96,27 +96,13 @@ namespace CharacterOG.Data.PureCSharpBackend
             LoadFaceAndIrisTextures(palettes, "f");  // Female face textures
 
             // Load skin colors
-            Debug.Log($"LoadPalettesAndDyeRules: Looking for skinColors...");
-            if (data.TryGetValue("skinColors", out var skinNode))
+            if (data.TryGetValue("skinColors", out var skinNode) && skinNode is PyList skinList)
             {
-                Debug.Log($"Found skinColors! Type: {skinNode.GetType().Name}");
-                if (skinNode is PyList skinList)
+                foreach (var item in skinList.items)
                 {
-                    Debug.Log($"skinColors is PyList with {skinList.items.Count} items");
-                    foreach (var item in skinList.items)
-                    {
-                        if (item is PyFunctionCall call)
-                            palettes.skin.Add(call.ToColor());
-                    }
+                    if (item is PyFunctionCall call)
+                        palettes.skin.Add(call.ToColor());
                 }
-                else
-                {
-                    Debug.LogWarning($"skinColors is not PyList, it's {skinNode.GetType().Name}");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("skinColors NOT FOUND in parsed data");
             }
 
             // Load hair colors
@@ -1276,9 +1262,14 @@ namespace CharacterOG.Data.PureCSharpBackend
                     break;
 
                 case "setBodyColor":
-                case "setBodySkin":
+                    // setBodyColor controls the skin color palette index (self.body.color in Python)
                     if (args.Get<PyNumber>(0) is PyNumber skinNum)
                         dna.skinColorIdx = skinNum.AsInt();
+                    break;
+
+                case "setBodySkin":
+                    // setBodySkin is the skin texture index (self.body.skin in Python) - not used for color
+                    // Ignoring this to prevent overwriting skinColorIdx
                     break;
 
                 case "setClothesHat":
