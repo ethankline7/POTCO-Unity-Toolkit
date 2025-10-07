@@ -91,6 +91,10 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             var palettes = new Palettes();
 
+            // Load face and iris textures for BOTH genders (since NPCs can be either)
+            LoadFaceAndIrisTextures(palettes, "m");  // Male face textures
+            LoadFaceAndIrisTextures(palettes, "f");  // Female face textures
+
             // Load skin colors
             Debug.Log($"LoadPalettesAndDyeRules: Looking for skinColors...");
             if (data.TryGetValue("skinColors", out var skinNode))
@@ -592,6 +596,43 @@ namespace CharacterOG.Data.PureCSharpBackend
                 }
             }
             Debug.Log($"ParseClothingNames total: {totalVariants} variants");
+        }
+
+        private void LoadFaceAndIrisTextures(Palettes palettes, string gender)
+        {
+            string genderFile = OgPaths.GetPirateGenderFile(gender);
+            var reader = new OgPyReader("", genderFile);
+            var data = reader.ParseFile(genderFile);
+
+            // Determine which face texture list to use based on gender
+            var faceTextureList = gender.ToLower() == "f" ? palettes.femaleFaceTextures : palettes.maleFaceTextures;
+            string genderLabel = gender.ToLower() == "f" ? "female" : "male";
+
+            // Load face_textures (gender-specific)
+            if (data.TryGetValue("face_textures", out var faceTexNode) && faceTexNode is PyList faceTexList)
+            {
+                foreach (var item in faceTexList.items)
+                {
+                    if (item is PyString str)
+                    {
+                        faceTextureList.Add(str.value);
+                    }
+                }
+                Debug.Log($"[LoadFaceAndIrisTextures] Loaded {faceTextureList.Count} {genderLabel} face textures");
+            }
+
+            // Load eye_iris_textures (shared) - only load once
+            if (palettes.irisTextures.Count == 0 && data.TryGetValue("eye_iris_textures", out var irisTexNode) && irisTexNode is PyList irisTexList)
+            {
+                foreach (var item in irisTexList.items)
+                {
+                    if (item is PyString str)
+                    {
+                        palettes.irisTextures.Add(str.value);
+                    }
+                }
+                Debug.Log($"[LoadFaceAndIrisTextures] Loaded {palettes.irisTextures.Count} iris textures");
+            }
         }
 
         private void ParseUnderwear(ClothingCatalog catalog, PyDict underwearDict)

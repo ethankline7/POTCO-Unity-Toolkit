@@ -143,6 +143,10 @@ namespace CharacterOG.Runtime.Systems
             // 5. Apply skin color to body groups
             ApplySkinColor(dna.skinColorIdx);
 
+            // 5.5. Apply face and iris textures
+            ApplyFaceTexture(dna.headTexture);
+            ApplyIrisTexture(dna.eyeColorIdx);
+
             // 6. Apply jewelry
             ApplyJewelry(dna.jewelry, dna.gender);
 
@@ -757,6 +761,67 @@ namespace CharacterOG.Runtime.Systems
             }
 
             Debug.Log($"DnaApplier: Applied skin color {skinColor} (index {skinColorIdx}) to body and head");
+        }
+
+        private void ApplyFaceTexture(int headTextureIdx)
+        {
+            // Get gender-specific face texture
+            string textureName = palettes.GetFaceTexture(headTextureIdx, currentDna.gender);
+
+            if (string.IsNullOrEmpty(textureName))
+            {
+                Debug.LogWarning($"DnaApplier: No face texture found for index {headTextureIdx} (gender: {currentDna.gender})");
+                return;
+            }
+
+            // Apply to face mesh (POTCO uses body_master_face plus eyelids)
+            string[] faceMeshNames = { "body_master_face", "face", "head_face", "mesh_face" };
+
+            bool applied = false;
+            foreach (var faceName in faceMeshNames)
+            {
+                var renderers = rendererCache.GetExact(faceName);
+                foreach (var renderer in renderers)
+                {
+                    materialBinder.ApplyTexture(renderer, textureName);
+                    applied = true;
+                }
+            }
+
+            if (applied)
+            {
+                Debug.Log($"DnaApplier: Applied {currentDna.gender} face texture '{textureName}' (index {headTextureIdx})");
+            }
+        }
+
+        private void ApplyIrisTexture(int eyeColorIdx)
+        {
+            string textureName = palettes.GetIrisTexture(eyeColorIdx);
+
+            if (string.IsNullOrEmpty(textureName))
+            {
+                Debug.LogWarning($"DnaApplier: No iris texture found for index {eyeColorIdx}");
+                return;
+            }
+
+            // Apply to iris meshes (POTCO uses eye_iris_left and eye_iris_right)
+            string[] irisMeshNames = { "eye_iris_left", "eye_iris_right", "eye_iris", "iris_left", "iris_right", "iris" };
+
+            bool applied = false;
+            foreach (var irisName in irisMeshNames)
+            {
+                var renderers = rendererCache.GetExact(irisName);
+                foreach (var renderer in renderers)
+                {
+                    materialBinder.ApplyTexture(renderer, textureName);
+                    applied = true;
+                }
+            }
+
+            if (applied)
+            {
+                Debug.Log($"DnaApplier: Applied iris texture '{textureName}' (index {eyeColorIdx})");
+            }
         }
 
         private void ApplyJewelry(Dictionary<string, int> jewelry, string gender)

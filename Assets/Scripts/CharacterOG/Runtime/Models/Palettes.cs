@@ -35,6 +35,15 @@ namespace CharacterOG.Models
         /// <summary>Bottom clothing colors from clothesBotColorsOld array</summary>
         public List<List<Color>> clothesBotColors = new();
 
+        /// <summary>Male face texture names from face_textures array in PirateMale.py</summary>
+        public List<string> maleFaceTextures = new();
+
+        /// <summary>Female face texture names from face_textures array in PirateFemale.py</summary>
+        public List<string> femaleFaceTextures = new();
+
+        /// <summary>Eye iris texture names from eye_iris_textures array (shared across genders)</summary>
+        public List<string> irisTextures = new();
+
         /// <summary>Slot → available dye indices mapping</summary>
         public Dictionary<Slot, List<int>> slotToDyeIndices = new();
 
@@ -129,6 +138,24 @@ namespace CharacterOG.Models
                 return false;
 
             return allowedIndices.Count == 0 || allowedIndices.Contains(dyeIndex);
+        }
+
+        /// <summary>Get face texture name by index and gender (safe, returns null if out of range)</summary>
+        public string GetFaceTexture(int index, string gender)
+        {
+            var faceList = gender.ToLower() == "f" ? femaleFaceTextures : maleFaceTextures;
+
+            if (index < 0 || index >= faceList.Count)
+                return null;
+            return faceList[index];
+        }
+
+        /// <summary>Get iris texture name by index (safe, returns null if out of range)</summary>
+        public string GetIrisTexture(int index)
+        {
+            if (index < 0 || index >= irisTextures.Count)
+                return null;
+            return irisTextures[index];
         }
     }
 }

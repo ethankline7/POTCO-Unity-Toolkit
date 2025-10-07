@@ -12,7 +12,7 @@ namespace CharacterOG.Data
         /// <summary>Load all body shape definitions from BodyDefs.py</summary>
         Dictionary<string, BodyShapeDef> LoadBodyShapes(string gender = "m");
 
-        /// <summary>Load color palettes and dye rules from HumanDNA.py</summary>
+        /// <summary>Load color palettes and dye rules from HumanDNA.py, plus face/iris textures from gender files</summary>
         Palettes LoadPalettesAndDyeRules();
 
         /// <summary>Load clothing catalog from ClothingGlobals.py and PirateMale/Female.py</summary>
