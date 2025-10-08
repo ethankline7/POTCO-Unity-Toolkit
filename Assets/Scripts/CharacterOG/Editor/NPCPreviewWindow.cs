@@ -388,7 +388,8 @@ namespace CharacterOG.Editor
 
                 // POTCO characters use def_neck as the parent for all facial bones (def_trs_*, trs_face_*, etc.)
                 // The facial morphs modify bones like def_trs_left_forehead, def_trs_mid_jaw, etc which are children of def_neck
-                string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
+                // POTCO headScale → applied to def_head01
+                string[] headCandidates = { "def_head01", "def_neck", "zz_neck", "def_head", "zz_head" };
                 foreach (var candidate in headCandidates)
                 {
                     var found = System.Array.Find(allTransforms, t => t.name == candidate);
@@ -400,7 +401,8 @@ namespace CharacterOG.Editor
                     }
                 }
 
-                string[] bodyCandidates = { "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
+                // POTCO bodyScale → applied to def_scale_jt as GLOBAL scale
+                string[] bodyCandidates = { "def_scale_jt", "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
                 foreach (var candidate in bodyCandidates)
                 {
                     var found = System.Array.Find(allTransforms, t => t.name == candidate);
@@ -725,7 +727,8 @@ namespace CharacterOG.Editor
                 Transform[] allTransforms = character.GetComponentsInChildren<Transform>();
 
                 Transform headRoot = null;
-                string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
+                // POTCO headScale → applied to def_head01
+                string[] headCandidates = { "def_head01", "def_neck", "zz_neck", "def_head", "zz_head" };
                 foreach (var candidate in headCandidates)
                 {
                     var found = System.Array.Find(allTransforms, t => t.name == candidate);

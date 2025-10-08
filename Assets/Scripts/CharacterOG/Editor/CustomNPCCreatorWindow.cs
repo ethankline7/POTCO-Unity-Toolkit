@@ -206,11 +206,29 @@ namespace CharacterOG.Editor
 
             bool isMale = customDna.gender == "m";
             bool newIsMale = GUILayout.Toggle(isMale, "Male", "Button", GUILayout.Width(100));
-            bool isFemale = GUILayout.Toggle(!isMale, "Female", "Button", GUILayout.Width(100));
+            bool newIsFemale = GUILayout.Toggle(!isMale, "Female", "Button", GUILayout.Width(100));
 
-            if (newIsMale != isMale)
+            // Check if either button was clicked and gender changed
+            bool genderChanged = false;
+            string newGender = customDna.gender;
+
+            if (newIsMale && !isMale)
             {
-                customDna.gender = newIsMale ? "m" : "f";
+                // Switched to male
+                newGender = "m";
+                genderChanged = true;
+            }
+            else if (newIsFemale && isMale)
+            {
+                // Switched to female
+                newGender = "f";
+                genderChanged = true;
+            }
+
+            if (genderChanged)
+            {
+                string oldGender = customDna.gender;
+                customDna.gender = newGender;
                 LoadGenderSpecificData(customDna.gender);
 
                 // Update body shape for new gender
@@ -219,11 +237,45 @@ namespace CharacterOG.Editor
                 else
                     customDna.bodyShape = "FemaleIdeal";
 
+                // Clear facial morphs (male and female have different morph definitions)
+                customDna.headMorphs.Clear();
+
                 // Clear cached DnaApplier because gender-specific data changed
                 dnaApplier = null;
                 cachedCharacter = null;
 
-                ApplyToCharacter();
+                // CRITICAL: Need to spawn a NEW character model for the new gender
+                // Male and female use completely different base models
+                if (selectedCharacter != null)
+                {
+                    // Save position before destroying
+                    Vector3 oldPosition = selectedCharacter.transform.position;
+
+                    // Destroy old character
+                    GameObject.DestroyImmediate(selectedCharacter);
+                    selectedCharacter = null;
+
+                    // Spawn new character of correct gender
+                    string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+                    GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+                    if (modelPrefab != null)
+                    {
+                        GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                        if (character == null)
+                            character = GameObject.Instantiate(modelPrefab);
+
+                        character.name = $"Custom_{customDna.name}";
+                        character.transform.position = oldPosition;
+
+                        selectedCharacter = character;
+                        Selection.activeGameObject = character;
+
+                        DebugLogger.LogNPCImport($"Switched gender from {oldGender} to {customDna.gender}, spawned new {customDna.gender} character");
+                    }
+                }
+
+                if (autoApply) ApplyToCharacter();
             }
 
             EditorGUILayout.EndHorizontal();
@@ -724,6 +776,11 @@ namespace CharacterOG.Editor
                 RandomizeColors();
             }
 
+            if (GUILayout.Button("🖼️ Randomize Textures Only", GUILayout.Height(30)))
+            {
+                RandomizeTextures();
+            }
+
             EditorGUILayout.EndHorizontal();
 
             // Row 2: Presets
@@ -966,6 +1023,9 @@ namespace CharacterOG.Editor
                 case Slot.Belt: return customDna.belt;
                 case Slot.Pant: return customDna.pants;
                 case Slot.Shoe: return customDna.shoes;
+                case Slot.Hair: return customDna.hair;
+                case Slot.Beard: return customDna.beard;
+                case Slot.Mustache: return customDna.mustache;
                 default: return 0;
             }
         }
@@ -981,6 +1041,9 @@ namespace CharacterOG.Editor
                 case Slot.Belt: customDna.belt = value; break;
                 case Slot.Pant: customDna.pants = value; break;
                 case Slot.Shoe: customDna.shoes = value; break;
+                case Slot.Hair: customDna.hair = value; break;
+                case Slot.Beard: customDna.beard = value; break;
+                case Slot.Mustache: customDna.mustache = value; break;
             }
         }
 
@@ -1094,7 +1157,8 @@ namespace CharacterOG.Editor
                     Transform headRoot = null;
                     Transform bodyRoot = null;
 
-                    string[] headCandidates = { "def_neck", "zz_neck", "def_head", "zz_head" };
+                    // POTCO headScale → applied to def_head01
+                    string[] headCandidates = { "def_head01", "def_neck", "zz_neck", "def_head", "zz_head" };
                     foreach (var candidate in headCandidates)
                     {
                         var found = System.Array.Find(allTransforms, t => t.name == candidate);
@@ -1105,7 +1169,8 @@ namespace CharacterOG.Editor
                         }
                     }
 
-                    string[] bodyCandidates = { "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
+                    // POTCO bodyScale → applied to def_scale_jt as GLOBAL scale
+                    string[] bodyCandidates = { "def_scale_jt", "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
                     foreach (var candidate in bodyCandidates)
                     {
                         var found = System.Array.Find(allTransforms, t => t.name == candidate);
@@ -1150,6 +1215,7 @@ namespace CharacterOG.Editor
 
         private void ImportNPCDNA(PirateDNA npcDna)
         {
+            string oldGender = customDna?.gender;
             customDna = npcDna.Clone();
 
             // Reload gender-specific data if gender changed
@@ -1158,6 +1224,32 @@ namespace CharacterOG.Editor
             // Clear cached DnaApplier because we're loading completely new DNA
             dnaApplier = null;
             cachedCharacter = null;
+
+            // If gender changed and we have a character selected, spawn new model
+            if (selectedCharacter != null && oldGender != null && oldGender != customDna.gender)
+            {
+                Vector3 oldPosition = selectedCharacter.transform.position;
+                GameObject.DestroyImmediate(selectedCharacter);
+                selectedCharacter = null;
+
+                string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+                GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+                if (modelPrefab != null)
+                {
+                    GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                    if (character == null)
+                        character = GameObject.Instantiate(modelPrefab);
+
+                    character.name = $"Custom_{customDna.name}";
+                    character.transform.position = oldPosition;
+
+                    selectedCharacter = character;
+                    Selection.activeGameObject = character;
+
+                    DebugLogger.LogNPCImport($"Imported NPC with different gender ({customDna.gender}), spawned new character");
+                }
+            }
 
             if (autoApply) ApplyToCharacter();
 
@@ -1169,14 +1261,63 @@ namespace CharacterOG.Editor
         {
             var random = new System.Random();
 
-            // Randomize body
+            // Randomize gender
+            string oldGender = customDna.gender;
+            customDna.gender = random.Next(2) == 0 ? "m" : "f";
+
+            if (customDna.gender != oldGender)
+            {
+                DebugLogger.LogNPCImport($"Randomized gender from '{oldGender}' to '{customDna.gender}'");
+                LoadGenderSpecificData(customDna.gender);
+
+                // Clear facial morphs (male and female have different morph definitions)
+                customDna.headMorphs.Clear();
+
+                // Clear cached DnaApplier because gender-specific data changed
+                dnaApplier = null;
+                cachedCharacter = null;
+
+                // Spawn new character model for the new gender
+                if (selectedCharacter != null)
+                {
+                    Vector3 oldPosition = selectedCharacter.transform.position;
+                    GameObject.DestroyImmediate(selectedCharacter);
+                    selectedCharacter = null;
+
+                    string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+                    GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+                    if (modelPrefab != null)
+                    {
+                        GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                        if (character == null)
+                            character = GameObject.Instantiate(modelPrefab);
+
+                        character.name = $"Custom_{customDna.name}";
+                        character.transform.position = oldPosition;
+
+                        selectedCharacter = character;
+                        Selection.activeGameObject = character;
+                    }
+                }
+            }
+
+            // Randomize body shape (gender-specific)
             var genderShapes = bodyShapes.Where(kvp =>
                 (customDna.gender == "m" && kvp.Key.Contains("Male")) ||
                 (customDna.gender == "f" && kvp.Key.Contains("Female"))
             ).ToList();
 
             if (genderShapes.Count > 0)
+            {
+                string oldShape = customDna.bodyShape;
                 customDna.bodyShape = genderShapes[random.Next(genderShapes.Count)].Key;
+                DebugLogger.LogNPCImport($"Randomized body shape from '{oldShape}' to '{customDna.bodyShape}' (gender: {customDna.gender}, {genderShapes.Count} shapes available)");
+            }
+            else
+            {
+                DebugLogger.LogErrorNPCImport($"No body shapes found for gender '{customDna.gender}'! Total shapes: {bodyShapes.Count}");
+            }
 
             customDna.bodyHeight = (float)random.NextDouble();
             customDna.skinColorIdx = random.Next(palettes.skin.Count);
@@ -1202,11 +1343,37 @@ namespace CharacterOG.Editor
                 DebugLogger.LogNPCImport($"Randomized {customDna.headMorphs.Count} facial morphs");
             }
 
-            // Randomize clothing
+            // Randomize clothing (with conflict prevention)
             RandomizeSlot(Slot.Hat, random);
             RandomizeSlot(Slot.Shirt, random);
-            RandomizeSlot(Slot.Vest, random);
-            RandomizeSlot(Slot.Coat, random);
+
+            // Coat vs Vest: Randomly choose one, both, or neither to prevent overlapping conflicts
+            int coatVestChoice = random.Next(4);
+            if (coatVestChoice == 0)
+            {
+                // Just vest
+                customDna.coat = 0;
+                RandomizeSlot(Slot.Vest, random);
+            }
+            else if (coatVestChoice == 1)
+            {
+                // Just coat
+                customDna.vest = 0;
+                RandomizeSlot(Slot.Coat, random);
+            }
+            else if (coatVestChoice == 2)
+            {
+                // Both (some combinations work)
+                RandomizeSlot(Slot.Vest, random);
+                RandomizeSlot(Slot.Coat, random);
+            }
+            else
+            {
+                // Neither
+                customDna.vest = 0;
+                customDna.coat = 0;
+            }
+
             RandomizeSlot(Slot.Belt, random);
             RandomizeSlot(Slot.Pant, random);
             RandomizeSlot(Slot.Shoe, random);
@@ -1216,10 +1383,22 @@ namespace CharacterOG.Editor
             customDna.botColorIdx = random.Next(palettes.dye.Count);
             customDna.hatColorIdx = random.Next(palettes.dye.Count);
 
-            // Randomize hair
-            RandomizeSlot(Slot.Hair, random);
-            RandomizeSlot(Slot.Beard, random);
-            RandomizeSlot(Slot.Mustache, random);
+            // Randomize hair/facial hair (some chance for none)
+            if (random.NextDouble() > 0.2) // 80% chance for hair
+                RandomizeSlot(Slot.Hair, random);
+            else
+                customDna.hair = 0;
+
+            if (random.NextDouble() > 0.5) // 50% chance for beard
+                RandomizeSlot(Slot.Beard, random);
+            else
+                customDna.beard = 0;
+
+            if (random.NextDouble() > 0.6) // 40% chance for mustache
+                RandomizeSlot(Slot.Mustache, random);
+            else
+                customDna.mustache = 0;
+
             customDna.hairColorIdx = random.Next(palettes.hair.Count);
 
             if (autoApply) ApplyToCharacter();
@@ -1254,6 +1433,36 @@ namespace CharacterOG.Editor
             if (autoApply) ApplyToCharacter();
 
             DebugLogger.LogNPCImport("Randomized all colors");
+        }
+
+        private void RandomizeTextures()
+        {
+            var random = new System.Random();
+            int texturesRandomized = 0;
+
+            Slot[] clothingSlots = new[] { Slot.Hat, Slot.Shirt, Slot.Vest, Slot.Coat, Slot.Belt, Slot.Pant, Slot.Shoe };
+
+            foreach (var slot in clothingSlots)
+            {
+                int currentIndex = GetSlotIndex(slot);
+
+                // Skip if slot is not equipped (index 0 means underwear/nothing for most slots)
+                if (currentIndex <= 0 && slot != Slot.Hat)
+                    continue;
+
+                // Get the currently equipped variant
+                var variant = clothingCatalog.GetVariant(slot, currentIndex);
+                if (variant != null && variant.textureIds.Count > 0)
+                {
+                    // Randomize texture index within available textures for this variant
+                    SetSlotTexIndex(slot, random.Next(variant.textureIds.Count));
+                    texturesRandomized++;
+                }
+            }
+
+            if (autoApply) ApplyToCharacter();
+
+            DebugLogger.LogNPCImport($"Randomized {texturesRandomized} clothing textures");
         }
 
         private void SavePreset()

@@ -26,15 +26,15 @@ namespace CharacterOG.Runtime.Systems
         /// Initialize applier.
         /// </summary>
         /// <param name="rigRoot">Root of the character rig</param>
-        /// <param name="headRoot">Optional transform to scale for head size (e.g., "def_head")</param>
-        /// <param name="bodyRoot">Optional transform to scale for body size (e.g., "def_spine01")</param>
+        /// <param name="headRoot">Optional transform to scale for head size - should be "def_head01"</param>
+        /// <param name="bodyRoot">Optional transform for global body scale - should be "def_scale_jt"</param>
         public BodyShapeApplier(Transform rigRoot, Transform headRoot = null, Transform bodyRoot = null)
         {
             this.rigRoot = rigRoot;
             this.headRoot = headRoot;
             this.bodyRoot = bodyRoot;
 
-            Debug.Log($"[BodyShapeApplier] Initialized with rigRoot='{rigRoot?.name}', headRoot='{headRoot?.name}', bodyRoot='{bodyRoot?.name}'");
+            Debug.Log($"[BodyShapeApplier] Initialized with rigRoot='{rigRoot?.name}', headRoot='{headRoot?.name}' (should be def_head01), bodyRoot='{bodyRoot?.name}' (should be def_scale_jt)");
 
             BuildBoneCache();
         }
@@ -129,7 +129,8 @@ namespace CharacterOG.Runtime.Systems
             }
             Debug.Log($"[BodyShapeApplier] Bone offsets: {offsetsFound} applied, {offsetsNotFound} not found");
 
-            // Apply head scale
+            // Apply head scale to def_head01
+            // POTCO: headNode.setScale(HeadScales[idx][shape]) and self.joints['def_head01'].applyFreezeMatrix(..., Vec3(HeadScales[idx][shape]))
             if (headRoot != null && shape.headScale != 1f)
             {
                 if (!originalScales.ContainsKey(headRoot))
@@ -139,10 +140,11 @@ namespace CharacterOG.Runtime.Systems
 
                 Vector3 oldScale = headRoot.localScale;
                 headRoot.localScale = originalScales[headRoot] * shape.headScale;
-                Debug.Log($"[BodyShapeApplier] Head scale '{headRoot.name}': {oldScale} → {headRoot.localScale} (multiplier: {shape.headScale})");
+                Debug.Log($"[BodyShapeApplier] Head scale (def_head01) '{headRoot.name}': {oldScale} → {headRoot.localScale} (multiplier: {shape.headScale})");
             }
 
-            // Apply body scale
+            // Apply body scale to def_scale_jt as GLOBAL scale
+            // POTCO: calcBodyScale() → setGlobalScale(scale) → self.joints['def_scale_jt'].applyFreezeMatrix(..., Vec3(scale))
             if (bodyRoot != null && shape.bodyScale != 1f)
             {
                 if (!originalScales.ContainsKey(bodyRoot))
@@ -152,7 +154,7 @@ namespace CharacterOG.Runtime.Systems
 
                 Vector3 oldScale = bodyRoot.localScale;
                 bodyRoot.localScale = originalScales[bodyRoot] * shape.bodyScale;
-                Debug.Log($"[BodyShapeApplier] Body scale '{bodyRoot.name}': {oldScale} → {bodyRoot.localScale} (multiplier: {shape.bodyScale})");
+                Debug.Log($"[BodyShapeApplier] Body scale (def_scale_jt global) '{bodyRoot.name}': {oldScale} → {bodyRoot.localScale} (multiplier: {shape.bodyScale})");
             }
 
             // Apply head position offset

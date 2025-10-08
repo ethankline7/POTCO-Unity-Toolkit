@@ -110,6 +110,15 @@ namespace CharacterOG.Runtime.Systems
             // Hat is exception - index 0 means "no hat" which is fine
             ApplyClothingSlot(Slot.Hat, dna.hat, dna.hatTex, dna.hatColorIdx);
 
+            // Male hat 7 (tricorn) has bald/non-bald variants (hardcoded from PirateMale.py lines 1611-1626)
+            // If hair is 0, 9, 10, or 13 (bald or short), show bald hat parts, hide non-bald parts
+            // Otherwise hide bald parts
+            if (dna.gender == "m" && dna.hat == 7)
+            {
+                bool useBaldVariant = (dna.hair == 0 || dna.hair == 9 || dna.hair == 10 || dna.hair == 13);
+                ApplyHatBaldVariant(useBaldVariant);
+            }
+
             // Only override underwear if index > 0 (0 means keep underwear default)
             Debug.Log($"[DNA Values] shirt={dna.shirt}, vest={dna.vest}, coat={dna.coat}, pants={dna.pants}");
 
@@ -128,13 +137,33 @@ namespace CharacterOG.Runtime.Systems
             if (dna.pants > 0)
                 ApplyClothingSlot(Slot.Pant, dna.pants, dna.pantsTex, dna.botColorIdx);
 
-            if (dna.shoes > 0)
+            // Male pants 4 (EITC) and 5 (Navy) hide shoes (hardcoded from PirateMale.py line 3513)
+            bool hideShoes = false;
+            if (dna.gender == "m" && (dna.pants == 4 || dna.pants == 5))
+            {
+                hideShoes = true;
+                Debug.Log($"DnaApplier: Hiding shoes because male pants {dna.pants} (EITC/Navy) hide shoes (hardcoded from POTCO source)");
+            }
+
+            if (dna.shoes > 0 && !hideShoes)
                 ApplyClothingSlot(Slot.Shoe, dna.shoes, dna.shoesTex, dna.botColorIdx);
 
             // 4. Apply hair/facial hair (with hair color palette, not dye palette)
             ApplyHairSlot(Slot.Hair, dna.hair, dna.hairColorIdx);
             ApplyHairSlot(Slot.Beard, dna.beard, dna.hairColorIdx);
-            ApplyHairSlot(Slot.Mustache, dna.mustache, dna.hairColorIdx);
+
+            // Male beards 1, 2, 3 hide mustache (hardcoded from PirateMale.py lines 1588, 1642)
+            // "if not currentBeardIdx > 0 and currentBeardIdx < 4: currentStache.unstash()"
+            // Mustache only shows when beard is NOT 1, 2, or 3
+            bool hideMustache = false;
+            if (dna.gender == "m" && dna.beard >= 1 && dna.beard <= 3)
+            {
+                hideMustache = true;
+                Debug.Log($"DnaApplier: Hiding mustache because male beard {dna.beard} hides mustache (hardcoded from POTCO source)");
+            }
+
+            if (!hideMustache)
+                ApplyHairSlot(Slot.Mustache, dna.mustache, dna.hairColorIdx);
 
             // 4.5. Apply hair cuts for hat (PirateMale.py handleHeadHiding logic)
             // This shows cut versions of hair and hides full versions based on hat type
@@ -874,6 +903,55 @@ namespace CharacterOG.Runtime.Systems
                 }
 
                 Debug.Log($"DnaApplier: Applied tattoo {tattoo.idx} to zone{tattoo.zone}");
+            }
+        }
+
+        private void ApplyHatBaldVariant(bool useBaldVariant)
+        {
+            // Male hat 7 (tricorn) has separate bald/non-bald submeshes (PirateMale.py lines 1611-1626)
+            // If hair is bald/short (0, 9, 10, 13), show only bald parts
+            // Otherwise show only non-bald parts
+            var hatVariant = assembler.GetCurrentVariant(Slot.Hat);
+            if (hatVariant == null || hatVariant.showGroups.Count == 0)
+                return;
+
+            int baldHidden = 0;
+            int nonBaldHidden = 0;
+
+            foreach (var groupName in hatVariant.showGroups)
+            {
+                var renderers = rendererCache.GetExact(groupName);
+                foreach (var renderer in renderers)
+                {
+                    if (renderer == null) continue;
+                    var name = renderer.gameObject.name;
+
+                    bool isBaldPart = name.Contains("bald");
+
+                    if (useBaldVariant)
+                    {
+                        // Hide non-bald parts, show bald parts
+                        if (!isBaldPart)
+                        {
+                            renderer.enabled = false;
+                            nonBaldHidden++;
+                        }
+                    }
+                    else
+                    {
+                        // Hide bald parts, show non-bald parts
+                        if (isBaldPart)
+                        {
+                            renderer.enabled = false;
+                            baldHidden++;
+                        }
+                    }
+                }
+            }
+
+            if (baldHidden > 0 || nonBaldHidden > 0)
+            {
+                Debug.Log($"DnaApplier: Hat 7 bald variant: useBald={useBaldVariant}, hid {baldHidden} bald parts, {nonBaldHidden} non-bald parts");
             }
         }
 

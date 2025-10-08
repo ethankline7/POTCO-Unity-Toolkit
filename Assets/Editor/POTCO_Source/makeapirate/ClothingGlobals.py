@@ -162,8 +162,7 @@ CLOTHING_NAMES = {
             1: 'Closed',
             2: 'Lowcut',
             3: 'Corset High',
-            4: 'Corset Low',
-            5: 'Navy' } },
+            4: 'Corset Low' } },
     3: {
         'MALE': {
             0: 'None',
@@ -175,8 +174,7 @@ CLOTHING_NAMES = {
             0: 'None',
             1: 'Long',
             2: 'Short',
-            3: 'Navy',
-            3: 'EITC' } },
+            3: 'Navy' } },
     4: {
         'MALE': {
             0: 'Long Tucked',
@@ -248,8 +246,7 @@ CLOTHING_NAMES = {
             1: 'Short',
             2: 'Medium',
             3: 'Knee High',
-            4: 'Tall',
-            5: 'Navy' } } }
+            4: 'Tall' } } }
 SELECTION_CHOICES = {
     'DEFAULT': {
         'MALE': {

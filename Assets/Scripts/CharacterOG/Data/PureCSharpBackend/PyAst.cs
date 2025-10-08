@@ -131,7 +131,10 @@ namespace CharacterOG.Data.PureCSharpBackend
             this.functionName = functionName;
         }
 
-        /// <summary>Convert to Unity Vector3 (handles VBase3 and similar)</summary>
+        /// <summary>
+        /// Convert to Unity Vector3 (handles VBase3 and similar).
+        /// Applies Panda3D → Unity coordinate conversion: VBase3(X,Y,Z) → Vector3(X,Z,Y)
+        /// </summary>
         public Vector3 ToVector3()
         {
             if (args.Count < 3)
@@ -141,7 +144,11 @@ namespace CharacterOG.Data.PureCSharpBackend
             float y = (args[1] as PyNumber)?.AsFloat() ?? 0f;
             float z = (args[2] as PyNumber)?.AsFloat() ?? 0f;
 
-            return new Vector3(x, y, z);
+            // CRITICAL: Panda3D coordinate conversion (Y-up, right-handed) → Unity (Y-up, left-handed)
+            // Panda3D: VBase3(X, Y, Z) where Y=up, Z=forward
+            // Unity: Vector3(X, Y, Z) where Y=up, Z=forward
+            // Swap Y and Z components to convert between coordinate systems
+            return new Vector3(x, z, y);
         }
 
         /// <summary>Convert to Unity Color (handles VBase4 and similar)</summary>

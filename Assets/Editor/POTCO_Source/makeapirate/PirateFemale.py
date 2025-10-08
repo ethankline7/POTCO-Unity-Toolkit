@@ -2595,11 +2595,6 @@ class PirateFemale(DirectObject.DirectObject):
             -28,
             -29,
             -30])
-        self.clothingsShoe.append([
-            [
-                27],
-            -29,
-            -30])
         layer2List = [
             '**/clothing_layer2_vest_none*',
             '**/clothing_layer2_vest_closed*',
