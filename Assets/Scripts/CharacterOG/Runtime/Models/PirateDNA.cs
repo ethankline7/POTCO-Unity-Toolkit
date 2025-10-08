@@ -110,5 +110,33 @@ namespace CharacterOG.Models
 
             return clone;
         }
+
+        /// <summary>Export DNA to JSON string</summary>
+        public string ToJson(bool prettyPrint = true)
+        {
+            return JsonUtility.ToJson(this, prettyPrint);
+        }
+
+        /// <summary>Import DNA from JSON string</summary>
+        public static PirateDNA FromJson(string json)
+        {
+            return JsonUtility.FromJson<PirateDNA>(json);
+        }
+
+        /// <summary>Save DNA to file</summary>
+        public void SaveToFile(string filePath)
+        {
+            System.IO.File.WriteAllText(filePath, ToJson(true));
+        }
+
+        /// <summary>Load DNA from file</summary>
+        public static PirateDNA LoadFromFile(string filePath)
+        {
+            if (!System.IO.File.Exists(filePath))
+                return null;
+
+            string json = System.IO.File.ReadAllText(filePath);
+            return FromJson(json);
+        }
     }
 }

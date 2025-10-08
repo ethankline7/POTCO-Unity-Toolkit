@@ -61,15 +61,18 @@ namespace CharacterOG.Runtime.Systems
 
     public class FacialMorphApplier
     {
-        // Dampening factors - ControlShapes base values represent MAXIMUM deltas, need scaling
-        private const float TRANSLATION_SCALE = 0.25f;  // Translations need heavy dampening
-        private const float ROTATION_SCALE = 1.0f;      // Rotations use full values
-        private const float SCALE_DAMPENING = 0.1f;     // Scales need heavy dampening
+        // Dampening factors - Set to 1.0 to match POTCO's original behavior
+        private const float TRANSLATION_SCALE = 1.0f;  // 100% - POTCO original
+        private const float ROTATION_SCALE = 1.0f;      // 100% - POTCO original
+        private const float SCALE_DAMPENING = 1.0f;     // 100% - POTCO original
 
-        // Coordinate conversion for facial morphs (determined by testing)
-        // XYZ (no swapping) works best for facial bone transforms
+        // Coordinate conversion for facial morphs
+        // XZY for ALL transform types: POTCO Z=up → Unity Y=up
+        // ControlShapes axes are in POTCO coordinate system
+        // POTCO: X=right, Y=forward, Z=up → Unity: X=right, Y=up, Z=forward
+        // Examples: POTCO TZ (up) → Unity TY (up), POTCO RY (pitch) → Unity RZ (pitch)
         // Rotation: ALL negated (matches CoordinateConverter)
-        public static AxisPermutation CurrentPermutation = AxisPermutation.XYZ;  // No axis swapping
+        public static AxisPermutation CurrentPermutation = AxisPermutation.XZY;  // All transforms
 
         private Transform headRoot;
         private Transform rigRoot;
@@ -98,7 +101,7 @@ namespace CharacterOG.Runtime.Systems
             this.rigRoot = rigRoot ?? headRoot;
 
             Debug.Log($"[FacialMorphApplier] Initialized with headRoot='{headRoot?.name}', rigRoot='{this.rigRoot?.name}', gender='{database?.gender}' " +
-                     $"(dampening: trans={TRANSLATION_SCALE}, rot={ROTATION_SCALE}, scale={SCALE_DAMPENING})");
+                     $"(POTCO ORIGINAL MODE: trans={TRANSLATION_SCALE}, rot={ROTATION_SCALE}, scale={SCALE_DAMPENING})");
 
             BuildBoneCache();
         }
@@ -142,21 +145,9 @@ namespace CharacterOG.Runtime.Systems
                     continue;
                 }
 
-                // Apply scaling to reduce extreme values (bones != blend shapes)
-                // Blend shapes have natural smoothing; bone transforms need manual reduction
-                float sign = Mathf.Sign(morphValue);
-                float abs = Mathf.Abs(morphValue);
-                float smoothed;
-                if (abs <= 0.7f)
-                {
-                    smoothed = abs; // Linear up to 0.7
-                }
-                else
-                {
-                    // Scale extreme values: 0.8→0.24, 0.9→0.27, 1.0→0.30
-                    smoothed = abs * 0.30f;
-                }
-                morphValue = sign * smoothed;
+                // POTCO ORIGINAL: Use morph values directly without smoothing/clamping
+                // morphValue is already the slider value (-1.0 to 1.0)
+                // This gets multiplied by base transform values in ControlShapes
 
                 var morphDef = database.GetMorph(morphName);
                 if (morphDef == null)
@@ -324,7 +315,9 @@ namespace CharacterOG.Runtime.Systems
         /// <summary>Apply rotation delta based on conversion mode</summary>
         private void ApplyRotationDelta(Transform bone, float delta, int potcoAxis, float baseValue, float morphValue, string axisName, string modeName)
         {
-            int unityAxis = ConvertAxis(potcoAxis, CurrentPermutation);
+            // Get Unity axis - some bones need special axis mapping
+            int unityAxis = GetRotationUnityAxis(bone.name, potcoAxis);
+
             if (!rotationDeltas.ContainsKey(bone))
                 rotationDeltas[bone] = Vector3.zero;
 
@@ -332,10 +325,60 @@ namespace CharacterOG.Runtime.Systems
             // This is the ONLY transform type that gets negated
             float finalDelta = -delta;
 
+            // Special case: Normalize ear rotation so both ears move at the same speed
+            // POTCO has left=-20, right=-160, but we want them to move symmetrically
+            if (bone.name.Contains("ear") && potcoAxis == 0) // earFlap uses RX
+            {
+                // Use a fixed magnitude for both ears, ignore POTCO's asymmetric base values
+                float normalizedMagnitude = 90f; // Midpoint between 20 and 160
+
+                // Left ear: negative rotation (flaps one way)
+                // Right ear: positive rotation (flaps opposite way, creating symmetric outward motion)
+                if (bone.name.Contains("right"))
+                {
+                    finalDelta = normalizedMagnitude * morphValue; // Positive direction
+                }
+                else
+                {
+                    finalDelta = -normalizedMagnitude * morphValue; // Negative direction
+                }
+
+                Debug.Log($"[FacialMorphApplier] Normalized ear rotation for '{bone.name}': {finalDelta} (morphValue={morphValue})");
+            }
+
             Vector3 deltaVec = rotationDeltas[bone];
             deltaVec[unityAxis] += finalDelta;
             rotationDeltas[bone] = deltaVec;
-            Debug.Log($"[FacialMorphApplier] '{bone.name}' {axisName}: accumulating delta[{unityAxis}]={finalDelta} (from {delta}) [mode={modeName}]");
+            Debug.Log($"[FacialMorphApplier] '{bone.name}' {axisName}: accumulating delta[{unityAxis}]={finalDelta} (from {delta}) [bone-specific axis={unityAxis}]");
+        }
+
+        /// <summary>Get Unity axis for rotation based on bone name and POTCO axis</summary>
+        private int GetRotationUnityAxis(string boneName, int potcoAxis)
+        {
+            // Special cases: Some bones need specific Unity axes regardless of POTCO axis
+
+            // earFlap (POTCO RX) → Unity Y rotation (axis 1)
+            if (boneName.Contains("ear") && potcoAxis == 0) // POTCO RX
+            {
+                Debug.Log($"[FacialMorphApplier] earFlap override: POTCO RX → Unity RY (axis 1)");
+                return 1; // Unity Y axis
+            }
+
+            // noseNostrilAngle (POTCO RY) → Unity X rotation (axis 0)
+            if (boneName.Contains("nose") && potcoAxis == 1) // POTCO RY
+            {
+                Debug.Log($"[FacialMorphApplier] noseNostrilAngle override: POTCO RY → Unity RX (axis 0)");
+                return 0; // Unity X axis
+            }
+
+            // eyeCorner: Use standard XYZ (no swap)
+            if (boneName.Contains("eyesocket"))
+            {
+                return ConvertAxis(potcoAxis, AxisPermutation.XYZ);
+            }
+
+            // Default: Use standard XZY conversion for other bones
+            return ConvertAxis(potcoAxis, AxisPermutation.XZY);
         }
 
         /// <summary>Apply scale delta based on conversion mode</summary>
