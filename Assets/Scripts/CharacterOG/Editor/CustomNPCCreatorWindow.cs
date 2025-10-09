@@ -314,6 +314,8 @@ namespace CharacterOG.Editor
 
             if (currentShapeIdx < 0) currentShapeIdx = 0;
 
+            int originalShapeIdx = currentShapeIdx; // Remember original before buttons modify it
+
             if (GUILayout.Button("◄", GUILayout.Width(30)))
             {
                 currentShapeIdx = Mathf.Max(0, currentShapeIdx - 1);
@@ -330,7 +332,8 @@ namespace CharacterOG.Editor
                 if (autoApply) ApplyToCharacter();
             }
 
-            if (newShapeIdx >= 0 && newShapeIdx < shapeNames.Length && shapeNames[newShapeIdx] != customDna.bodyShape)
+            // Only apply dropdown change if it actually changed (and buttons didn't already change it)
+            if (newShapeIdx != originalShapeIdx && newShapeIdx >= 0 && newShapeIdx < shapeNames.Length)
             {
                 customDna.bodyShape = shapeNames[newShapeIdx];
                 if (autoApply) ApplyToCharacter();
