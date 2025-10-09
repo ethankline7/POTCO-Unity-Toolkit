@@ -39,6 +39,8 @@ namespace Player
         [SerializeField] private AnimationClip walkBackDiagonalRightClip;
         [SerializeField] private AnimationClip turnLeftClip;
         [SerializeField] private AnimationClip turnRightClip;
+        [SerializeField] private AnimationClip spinLeftClip;  // Female turn animation
+        [SerializeField] private AnimationClip spinRightClip; // Female turn animation
         [SerializeField] private AnimationClip jumpClip;
         [SerializeField] private AnimationClip swimClip;
 
@@ -46,7 +48,8 @@ namespace Player
         private PlayerController playerController;
         private string currentAnim = "";
         private bool isInitialized = false;
-        private bool wasGrounded = true; // Track if we were grounded last frame for landing detection
+        private bool wasGrounded = true; // Track if we were grounded last frame
+        private bool wasFalling = false; // Track if we were falling last frame for landing detection
         private bool isInJumpAir = false; // Track if we're in the air portion of jump
         private bool jumpAnimReversing = false; // Track if jump animation is playing backwards
         private bool isPlayingLanding = false; // Track if we're playing the landing animation
@@ -65,6 +68,28 @@ namespace Player
             else if (autoDetectGender)
             {
                 DetectGender();
+            }
+        }
+
+        /// <summary>
+        /// Set gender explicitly before initialization (used by spawner scripts)
+        /// Call this immediately after AddComponent and before Start()
+        /// </summary>
+        public void SetGender(string gender)
+        {
+            if (gender == "f" || gender == "female")
+            {
+                genderPrefix = "fp_";
+                manualGenderOverride = true;
+                manualGender = GenderType.Female;
+                Debug.Log($"🎭 Gender set programmatically: Female (fp_ prefix)");
+            }
+            else
+            {
+                genderPrefix = "mp_";
+                manualGenderOverride = true;
+                manualGender = GenderType.Male;
+                Debug.Log($"🎭 Gender set programmatically: Male (mp_ prefix)");
             }
         }
 
@@ -137,6 +162,8 @@ namespace Player
                 if (walkBackDiagonalRightClip != null) loadedAnims.Append("walk_back_diagonal_right ");
                 if (turnLeftClip != null) loadedAnims.Append("turn_left ");
                 if (turnRightClip != null) loadedAnims.Append("turn_right ");
+                if (spinLeftClip != null) loadedAnims.Append("spin_left ");
+                if (spinRightClip != null) loadedAnims.Append("spin_right ");
                 if (jumpClip != null) loadedAnims.Append("jump ");
                 if (swimClip != null) loadedAnims.Append("swim ");
 
@@ -181,7 +208,8 @@ namespace Player
             UpdateAnimation();
 
             // Handle jump in-air ping-pong looping (34%-50% back and forth)
-            if (isInJumpAir && !playerController.IsGrounded && jumpClip != null)
+            // Only loop when actually falling (not just slightly off ground)
+            if (isInJumpAir && playerController.IsFalling && jumpClip != null)
             {
                 AnimationState jumpState = animComponent["jump"];
                 if (jumpState != null && jumpState.enabled)
@@ -233,28 +261,68 @@ namespace Player
         {
             Debug.Log("🔍 Starting gender detection...");
 
-            // Method 1: Check GameObject name and parent names
+            // Method 0: Check for CharacterGenderData component (highest priority)
+            CharacterOG.Runtime.CharacterGenderData genderData = GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+            if (genderData != null)
+            {
+                string gender = genderData.GetGender();
+                genderPrefix = genderData.GetGenderPrefix();
+                manualGender = gender == "f" ? GenderType.Female : GenderType.Male;
+                Debug.Log($"🎭 Detected {(gender == "f" ? "FEMALE" : "MALE")} character from CharacterGenderData component ({genderPrefix} prefix)");
+                return;
+            }
+
+            // Method 1: Check GameObject name and parent names (going UP the hierarchy)
             Transform current = transform;
             int hierarchyLevel = 0;
             while (current != null)
             {
                 string objName = current.name.ToLower();
-                Debug.Log($"  Checking hierarchy level {hierarchyLevel}: '{current.name}'");
+                Debug.Log($"  Checking parent hierarchy level {hierarchyLevel}: '{current.name}'");
 
                 if (objName.Contains("fp_") || objName.Contains("female"))
                 {
                     genderPrefix = "fp_";
-                    Debug.Log($"🎭 Detected FEMALE character from hierarchy name: '{current.name}' (fp_ prefix)");
+                    manualGender = GenderType.Female;
+                    Debug.Log($"🎭 Detected FEMALE character from parent hierarchy name: '{current.name}' (fp_ prefix)");
                     return;
                 }
                 else if (objName.Contains("mp_") || objName.Contains("male"))
                 {
                     genderPrefix = "mp_";
-                    Debug.Log($"🎭 Detected MALE character from hierarchy name: '{current.name}' (mp_ prefix)");
+                    manualGender = GenderType.Male;
+                    Debug.Log($"🎭 Detected MALE character from parent hierarchy name: '{current.name}' (mp_ prefix)");
                     return;
                 }
                 current = current.parent;
                 hierarchyLevel++;
+            }
+
+            // Method 1.5: Check ALL child GameObject names (going DOWN the hierarchy)
+            // .egg files often create child objects with gender-specific names
+            Transform[] allChildren = GetComponentsInChildren<Transform>();
+            Debug.Log($"  Found {allChildren.Length} child transforms");
+
+            foreach (Transform child in allChildren)
+            {
+                if (child == transform) continue; // Skip self
+
+                string childName = child.name.ToLower();
+
+                if (childName.Contains("fp_") || childName.Contains("female"))
+                {
+                    genderPrefix = "fp_";
+                    manualGender = GenderType.Female;
+                    Debug.Log($"🎭 Detected FEMALE character from child object name: '{child.name}' (fp_ prefix)");
+                    return;
+                }
+                else if (childName.Contains("mp_") || childName.Contains("male"))
+                {
+                    genderPrefix = "mp_";
+                    manualGender = GenderType.Male;
+                    Debug.Log($"🎭 Detected MALE character from child object name: '{child.name}' (mp_ prefix)");
+                    return;
+                }
             }
 
             // Method 2: Check SkinnedMeshRenderer mesh names
@@ -271,12 +339,14 @@ namespace Player
                     if (meshName.Contains("fp_") || meshName.Contains("female"))
                     {
                         genderPrefix = "fp_";
+                        manualGender = GenderType.Female;
                         Debug.Log($"🎭 Detected FEMALE character from mesh name: '{smr.sharedMesh.name}' (fp_ prefix)");
                         return;
                     }
                     else if (meshName.Contains("mp_") || meshName.Contains("male"))
                     {
                         genderPrefix = "mp_";
+                        manualGender = GenderType.Male;
                         Debug.Log($"🎭 Detected MALE character from mesh name: '{smr.sharedMesh.name}' (mp_ prefix)");
                         return;
                     }
@@ -297,12 +367,14 @@ namespace Player
                     if (meshName.Contains("fp_") || meshName.Contains("female"))
                     {
                         genderPrefix = "fp_";
+                        manualGender = GenderType.Female;
                         Debug.Log($"🎭 Detected FEMALE character from mesh name: '{mf.sharedMesh.name}' (fp_ prefix)");
                         return;
                     }
                     else if (meshName.Contains("mp_") || meshName.Contains("male"))
                     {
                         genderPrefix = "mp_";
+                        manualGender = GenderType.Male;
                         Debug.Log($"🎭 Detected MALE character from mesh name: '{mf.sharedMesh.name}' (mp_ prefix)");
                         return;
                     }
@@ -311,6 +383,7 @@ namespace Player
 
             // Default to male if not detected
             genderPrefix = "mp_";
+            manualGender = GenderType.Male;
             Debug.LogWarning("⚠️ Could not detect gender from names. Using default MALE character (mp_ prefix)");
             Debug.LogWarning("   If this is wrong, enable 'Manual Gender Override' in Inspector and set to Female");
         }
@@ -352,6 +425,9 @@ namespace Player
 
             turnLeftClip = FindAndLoadClip("turn_left", phases, searchPaths);
             turnRightClip = FindAndLoadClip("turn_right", phases, searchPaths);
+
+            spinLeftClip = FindAndLoadClip("spin_left", phases, searchPaths);
+            spinRightClip = FindAndLoadClip("spin_right", phases, searchPaths);
 
             jumpClip = FindAndLoadClip("jump", phases, searchPaths);
             swimClip = FindAndLoadClip("swim", phases, searchPaths);
@@ -423,6 +499,16 @@ namespace Player
                 animComponent.AddClip(turnRightClip, "turn_right");
                 animComponent["turn_right"].wrapMode = WrapMode.Loop;
                 animComponent["turn_right"].speed = 0.5f; // 50% slower
+            }
+            if (spinLeftClip != null)
+            {
+                animComponent.AddClip(spinLeftClip, "spin_left");
+                animComponent["spin_left"].wrapMode = WrapMode.Loop;
+            }
+            if (spinRightClip != null)
+            {
+                animComponent.AddClip(spinRightClip, "spin_right");
+                animComponent["spin_right"].wrapMode = WrapMode.Loop;
             }
             if (jumpClip != null)
             {
@@ -609,7 +695,7 @@ namespace Player
                         }
                         else if (input.y > 0.1f)
                         {
-                            // Forward (W key)
+                            // Forward (W key) - no turning
                             targetAnim = isRunning && runClip != null ? "run" : "walk";
                         }
                         else if (input.y < -0.1f)
@@ -633,15 +719,30 @@ namespace Player
                 else if (!isFreeLooking && Mathf.Abs(turnInput) > 0.1f)
                 {
                     // TURNING IN PLACE (normal mode only, not moving)
+                    // Female characters use spin animations, males use turn animations
                     if (turnInput < -0.1f)
                     {
                         // Turning left (A key)
-                        targetAnim = turnLeftClip != null ? "turn_left" : "idle";
+                        if (genderPrefix == "fp_")
+                        {
+                            targetAnim = spinLeftClip != null ? "spin_left" : (turnLeftClip != null ? "turn_left" : "idle");
+                        }
+                        else
+                        {
+                            targetAnim = turnLeftClip != null ? "turn_left" : "idle";
+                        }
                     }
                     else if (turnInput > 0.1f)
                     {
                         // Turning right (D key)
-                        targetAnim = turnRightClip != null ? "turn_right" : "idle";
+                        if (genderPrefix == "fp_")
+                        {
+                            targetAnim = spinRightClip != null ? "spin_right" : (turnRightClip != null ? "turn_right" : "idle");
+                        }
+                        else
+                        {
+                            targetAnim = turnRightClip != null ? "turn_right" : "idle";
+                        }
                     }
                 }
                 else
@@ -652,8 +753,8 @@ namespace Player
             else
             {
                 // In air
-                // Detect landing (was in air, now grounded)
-                if (!wasGrounded && playerController.IsGrounded)
+                // Detect landing (was falling, now grounded or back on ground)
+                if (wasFalling && !playerController.IsFalling)
                 {
                     // Just landed - play landing animation (end portion of jump clip)
                     if (jumpClip != null)
@@ -662,12 +763,12 @@ namespace Player
                         isInJumpAir = false;
                     }
                 }
-                else
+                else if (!playerController.IsGrounded)
                 {
-                    // Still in air
+                    // Not grounded (in air or slightly off ground)
                     if (jumpClip != null)
                     {
-                        // If just left ground, start jump from beginning
+                        // If just left ground (was grounded, now not grounded)
                         if (wasGrounded && !playerController.IsGrounded)
                         {
                             // First frame in air - play jump from start (takeoff)
@@ -681,14 +782,30 @@ namespace Player
                             isInJumpAir = true;
                             jumpAnimReversing = false; // Start in forward direction
                         }
-                        // The Update method will handle ping-pong looping the middle portion
-                        targetAnim = "jump";
+
+                        // Only show jump animation if actually falling (not just tiny bumps)
+                        if (playerController.IsFalling)
+                        {
+                            // The Update method will handle ping-pong looping the middle portion
+                            targetAnim = "jump";
+                        }
+                        else
+                        {
+                            // Slightly off ground but not falling - keep current animation
+                            targetAnim = currentAnim;
+                        }
                     }
+                }
+                else
+                {
+                    // Grounded but in the else branch? Fallback to idle
+                    targetAnim = "idle";
                 }
             }
 
-            // Track grounded state for next frame
+            // Track grounded and falling state for next frame
             wasGrounded = playerController.IsGrounded;
+            wasFalling = playerController.IsFalling;
 
             // Only switch if different
             if (targetAnim != currentAnim)
@@ -738,6 +855,8 @@ namespace Player
         }
 
         // Public API
+        public string GenderPrefix => genderPrefix;
+
         public void PlayEmote(string emoteName)
         {
             // Try to load and play emote

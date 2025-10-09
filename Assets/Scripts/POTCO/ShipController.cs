@@ -97,6 +97,7 @@ namespace POTCO
             FindShipComponents();
             LoadAnimationClips();
             CreateCameraPoint();
+            AddDeckColliders();
 
             // Initialize bobbing
             basePosition = transform.position;
@@ -317,6 +318,31 @@ namespace POTCO
         {
             Debug.Log($"[ANIM LOAD]   Attempting to load: {path}");
 
+            // If path doesn't start with phase_, search all phases
+            if (!path.StartsWith("phase_"))
+            {
+                string[] phases = { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
+                foreach (string phase in phases)
+                {
+                    string fullPath = $"{phase}/{path}";
+                    AnimationClip foundClip = LoadAnimationFromResourcesDirect(fullPath);
+                    if (foundClip != null)
+                    {
+                        Debug.Log($"[ANIM LOAD]   ✓ Found in {phase}");
+                        return foundClip;
+                    }
+                }
+                Debug.Log($"[ANIM LOAD]   ✗ Not found in any phase directory");
+                return null;
+            }
+            else
+            {
+                return LoadAnimationFromResourcesDirect(path);
+            }
+        }
+
+        private AnimationClip LoadAnimationFromResourcesDirect(string path)
+        {
             // Try loading as prefab first
             GameObject animObj = Resources.Load<GameObject>(path);
             if (animObj != null)
@@ -502,22 +528,157 @@ namespace POTCO
             mainCamera.transform.LookAt(shipCenter);
             mainCamera.transform.SetParent(null); // Unparent so we can orbit freely
 
-            // Disable player controller and parent to ship
+            // Position player behind the wheel
+            if (playerTransform != null && wheelTransform != null)
+            {
+                // Position player behind the wheel, facing the same direction as wheel
+                Vector3 wheelPosition = wheelTransform.position;
+                Vector3 wheelForward = wheelTransform.forward;
+
+                // Place player at the wheel with 2 unit offset
+                playerTransform.position = wheelPosition + wheelForward * 2f;
+
+                // Face the same direction as the wheel (looking out from the ship)
+                // The Model child inside has 180° offset, so player parent needs same rotation as wheel
+                playerTransform.rotation = wheelTransform.rotation;
+
+                Debug.Log($"Positioned player behind wheel at {playerTransform.position}");
+                Debug.Log($"Player rotation: {playerTransform.rotation.eulerAngles}");
+                Debug.Log($"Wheel rotation: {wheelTransform.rotation.eulerAngles}");
+            }
+
+            // Play wheel_idle animation with correct gender prefix
             if (playerTransform != null)
             {
-                var playerController = playerTransform.GetComponent<CharacterController>();
-                if (playerController != null) playerController.enabled = false;
+                Debug.Log("🎬 Starting wheel_idle animation setup...");
 
-                // Try to disable first person controller if it exists
-                var fpsController = playerTransform.GetComponent<MonoBehaviour>();
-                if (fpsController != null && fpsController.GetType().Name.Contains("FirstPerson"))
+                // Get the SimpleAnimationPlayer to determine gender
+                Player.SimpleAnimationPlayer animPlayer = playerTransform.GetComponent<Player.SimpleAnimationPlayer>();
+                if (animPlayer != null)
                 {
-                    fpsController.enabled = false;
+                    Debug.Log($"Found SimpleAnimationPlayer, gender prefix: {animPlayer.GenderPrefix}");
+
+                    // Disable SimpleAnimationPlayer so it doesn't interfere with wheel_idle
+                    animPlayer.enabled = false;
+                    Debug.Log("Disabled SimpleAnimationPlayer");
+                }
+                else
+                {
+                    Debug.LogWarning("⚠️ No SimpleAnimationPlayer found on player!");
+                }
+
+                // Get the Animation component from Model child (or player itself)
+                Animation playerAnim = null;
+                Transform modelChild = playerTransform.Find("Model");
+                if (modelChild != null)
+                {
+                    Debug.Log($"Found Model child: {modelChild.name}");
+                    playerAnim = modelChild.GetComponent<Animation>();
+                    if (playerAnim != null)
+                    {
+                        Debug.Log("✅ Found Animation component on Model child");
+                    }
+                }
+
+                if (playerAnim == null)
+                {
+                    Debug.Log("Searching for Animation in children...");
+                    playerAnim = playerTransform.GetComponentInChildren<Animation>();
+                    if (playerAnim != null)
+                    {
+                        Debug.Log($"✅ Found Animation component on: {playerAnim.gameObject.name}");
+                    }
+                }
+
+                if (playerAnim == null)
+                {
+                    Debug.LogError("❌ No Animation component found on player!");
+                    return;
+                }
+
+                if (animPlayer == null)
+                {
+                    Debug.LogError("❌ No SimpleAnimationPlayer found on player!");
+                    return;
+                }
+
+                // Get gender prefix from SimpleAnimationPlayer
+                string genderPrefix = animPlayer.GenderPrefix;
+                Debug.Log($"Using gender prefix: {genderPrefix}");
+
+                // Load wheel_idle animation with gender prefix (searches all phases)
+                string wheelIdleAnimName = genderPrefix + "wheel_idle";
+                Debug.Log($"Looking for animation: {wheelIdleAnimName}");
+
+                AnimationClip wheelIdleClip = LoadAnimationFromResources($"char/{wheelIdleAnimName}");
+
+                if (wheelIdleClip == null)
+                {
+                    Debug.Log($"Not found in char/, trying models/char/...");
+                    wheelIdleClip = LoadAnimationFromResources($"models/char/{wheelIdleAnimName}");
+                }
+
+                if (wheelIdleClip != null)
+                {
+                    Debug.Log($"✅ Loaded wheel_idle clip: {wheelIdleClip.name}, length: {wheelIdleClip.length}s");
+
+                    // Stop all current animations
+                    playerAnim.Stop();
+                    Debug.Log("Stopped all current animations");
+
+                    // Remove old wheel_idle clip if it exists
+                    if (playerAnim.GetClip("wheel_idle") != null)
+                    {
+                        playerAnim.RemoveClip("wheel_idle");
+                        Debug.Log("Removed old wheel_idle clip");
+                    }
+
+                    // Add and play wheel_idle animation
+                    playerAnim.AddClip(wheelIdleClip, "wheel_idle");
+                    playerAnim["wheel_idle"].wrapMode = WrapMode.Loop;
+                    playerAnim["wheel_idle"].enabled = true;
+                    playerAnim["wheel_idle"].weight = 1.0f;
+                    playerAnim.Play("wheel_idle");
+
+                    // Verify it's playing
+                    bool isPlaying = playerAnim.IsPlaying("wheel_idle");
+                    Debug.Log($"🎬 Animation playing status: {isPlaying}");
+                    Debug.Log($"🎬 Animation state - enabled: {playerAnim["wheel_idle"].enabled}, weight: {playerAnim["wheel_idle"].weight}");
+                    Debug.Log($"✅ Playing {wheelIdleAnimName} animation on character at wheel");
+                }
+                else
+                {
+                    Debug.LogError($"❌ Could not find {wheelIdleAnimName} animation in Resources!");
+                    Debug.LogError($"   Tried: phase_3/char/{wheelIdleAnimName}");
+                    Debug.LogError($"   Tried: phase_3/models/char/{wheelIdleAnimName}");
+                }
+            }
+
+            // Disable player movement but keep collision enabled (parenting handles position)
+            if (playerTransform != null)
+            {
+                // Keep CharacterController ENABLED so collision stays active and follows the ship
+                // This ensures the player's collision capsule moves with the rocking ship
+
+                // Disable Player.PlayerController (movement script)
+                var newPlayerController = playerTransform.GetComponent<Player.PlayerController>();
+                if (newPlayerController != null)
+                {
+                    newPlayerController.enabled = false;
+                    Debug.Log("Disabled Player.PlayerController");
+                }
+
+                // Disable Player.PlayerCamera
+                var playerCamera = Camera.main?.GetComponent<Player.PlayerCamera>();
+                if (playerCamera != null)
+                {
+                    playerCamera.enabled = false;
+                    Debug.Log("Disabled Player.PlayerCamera");
                 }
 
                 // Parent player to ship so they move together
                 playerTransform.SetParent(transform);
-                Debug.Log("Player parented to ship");
+                Debug.Log("Player parented to ship and positioned at wheel");
             }
 
             Debug.Log("Entered ship control mode");
@@ -688,14 +849,26 @@ namespace POTCO
                 currentOrbitPitch = Mathf.Clamp(currentOrbitPitch, -80f, 80f);
             }
 
-            // Always update camera position to follow ship
-            Vector3 shipCenter = transform.position + Vector3.up * orbitHeight;
+            // Calculate camera focus point (player character or ship center)
+            Vector3 focusPoint;
+            if (playerTransform != null)
+            {
+                // Focus on player character (slightly above their position)
+                focusPoint = playerTransform.position + Vector3.up * 3f;
+            }
+            else
+            {
+                // Fallback to ship center if player not found
+                focusPoint = transform.position + Vector3.up * orbitHeight;
+            }
 
+            // Calculate camera orbit position
             Quaternion rotation = Quaternion.Euler(currentOrbitPitch, currentOrbitAngle, 0);
             Vector3 offset = rotation * new Vector3(0, 0, -orbitDistance);
 
-            mainCamera.transform.position = shipCenter + offset;
-            mainCamera.transform.LookAt(shipCenter);
+            // Position camera and look at focus point (player character)
+            mainCamera.transform.position = focusPoint + offset;
+            mainCamera.transform.LookAt(focusPoint);
         }
 
         private void HandleCannonControls()
@@ -727,17 +900,6 @@ namespace POTCO
         {
             isControlling = false;
 
-            // Disable CharacterController before moving player to avoid falling through
-            CharacterController playerController = null;
-            if (playerTransform != null)
-            {
-                playerController = playerTransform.GetComponent<CharacterController>();
-                if (playerController != null)
-                {
-                    playerController.enabled = false;
-                }
-            }
-
             // Unparent player from ship
             if (playerTransform != null)
             {
@@ -761,19 +923,62 @@ namespace POTCO
                 mainCamera.transform.localRotation = originalCameraRotation;
             }
 
-            // Re-enable player controller
-            if (playerController != null)
-            {
-                playerController.enabled = true;
-            }
-
-            // Re-enable first person controller
+            // Re-enable player movement components (CharacterController stays enabled)
             if (playerTransform != null)
             {
-                var fpsController = playerTransform.GetComponent<MonoBehaviour>();
-                if (fpsController != null && fpsController.GetType().Name.Contains("FirstPerson"))
+                // Reset to idle animation before re-enabling SimpleAnimationPlayer
+                Animation playerAnim = null;
+                Transform modelChild = playerTransform.Find("Model");
+                if (modelChild != null)
                 {
-                    fpsController.enabled = true;
+                    playerAnim = modelChild.GetComponent<Animation>();
+                }
+                if (playerAnim == null)
+                {
+                    playerAnim = playerTransform.GetComponentInChildren<Animation>();
+                }
+
+                if (playerAnim != null)
+                {
+                    // Stop wheel_idle animation
+                    playerAnim.Stop();
+
+                    // Remove wheel_idle clip
+                    if (playerAnim.GetClip("wheel_idle") != null)
+                    {
+                        playerAnim.RemoveClip("wheel_idle");
+                    }
+
+                    // Play idle animation if it exists
+                    if (playerAnim.GetClip("idle") != null)
+                    {
+                        playerAnim.Play("idle");
+                        Debug.Log("Reset player to idle animation");
+                    }
+                }
+
+                // Re-enable Player.PlayerController (movement script)
+                var newPlayerController = playerTransform.GetComponent<Player.PlayerController>();
+                if (newPlayerController != null)
+                {
+                    newPlayerController.enabled = true;
+                    Debug.Log("Re-enabled Player.PlayerController");
+                }
+
+                // Re-enable Player.PlayerCamera
+                var playerCamera = Camera.main?.GetComponent<Player.PlayerCamera>();
+                if (playerCamera != null)
+                {
+                    playerCamera.enabled = true;
+                    Debug.Log("Re-enabled Player.PlayerCamera");
+                }
+
+                // Re-enable SimpleAnimationPlayer to restore normal animations
+                Player.SimpleAnimationPlayer animPlayer = playerTransform.GetComponent<Player.SimpleAnimationPlayer>();
+                if (animPlayer != null)
+                {
+                    animPlayer.enabled = true;
+                    Debug.Log("Re-enabled SimpleAnimationPlayer");
                 }
             }
 
@@ -978,6 +1183,38 @@ namespace POTCO
 
             Debug.LogWarning($"[GetMastType] Could not determine mast type, using default: main_tri");
             return "main_tri";
+        }
+
+        private void AddDeckColliders()
+        {
+            Debug.Log("🔧 Adding colliders to ship deck...");
+            int colliderCount = 0;
+
+            // Add colliders to all mesh renderers on the ship (deck, hull, etc.)
+            MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
+            foreach (MeshFilter meshFilter in meshFilters)
+            {
+                // Skip if already has a collider
+                if (meshFilter.GetComponent<Collider>() != null)
+                    continue;
+
+                // Skip masts and cannons (they shouldn't have collision)
+                if (meshFilter.name.ToLower().Contains("mast") ||
+                    meshFilter.name.ToLower().Contains("cannon") ||
+                    meshFilter.name.ToLower().Contains("sail"))
+                    continue;
+
+                // Add mesh collider to deck/hull pieces
+                if (meshFilter.sharedMesh != null)
+                {
+                    MeshCollider meshCollider = meshFilter.gameObject.AddComponent<MeshCollider>();
+                    meshCollider.sharedMesh = meshFilter.sharedMesh;
+                    meshCollider.convex = false;
+                    colliderCount++;
+                }
+            }
+
+            Debug.Log($"✅ Added {colliderCount} colliders to ship deck - player can now walk on it");
         }
 
         private void OnDrawGizmosSelected()

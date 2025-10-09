@@ -1335,7 +1335,7 @@ public class GeometryProcessor
 
     private bool ShouldSkipNamedLODGroup(string groupName)
     {
-        // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow
+        // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow, low_medium, medium_low
         string lowerGroupName = groupName.ToLower();
 
         if (lowerGroupName == "lod_high" || lowerGroupName == "lod_hi")
@@ -1343,7 +1343,8 @@ public class GeometryProcessor
             return false; // Always import highest quality
         }
         else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" ||
-                 lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super")
+                 lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super" ||
+                 lowerGroupName == "low_medium" || lowerGroupName == "medium_low")
         {
             DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}'");
             return true; // Skip lower quality groups

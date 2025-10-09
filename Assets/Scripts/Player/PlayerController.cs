@@ -38,6 +38,12 @@ namespace Player
         [SerializeField] private Transform groundCheck;
         [SerializeField] private float groundDistance = 0.4f;
         [SerializeField] private LayerMask groundMask = -1;
+        [Tooltip("Maximum height of obstacles the character can step over")]
+        [SerializeField] private float stepOffset = 0.5f;
+        [Tooltip("Skin width for collision detection (prevents jittering)")]
+        [SerializeField] private float skinWidth = 0.08f;
+        [Tooltip("Minimum falling velocity to trigger air/falling state")]
+        [SerializeField] private float fallingThreshold = 0.5f;
 
         [Header("Model Setup")]
         [Tooltip("POTCO models often face backwards. Set to 180 to flip model facing. Applied once at start.")]
@@ -75,6 +81,7 @@ namespace Player
         private Transform currentPlatform;
         private Vector3 lastPlatformPosition;
         private Quaternion lastPlatformRotation;
+        private List<Collider> ignoredShipColliders = new List<Collider>();
 
         // Debug
         private float lastDebugTime;
@@ -82,6 +89,12 @@ namespace Player
         private void Awake()
         {
             controller = GetComponent<CharacterController>();
+
+            // Configure CharacterController collision settings
+            controller.stepOffset = stepOffset;
+            controller.skinWidth = skinWidth;
+
+            Debug.Log($"✅ CharacterController configured - Step Offset: {stepOffset}, Skin Width: {skinWidth}");
         }
 
         private void Start()
@@ -336,6 +349,12 @@ namespace Player
         public bool IsFreeLooking => playerCamera != null && playerCamera.IsFreeLooking;
         public bool IsRunning => runToggle; // For animation system to know if running
 
+        /// <summary>
+        /// Returns true if player is actually falling (not just slightly off ground)
+        /// Uses fallingThreshold to prevent glitchy air animations from tiny bumps
+        /// </summary>
+        public bool IsFalling => !isGrounded && velocity.y < -fallingThreshold;
+
         private void SetupModelHierarchy()
         {
             // Check if Model child already exists
@@ -425,16 +444,39 @@ namespace Player
             // Platform changed
             if (newPlatform != currentPlatform)
             {
+                // Restore collision with previous platform's colliders
+                if (currentPlatform != null && ignoredShipColliders.Count > 0)
+                {
+                    foreach (Collider shipCollider in ignoredShipColliders)
+                    {
+                        if (shipCollider != null)
+                        {
+                            Physics.IgnoreCollision(controller, shipCollider, false);
+                        }
+                    }
+                    ignoredShipColliders.Clear();
+                    Debug.Log("🚶 Left moving platform - restored collision");
+                }
+
                 currentPlatform = newPlatform;
+
                 if (currentPlatform != null)
                 {
                     lastPlatformPosition = currentPlatform.position;
                     lastPlatformRotation = currentPlatform.rotation;
-                    Debug.Log($"🚢 Stepped onto moving platform: {currentPlatform.name}");
-                }
-                else
-                {
-                    Debug.Log("🚶 Left moving platform");
+
+                    // Ignore collision with ship colliders to prevent glitching
+                    Collider[] shipColliders = currentPlatform.GetComponentsInChildren<Collider>();
+                    foreach (Collider shipCollider in shipColliders)
+                    {
+                        if (shipCollider != null && shipCollider != controller)
+                        {
+                            Physics.IgnoreCollision(controller, shipCollider, true);
+                            ignoredShipColliders.Add(shipCollider);
+                        }
+                    }
+
+                    Debug.Log($"🚢 Stepped onto moving platform: {currentPlatform.name} - ignoring {ignoredShipColliders.Count} colliders");
                 }
             }
 

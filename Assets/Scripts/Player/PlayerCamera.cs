@@ -42,6 +42,12 @@ namespace Player
         [SerializeField] private float runFOV = 70f;
         [SerializeField] private float fovTransitionSpeed = 5f;
 
+        [Header("Render Distance")]
+        [Tooltip("Far clipping plane - objects beyond this distance won't render")]
+        [SerializeField] private float farClipPlane = 5000f;
+        [Tooltip("Near clipping plane - objects closer than this won't render")]
+        [SerializeField] private float nearClipPlane = 0.3f;
+
         private Camera cam;
         private PlayerController playerController;
         private float currentYaw;
@@ -62,6 +68,12 @@ namespace Player
             {
                 cam = gameObject.AddComponent<Camera>();
             }
+
+            // Configure camera clipping planes for better render distance
+            cam.farClipPlane = farClipPlane;
+            cam.nearClipPlane = nearClipPlane;
+
+            Debug.Log($"✅ PlayerCamera configured - Far Plane: {farClipPlane}, Near Plane: {nearClipPlane}");
         }
 
         private void Start()

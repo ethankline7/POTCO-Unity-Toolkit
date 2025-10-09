@@ -34,6 +34,7 @@ namespace CharacterOG.Editor
         private GameObject cachedCharacter; // Track which character the dnaApplier is for
         private DnaApplier dnaApplier;
         private bool autoApply = true;
+        private bool addPlayerController = false;
         private bool dataLoaded = false;
         private string loadError;
 
@@ -288,6 +289,11 @@ namespace CharacterOG.Editor
             {
                 ApplyToCharacter();
             }
+            EditorGUILayout.EndHorizontal();
+
+            // Player Controller checkbox
+            EditorGUILayout.BeginHorizontal();
+            addPlayerController = EditorGUILayout.Toggle("Player Controller", addPlayerController);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.EndVertical();
@@ -1112,6 +1118,95 @@ namespace CharacterOG.Editor
             }
         }
 
+        private void SetupAsPlayerController(GameObject character)
+        {
+            if (character == null) return;
+
+            Debug.Log($"🎮 Setting up '{character.name}' as Player Controller...");
+
+            // Add CharacterController
+            CharacterController controller = character.GetComponent<CharacterController>();
+            if (controller == null)
+            {
+                controller = character.AddComponent<CharacterController>();
+                controller.height = 1.8f;
+                controller.radius = 0.3f;
+                controller.center = new Vector3(0f, 0.9f, 0f);
+                Debug.Log("✅ Added CharacterController");
+            }
+
+            // Add Animation component
+            Animation animComponent = character.GetComponent<Animation>();
+            if (animComponent == null)
+            {
+                animComponent = character.AddComponent<Animation>();
+                Debug.Log("✅ Added Animation component");
+            }
+
+            // CharacterGenderData already added by ApplyToCharacter, but ensure it's set
+            CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+            if (genderData != null)
+            {
+                genderData.SetGender(customDna.gender);
+            }
+
+            // Add SimpleAnimationPlayer
+            Player.SimpleAnimationPlayer animPlayer = character.GetComponent<Player.SimpleAnimationPlayer>();
+            if (animPlayer == null)
+            {
+                animPlayer = character.AddComponent<Player.SimpleAnimationPlayer>();
+                Debug.Log("✅ Added SimpleAnimationPlayer");
+            }
+
+            // Add PlayerController
+            Player.PlayerController playerController = character.GetComponent<Player.PlayerController>();
+            if (playerController == null)
+            {
+                playerController = character.AddComponent<Player.PlayerController>();
+                Debug.Log("✅ Added PlayerController");
+            }
+
+            // Setup PlayerCamera
+            SetupPlayerCamera(character);
+
+            EditorUtility.SetDirty(character);
+            Debug.Log($"✅ '{character.name}' setup as Player Controller complete!");
+        }
+
+        private void SetupPlayerCamera(GameObject playerObject)
+        {
+            // Find existing PlayerCamera
+            Player.PlayerCamera playerCamera = FindObjectOfType<Player.PlayerCamera>();
+
+            if (playerCamera == null)
+            {
+                // Create new camera object as child of player
+                GameObject cameraObject = new GameObject("Player Camera");
+                cameraObject.transform.SetParent(playerObject.transform);
+
+                Camera cam = cameraObject.AddComponent<Camera>();
+                playerCamera = cameraObject.AddComponent<Player.PlayerCamera>();
+
+                // Position camera behind player (relative to parent)
+                cameraObject.transform.localPosition = new Vector3(0f, 1.6f, -3.5f);
+                cameraObject.transform.LookAt(playerObject.transform.position + Vector3.up * 1.5f);
+
+                // Tag as main camera
+                cameraObject.tag = "MainCamera";
+
+                Debug.Log("✅ Created Player Camera as child of player");
+            }
+
+            // Set player as camera target using SerializedObject
+            SerializedObject so = new SerializedObject(playerCamera);
+            SerializedProperty targetProp = so.FindProperty("target");
+            targetProp.objectReferenceValue = playerObject.transform;
+            so.ApplyModifiedProperties();
+
+            Debug.Log("✅ Assigned player as camera target");
+            EditorUtility.SetDirty(playerCamera);
+        }
+
         private void SpawnNewCharacter()
         {
             string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
@@ -1138,6 +1233,12 @@ namespace CharacterOG.Editor
             selectedCharacter = character;
             Selection.activeGameObject = character;
             ApplyToCharacter();
+
+            // Setup as player controller if checkbox is enabled
+            if (addPlayerController)
+            {
+                SetupAsPlayerController(character);
+            }
 
             DebugLogger.LogNPCImport($"Spawned new character '{character.name}'");
         }
@@ -1204,10 +1305,39 @@ namespace CharacterOG.Editor
                 // Apply DNA (DnaApplier resets to original transforms internally before applying)
                 dnaApplier.ApplyDNA(customDna);
 
+                // Add CharacterColorPersistence component to persist colors through play mode
+                var colorPersistence = selectedCharacter.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                if (colorPersistence == null)
+                {
+                    colorPersistence = selectedCharacter.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                }
+
+                // Store actual color values from palettes
+                Color skinColor = palettes.GetSkinColor(customDna.skinColorIdx);
+                Color hairColor = palettes.GetHairColor(customDna.hairColorIdx);
+                Color topColor = palettes.GetDyeColor(customDna.topColorIdx);
+                Color botColor = palettes.GetDyeColor(customDna.botColorIdx);
+
+                colorPersistence.StoreColors(skinColor, hairColor, topColor, botColor);
+
+                // Add CharacterGenderData component to persist gender information for animation system
+                var genderData = selectedCharacter.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+                if (genderData == null)
+                {
+                    genderData = selectedCharacter.AddComponent<CharacterOG.Runtime.CharacterGenderData>();
+                }
+                genderData.SetGender(customDna.gender);
+
                 EditorUtility.SetDirty(selectedCharacter);
                 UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(selectedCharacter.scene);
 
-                DebugLogger.LogNPCImport($"Applied DNA to '{selectedCharacter.name}'");
+                DebugLogger.LogNPCImport($"Applied DNA to '{selectedCharacter.name}' with color and gender persistence");
+
+                // Setup as player controller if checkbox is enabled
+                if (addPlayerController)
+                {
+                    SetupAsPlayerController(selectedCharacter);
+                }
             }
             catch (System.Exception ex)
             {
