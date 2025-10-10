@@ -107,7 +107,7 @@ Shader "POTCO/Ocean Water"
                 float4x4 _ReflectionMatrix;
             CBUFFER_END
 
-            // Gerstner wave calculation (uses local position for stable waves)
+            // Simple vertical wave calculation (up/down motion only, no horizontal displacement)
             float3 GerstnerWave(float3 posLocal, float4 wave, float2 direction)
             {
                 float amplitude = wave.x;
@@ -118,12 +118,12 @@ Shader "POTCO/Ocean Water"
                 float c = sqrt(9.8 / k);
                 float2 d = normalize(direction);
                 float f = k * (dot(d, posLocal.xz) - c * _TimeSec * speed);
-                float a = amplitude / k;
 
+                // Only vertical displacement - no horizontal (x, z) movement
                 return float3(
-                    d.x * a * cos(f),
-                    a * sin(f),
-                    d.y * a * cos(f)
+                    0,
+                    amplitude * sin(f),
+                    0
                 );
             }
 
@@ -271,8 +271,8 @@ Shader "POTCO/Ocean Water"
                 float c = sqrt(9.8 / k);
                 float2 d = normalize(dir);
                 float f = k * (dot(d, posLocal.xz) - c * _TimeSec * spd);
-                float a = amp / k;
-                return float3(d.x * a * cos(f), a * sin(f), d.y * a * cos(f));
+                // Only vertical displacement - no horizontal movement
+                return float3(0, amp * sin(f), 0);
             }
 
             v2f vert(appdata v)

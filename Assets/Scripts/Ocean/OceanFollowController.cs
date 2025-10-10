@@ -109,6 +109,9 @@ namespace POTCO.Ocean
             {
                 renderer.material = oceanMaterial;
                 Debug.Log($"OceanFollowController: Applied ocean material to {renderer.gameObject.name}");
+
+                // Use the material instance from the renderer (not the original)
+                oceanMaterial = renderer.material;
             }
             else
             {
@@ -142,7 +145,7 @@ namespace POTCO.Ocean
                 {
                     planarReflection.mainCamera = Camera.main;
                 }
-                planarReflection.waterMaterial = oceanMaterial;
+                planarReflection.waterMaterial = oceanMaterial;  // Uses material instance from above
                 planarReflection.useScreenResolution = true;
                 planarReflection.textureSize = 256;
                 planarReflection.updateInterval = 0;

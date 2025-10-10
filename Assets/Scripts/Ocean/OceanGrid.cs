@@ -127,6 +127,7 @@ namespace POTCO.Ocean
         {
             int gridSize = gridRadius * 2 + 1;
             GameObject[,] newPatches = new GameObject[gridSize, gridSize];
+            bool createdNewPatches = false;
 
             // Move existing patches to new positions
             for (int x = 0; x < gridSize; x++)
@@ -161,11 +162,22 @@ namespace POTCO.Ocean
                         int worldZ = (z - gridRadius) + currentGridCenter.y + offset.y;
 
                         CreatePatchAt(x, z, worldX, worldZ, ref newPatches);
+                        createdNewPatches = true;
                     }
                 }
             }
 
             patches = newPatches;
+
+            // Notify OceanManager to refresh materials if new patches were created
+            if (createdNewPatches)
+            {
+                OceanManager oceanManager = GetComponent<OceanManager>();
+                if (oceanManager != null)
+                {
+                    oceanManager.RefreshMaterials();
+                }
+            }
         }
 
         void CreatePatchAt(int arrayX, int arrayZ, int worldX, int worldZ, ref GameObject[,] patchArray)

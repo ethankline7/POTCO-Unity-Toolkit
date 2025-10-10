@@ -35,16 +35,68 @@ namespace POTCO.Ocean
             new Wave { amplitude = 0.08f, wavelength = 2.5f, speed = 2.2f, directionDegrees = 75f }
         };
 
+        private Material[] allOceanMaterials;
+
+        void Start()
+        {
+            CollectAllOceanMaterials();
+        }
+
+        void CollectAllOceanMaterials()
+        {
+            // Find all renderers in children (for OceanGrid patches)
+            MeshRenderer[] renderers = GetComponentsInChildren<MeshRenderer>();
+
+            if (renderers.Length > 0)
+            {
+                allOceanMaterials = new Material[renderers.Length];
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    allOceanMaterials[i] = renderers[i].material; // Get material instance
+                }
+                Debug.Log($"OceanManager: Collected {allOceanMaterials.Length} ocean material instances");
+            }
+            else if (waterMaterial != null)
+            {
+                // Fallback: use the single material reference
+                allOceanMaterials = new Material[] { waterMaterial };
+            }
+        }
+
+        /// <summary>
+        /// Call this to refresh the material collection (e.g., when OceanGrid adds new patches)
+        /// </summary>
+        public void RefreshMaterials()
+        {
+            CollectAllOceanMaterials();
+        }
+
         void Update()
         {
-            if (waterMaterial == null) return;
+            // Update all ocean materials (for grid-based systems)
+            if (allOceanMaterials != null && allOceanMaterials.Length > 0)
+            {
+                foreach (Material mat in allOceanMaterials)
+                {
+                    if (mat == null) continue;
+                    UpdateMaterial(mat);
+                }
+            }
+            else if (waterMaterial != null)
+            {
+                // Fallback: update single material
+                UpdateMaterial(waterMaterial);
+            }
+        }
 
+        void UpdateMaterial(Material mat)
+        {
             // Set UV animation parameters
-            waterMaterial.SetVector("_UVScale", uvScale);
-            waterMaterial.SetVector("_UVSpeedA", uvSpeedA);
-            waterMaterial.SetVector("_UVSpeedB", uvSpeedB);
-            waterMaterial.SetFloat("_TimeSec", Time.time);
-            waterMaterial.SetColor("_WaterColor", waterColor);
+            mat.SetVector("_UVScale", uvScale);
+            mat.SetVector("_UVSpeedA", uvSpeedA);
+            mat.SetVector("_UVSpeedB", uvSpeedB);
+            mat.SetFloat("_TimeSec", Time.time);
+            mat.SetColor("_WaterColor", waterColor);
 
             // Set wave parameters
             for (int i = 0; i < waves.Length && i < 4; i++)
@@ -54,8 +106,8 @@ namespace POTCO.Ocean
                 Vector2 direction = new Vector2(Mathf.Cos(dirRad), Mathf.Sin(dirRad));
 
                 // Pack wave data: (amplitude, wavelength, speed, unused)
-                waterMaterial.SetVector($"_Wave{i}", new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
-                waterMaterial.SetVector($"_WaveDir{i}", new Vector4(direction.x, direction.y, 0f, 0f));
+                mat.SetVector($"_Wave{i}", new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
+                mat.SetVector($"_WaveDir{i}", new Vector4(direction.x, direction.y, 0f, 0f));
             }
         }
 
