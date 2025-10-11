@@ -20,15 +20,15 @@ namespace POTCO.Sky
         public bool useManualPreset = false;
 
         [Tooltip("Transition duration in seconds when manually switching presets")]
-        public float transitionDuration = 1f;
+        public float transitionDuration = 10f;
 
         [Header("Automatic Day/Night Cycle")]
         [Tooltip("Time of day (0-24 hours). Sun rises at 6, peaks at 12, sets at 18")]
         [Range(0, 24)]
-        public float timeOfDay = 12f;
+        public float timeOfDay = 11.4f;
 
         [Tooltip("Speed of time progression (hours per real second). Example: 1.0 = 1 hour per second")]
-        public float timeSpeed = 0.5f;
+        public float timeSpeed = 0.82f;
 
         [Tooltip("Automatically advance time for continuous day/night cycle")]
         public bool autoAdvanceTime = true;
@@ -52,11 +52,11 @@ namespace POTCO.Sky
         [Header("Light Settings")]
         [Tooltip("Minimum light intensity (when sun is hidden)")]
         [Range(0, 2)]
-        public float minLightIntensity = 0.3f;
+        public float minLightIntensity = 0.82f;
 
         [Tooltip("Maximum light intensity (when sun is at full)")]
         [Range(0, 3)]
-        public float maxLightIntensity = 1.5f;
+        public float maxLightIntensity = 1.46f;
 
         [Tooltip("Light color at day")]
         public Color dayLightColor = new Color(1f, 0.96f, 0.84f);
@@ -72,7 +72,7 @@ namespace POTCO.Sky
 
         [Tooltip("Ambient intensity multiplier")]
         [Range(0, 2)]
-        public float ambientIntensity = 1.0f;
+        public float ambientIntensity = 1.06f;
 
         [Header("Cloud Settings")]
         [Tooltip("Cloud Layer A speed: +2.0 over 400s = (0.005, 0.0025) per second")]
@@ -108,36 +108,39 @@ namespace POTCO.Sky
         [Header("Stars Fade Settings")]
         [Tooltip("Stars fade start based on sun position. Lower = stars appear even when sun is nearby")]
         [Range(-1, 1)]
-        public float starsFadeStart = -0.2f;
+        public float starsFadeStart = 1f;
 
         [Tooltip("Stars fade end based on sun position. Higher = stars visible longer")]
         [Range(-1, 1)]
-        public float starsFadeEnd = 0.3f;
+        public float starsFadeEnd = 1f;
 
         [Tooltip("Enable height-based fading (fades stars near horizon)")]
-        public bool enableStarsHeightFade = false;
+        public bool enableStarsHeightFade = true;
 
         [Header("Preset Library")]
         public TODSettings daySettings = new TODSettings
         {
             name = "Day",
-            skyColorTopA = new Color(0.53f, 0.70f, 1.00f, 1f),
-            skyColorTopB = new Color(0.40f, 0.60f, 0.95f, 1f),
-            skyColorHorizonA = new Color(0.70f, 0.80f, 1.00f, 1f),
+            skyColorTopA = new Color(0.216f, 0.491f, 0.984f, 1f),
+            skyColorTopB = new Color(0.4f, 0.6f, 0.95f, 1f),
+            skyColorHorizonA = new Color(0.7f, 0.8f, 1.0f, 1f),
             skyColorHorizonB = new Color(0.65f, 0.75f, 0.95f, 1f),
-            skyColorBottomA = new Color(0.50f, 0.65f, 0.90f, 1f),
-            skyColorBottomB = new Color(0.45f, 0.60f, 0.85f, 1f),
+            skyColorBottomA = new Color(0.5f, 0.65f, 0.9f, 1f),
+            skyColorBottomB = new Color(0.45f, 0.6f, 0.85f, 1f),
             stageBlend = 0.3f,
             cloudTexture = "clouds_heavy",
-            cloudIntensity = 2.0f,
+            cloudIntensity = 4.18f,
             cloudBlendAB = 0.5f,
-            starsIntensity = 0f,
-            starsScale = 1.0f,
+            starsIntensity = 0.21f,
+            starsScale = 3.71f,
             sunIntensity = 3.0f,
             sunSize = 0.04f,
             sunGlowIntensity = 1.0f,
             sunDirection = new Vector3(0.2f, 0.5f, 1f),
             moonIntensity = 0f,
+            moonSize = 0f,
+            moonGlowIntensity = 0f,
+            moonDirection = new Vector3(0f, 0f, 0f),
             brightness = 0.61f,
             exposure = 1.28f,
             contrast = 1.13f
@@ -146,23 +149,25 @@ namespace POTCO.Sky
         public TODSettings sunsetSettings = new TODSettings
         {
             name = "Sunset",
-            skyColorTopA = new Color(0.60f, 0.35f, 0.45f, 1f),
-            skyColorTopB = new Color(0.50f, 0.30f, 0.40f, 1f),
-            skyColorHorizonA = new Color(1.00f, 0.60f, 0.30f, 1f),
-            skyColorHorizonB = new Color(0.95f, 0.50f, 0.25f, 1f),
-            skyColorBottomA = new Color(0.45f, 0.40f, 0.55f, 1f),
-            skyColorBottomB = new Color(0.40f, 0.35f, 0.50f, 1f),
+            skyColorTopA = new Color(0.6f, 0.35f, 0.45f, 1f),
+            skyColorTopB = new Color(0.5f, 0.3f, 0.4f, 1f),
+            skyColorHorizonA = new Color(1.0f, 0.6f, 0.3f, 1f),
+            skyColorHorizonB = new Color(0.95f, 0.5f, 0.25f, 1f),
+            skyColorBottomA = new Color(0.45f, 0.4f, 0.55f, 1f),
+            skyColorBottomB = new Color(0.4f, 0.35f, 0.5f, 1f),
             stageBlend = 0.6f,
             cloudTexture = "clouds_medium",
             cloudIntensity = 1.2f,
             cloudBlendAB = 0.6f,
             starsIntensity = 0.05f,
-            starsScale = 1.0f,
+            starsScale = 3.71f,
             sunIntensity = 2.0f,
             sunSize = 0.06f,
             sunGlowIntensity = 1.5f,
             sunDirection = new Vector3(0.7f, 0.1f, 1f),
             moonIntensity = 0.2f,
+            moonSize = 0f,
+            moonGlowIntensity = 0f,
             moonDirection = new Vector3(-0.3f, 0.2f, -1f),
             brightness = 1.0f,
             exposure = 1.1f,
@@ -174,22 +179,25 @@ namespace POTCO.Sky
             name = "Night",
             skyColorTopA = new Color(0.05f, 0.08f, 0.15f, 1f),
             skyColorTopB = new Color(0.03f, 0.06f, 0.12f, 1f),
-            skyColorHorizonA = new Color(0.15f, 0.20f, 0.35f, 1f),
-            skyColorHorizonB = new Color(0.12f, 0.17f, 0.30f, 1f),
-            skyColorBottomA = new Color(0.02f, 0.04f, 0.10f, 1f),
+            skyColorHorizonA = new Color(0.15f, 0.2f, 0.35f, 1f),
+            skyColorHorizonB = new Color(0.12f, 0.17f, 0.3f, 1f),
+            skyColorBottomA = new Color(0.02f, 0.04f, 0.1f, 1f),
             skyColorBottomB = new Color(0.01f, 0.03f, 0.08f, 1f),
             stageBlend = 0.5f,
             cloudTexture = "clouds_heavy",
             cloudIntensity = 0.6f,
             cloudBlendAB = 0.4f,
-            starsIntensity = 0.25f,
-            starsScale = 1.0f,
+            starsIntensity = 10.06f,
+            starsScale = 3.71f,
             sunIntensity = 0f,
+            sunSize = 0f,
+            sunGlowIntensity = 0f,
+            sunDirection = new Vector3(0f, 0f, 0f),
             moonIntensity = 1.0f,
             moonSize = 0.035f,
             moonGlowIntensity = 0.6f,
             moonDirection = new Vector3(0f, 0.5f, -1f),
-            brightness = 0.6f,
+            brightness = 0.29f,
             exposure = 0.8f,
             contrast = 1.0f
         };
@@ -199,7 +207,7 @@ namespace POTCO.Sky
             name = "Stars",
             skyColorTopA = new Color(0.02f, 0.03f, 0.08f, 1f),
             skyColorTopB = new Color(0.01f, 0.02f, 0.06f, 1f),
-            skyColorHorizonA = new Color(0.08f, 0.10f, 0.18f, 1f),
+            skyColorHorizonA = new Color(0.08f, 0.1f, 0.18f, 1f),
             skyColorHorizonB = new Color(0.06f, 0.08f, 0.15f, 1f),
             skyColorBottomA = new Color(0.01f, 0.02f, 0.05f, 1f),
             skyColorBottomB = new Color(0.005f, 0.01f, 0.03f, 1f),
@@ -207,44 +215,47 @@ namespace POTCO.Sky
             cloudTexture = "clouds_light",
             cloudIntensity = 0.3f,
             cloudBlendAB = 0.3f,
-            starsIntensity = 0.35f,
-            starsScale = 1.5f,
+            starsIntensity = 4.35f,
+            starsScale = 4.79f,
             sunIntensity = 0f,
+            sunSize = 0f,
+            sunGlowIntensity = 0f,
+            sunDirection = new Vector3(0f, 0f, 0f),
             moonIntensity = 0.7f,
             moonSize = 0.03f,
             moonGlowIntensity = 0.4f,
             moonDirection = new Vector3(0.1f, 0.8f, -1f),
             brightness = 0.4f,
-            exposure = 0.7f,
+            exposure = 1.27f,
             contrast = 0.95f
         };
 
         public TODSettings overcastSettings = new TODSettings
         {
             name = "Overcast",
-            skyColorTopA = new Color(0.35f, 0.40f, 0.45f, 1f),
-            skyColorTopB = new Color(0.30f, 0.35f, 0.40f, 1f),
-            skyColorHorizonA = new Color(0.50f, 0.55f, 0.60f, 1f),
-            skyColorHorizonB = new Color(0.45f, 0.50f, 0.55f, 1f),
-            skyColorBottomA = new Color(0.40f, 0.45f, 0.50f, 1f),
-            skyColorBottomB = new Color(0.35f, 0.40f, 0.45f, 1f),
+            skyColorTopA = new Color(0.35f, 0.4f, 0.45f, 1f),
+            skyColorTopB = new Color(0.3f, 0.35f, 0.4f, 1f),
+            skyColorHorizonA = new Color(0.5f, 0.55f, 0.6f, 1f),
+            skyColorHorizonB = new Color(0.45f, 0.5f, 0.55f, 1f),
+            skyColorBottomA = new Color(0.4f, 0.45f, 0.5f, 1f),
+            skyColorBottomB = new Color(0.35f, 0.4f, 0.45f, 1f),
             stageBlend = 0.5f,
             cloudTexture = "clouds_heavy",
             cloudIntensity = 1.5f,
             cloudBlendAB = 0.7f,
-            starsIntensity = 0.00f,
+            starsIntensity = 0.0f,
             starsScale = 1.0f,
             sunIntensity = 0.5f,
             sunSize = 0.08f,
             sunGlowIntensity = 0.3f,
-            sunDirection = new Vector3(0.0f, 0.5f, 0.9f),
+            sunDirection = new Vector3(0f, 0.5f, 0.9f),
             moonIntensity = 0.0f,
-            moonSize = 0.000f,
+            moonSize = 0.0f,
             moonGlowIntensity = 0.0f,
-            moonDirection = new Vector3(0.0f, 0.0f, 0.0f),
-            brightness = 0.80f,
+            moonDirection = new Vector3(0f, 0f, 0f),
+            brightness = 0.8f,
             exposure = 1.49f,
-            contrast = 0.90f
+            contrast = 0.9f
         };
 
         // Internal state

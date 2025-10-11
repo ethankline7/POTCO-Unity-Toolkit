@@ -31,6 +31,13 @@ Shader "POTCO/Ocean Water"
         _DepthFade ("Depth Fade Distance", Float) = 5.0
         _ColorTint ("Color Tint Strength", Range(0, 2)) = 1.0
         _Brightness ("Brightness", Range(0, 2)) = 1.0
+
+        [Header(Wave Visibility)]
+        _NormalStrength ("Normal Map Strength", Range(0, 3)) = 1.5
+        _SpecularPower ("Specular Power", Range(1, 128)) = 1
+        _SpecularIntensity ("Specular Intensity", Range(0, 2)) = 0.12
+        _WaveContrast ("Wave Contrast", Range(0, 2)) = 1.52
+        _WaveShadingStrength ("Wave Slope Shading", Range(0, 1)) = 0.3
     }
 
     SubShader
@@ -104,6 +111,11 @@ Shader "POTCO/Ocean Water"
                 float _DepthFade;
                 float _ColorTint;
                 float _Brightness;
+                float _NormalStrength;
+                float _SpecularPower;
+                float _SpecularIntensity;
+                float _WaveContrast;
+                float _WaveShadingStrength;
                 float4x4 _ReflectionMatrix;
             CBUFFER_END
 
@@ -163,9 +175,14 @@ Shader "POTCO/Ocean Water"
                 float2 uv1 = input.positionWS.xz * _UVScale.xy + _UVSpeedA.xy * _TimeSec;
                 float2 uv2 = input.positionWS.xz * _UVScale.xy * 0.7 + _UVSpeedB.xy * _TimeSec;
 
-                // Sample and combine normals (these are in tangent space, so just use for distortion)
+                // Sample and combine normals with adjustable strength
                 half3 normal1 = UnpackNormal(SAMPLE_TEXTURE2D(_NormalMap, sampler_NormalMap, uv1));
                 half3 normal2 = UnpackNormal(SAMPLE_TEXTURE2D(_NormalMap, sampler_NormalMap, uv2));
+
+                // Apply normal strength to make waves more visible
+                normal1.xy *= _NormalStrength;
+                normal2.xy *= _NormalStrength;
+
                 half3 normalTS = normalize(normal1 + normal2);
 
                 // For fresnel, use world-space normal (up vector) since we don't have tangent space setup
@@ -174,10 +191,29 @@ Shader "POTCO/Ocean Water"
                 // Base color with tint control
                 half4 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv1);
                 baseColor.rgb = lerp(baseColor.rgb, baseColor.rgb * _WaterColor.rgb, _ColorTint);
+
+                // Apply wave contrast to separate waves visually
+                baseColor.rgb = pow(baseColor.rgb, _WaveContrast);
                 baseColor.rgb *= _Brightness;
 
                 // View direction
                 float3 viewDirWS = normalize(_WorldSpaceCameraPos - input.positionWS);
+
+                // Get main directional light
+                Light mainLight = GetMainLight();
+                float3 lightDir = mainLight.direction;
+
+                // Calculate world normal from tangent space normal for lighting
+                float3 worldNormal = normalize(float3(normalTS.x, 1.0, normalTS.y)); // Approximate world normal
+
+                // Calculate diffuse lighting (wave slope shading - darker on back-facing slopes)
+                float diffuse = saturate(dot(worldNormal, lightDir));
+                // Add ambient term so it's not completely black, then lerp based on slope shading strength
+                float waveShadingFactor = lerp(1.0, diffuse * 0.5 + 0.5, _WaveShadingStrength);
+
+                // Calculate specular highlights using Blinn-Phong on the normal-mapped surface
+                float3 halfVector = normalize(lightDir + viewDirWS);
+                float specular = pow(saturate(dot(worldNormal, halfVector)), _SpecularPower) * _SpecularIntensity;
 
                 // Fresnel effect using world-space up normal (ensure minimum value for visibility)
                 float fresnel = pow(1.0 - saturate(dot(normal, viewDirWS)), _FresnelPower);
@@ -199,6 +235,12 @@ Shader "POTCO/Ocean Water"
 
                 // Combine base color with reflection using fresnel
                 half3 finalColor = lerp(baseColor.rgb, reflection.rgb, fresnel * _ReflectionStrength);
+
+                // Apply wave slope shading (darker on slopes facing away from light)
+                finalColor *= waveShadingFactor;
+
+                // Add specular highlights to make waves visible
+                finalColor += specular * mainLight.color;
 
                 // Apply fog
                 finalColor = MixFog(finalColor, input.fogFactor);
@@ -227,6 +269,7 @@ Shader "POTCO/Ocean Water"
             #pragma multi_compile_fog
 
             #include "UnityCG.cginc"
+            #include "Lighting.cginc"
 
             struct appdata
             {
@@ -260,6 +303,13 @@ Shader "POTCO/Ocean Water"
             float4 _Wave3, _WaveDir3;
             float _ReflectionStrength;
             float _FresnelPower;
+            float _NormalStrength;
+            float _SpecularPower;
+            float _SpecularIntensity;
+            float _WaveContrast;
+            float _WaveShadingStrength;
+            float _ColorTint;
+            float _Brightness;
             float4x4 _ReflectionMatrix;
 
             float3 GerstnerWave(float3 posLocal, float4 wave, float2 dir)
@@ -308,16 +358,46 @@ Shader "POTCO/Ocean Water"
                 float2 uv1 = i.worldPos.xz * _UVScale.xy + _UVSpeedA.xy * _TimeSec;
                 float2 uv2 = i.worldPos.xz * _UVScale.xy * 0.7 + _UVSpeedB.xy * _TimeSec;
 
+                // Sample and combine normals with adjustable strength
                 fixed3 normal1 = UnpackNormal(tex2D(_NormalMap, uv1));
                 fixed3 normal2 = UnpackNormal(tex2D(_NormalMap, uv2));
+
+                // Apply normal strength to make waves more visible
+                normal1.xy *= _NormalStrength;
+                normal2.xy *= _NormalStrength;
+
                 fixed3 normalTS = normalize(normal1 + normal2);
 
                 // For fresnel, use world-space up normal
                 fixed3 normal = fixed3(0, 1, 0);
 
-                fixed4 baseColor = tex2D(_BaseMap, uv1) * _WaterColor;
+                // Base color with tint control
+                fixed4 baseColor = tex2D(_BaseMap, uv1);
+                baseColor.rgb = lerp(baseColor.rgb, baseColor.rgb * _WaterColor.rgb, _ColorTint);
 
+                // Apply wave contrast to separate waves visually
+                baseColor.rgb = pow(baseColor.rgb, _WaveContrast);
+                baseColor.rgb *= _Brightness;
+
+                // View direction
                 float3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
+
+                // Get main light direction (Unity built-in)
+                float3 lightDir = normalize(_WorldSpaceLightPos0.xyz);
+
+                // Calculate world normal from tangent space normal for lighting
+                float3 worldNormal = normalize(float3(normalTS.x, 1.0, normalTS.y));
+
+                // Calculate diffuse lighting (wave slope shading - darker on back-facing slopes)
+                float diffuse = saturate(dot(worldNormal, lightDir));
+                // Add ambient term so it's not completely black, then lerp based on slope shading strength
+                float waveShadingFactor = lerp(1.0, diffuse * 0.5 + 0.5, _WaveShadingStrength);
+
+                // Calculate specular highlights using Blinn-Phong
+                float3 halfVector = normalize(lightDir + viewDir);
+                float specular = pow(saturate(dot(worldNormal, halfVector)), _SpecularPower) * _SpecularIntensity;
+
+                // Fresnel effect
                 float fresnel = pow(1.0 - saturate(dot(normal, viewDir)), _FresnelPower);
                 fresnel = max(fresnel, 0.9); // Minimum 90% reflection
 
@@ -335,7 +415,14 @@ Shader "POTCO/Ocean Water"
                     reflection = tex2D(_ReflectionTex, reflectionUV);
                 }
 
+                // Combine base color with reflection using fresnel
                 fixed3 finalColor = lerp(baseColor.rgb, reflection.rgb, fresnel * _ReflectionStrength);
+
+                // Apply wave slope shading (darker on slopes facing away from light)
+                finalColor *= waveShadingFactor;
+
+                // Add specular highlights to make waves visible
+                finalColor += specular * _LightColor0.rgb;
 
                 UNITY_APPLY_FOG(i.fogCoord, finalColor);
                 return fixed4(finalColor, baseColor.a);

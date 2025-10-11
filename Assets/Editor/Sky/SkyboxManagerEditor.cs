@@ -113,25 +113,31 @@ public class SkyboxManagerEditor : Editor
             EditorGUILayout.LabelField("Settings Management", EditorStyles.boldLabel);
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Save All Settings to JSON", GUILayout.Height(30)))
+            try
             {
-                string path = EditorUtility.SaveFilePanel("Save Skybox Settings", Application.dataPath, "SkyboxSettings", "json");
-                if (!string.IsNullOrEmpty(path))
+                if (GUILayout.Button("Save All Settings to JSON", GUILayout.Height(30)))
                 {
-                    skyboxManager.SaveSettingsToJson(path);
+                    string path = EditorUtility.SaveFilePanel("Save Skybox Settings", Application.dataPath, "SkyboxSettings", "json");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        skyboxManager.SaveSettingsToJson(path);
+                    }
                 }
-            }
 
-            if (GUILayout.Button("Load Settings from JSON", GUILayout.Height(30)))
-            {
-                string path = EditorUtility.OpenFilePanel("Load Skybox Settings", Application.dataPath, "json");
-                if (!string.IsNullOrEmpty(path))
+                if (GUILayout.Button("Load Settings from JSON", GUILayout.Height(30)))
                 {
-                    skyboxManager.LoadSettingsFromJson(path);
-                    EditorUtility.SetDirty(skyboxManager);
+                    string path = EditorUtility.OpenFilePanel("Load Skybox Settings", Application.dataPath, "json");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        skyboxManager.LoadSettingsFromJson(path);
+                        EditorUtility.SetDirty(skyboxManager);
+                    }
                 }
             }
-            EditorGUILayout.EndHorizontal();
+            finally
+            {
+                EditorGUILayout.EndHorizontal();
+            }
 
             EditorGUILayout.HelpBox("Save/Load complete skybox configuration including all presets, cloud settings, light settings, and overrides.", MessageType.Info);
 
