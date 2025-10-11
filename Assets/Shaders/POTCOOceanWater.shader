@@ -5,22 +5,22 @@ Shader "POTCO/Ocean Water"
         _BaseMap ("Base Texture", 2D) = "white" {}
         _NormalMap ("Normal Map", 2D) = "bump" {}
         _DetailMap ("Detail Map", 2D) = "white" {}
-        _WaterColor ("Water Color", Color) = (0.3, 0.5, 0.7, 1)
+        _WaterColor ("Water Color", Color) = (0.729, 0.729, 0.729, 1)
         _ReflectionTex ("Reflection Texture", 2D) = "black" {}
 
         [Header(UV Animation)]
-        _UVScale ("UV Scale", Vector) = (0.15, 0.12, 0, 0)
-        _UVSpeedA ("UV Speed A", Vector) = (0.03, 0.015, 0, 0)
+        _UVScale ("UV Scale", Vector) = (0.03, 0.03, 0, 0)
+        _UVSpeedA ("UV Speed A", Vector) = (0.54, 0.015, 0, 0)
         _UVSpeedB ("UV Speed B", Vector) = (-0.02, 0.008, 0, 0)
         _TimeSec ("Time", Float) = 0
 
         [Header(Waves)]
-        _Wave0 ("Wave 0 (Amp, Wavelength, Speed)", Vector) = (0.25, 8, 1.2, 0)
-        _WaveDir0 ("Wave 0 Direction", Vector) = (0.34, 0.94, 0, 0)
-        _Wave1 ("Wave 1 (Amp, Wavelength, Speed)", Vector) = (0.15, 5, 1.8, 0)
-        _WaveDir1 ("Wave 1 Direction", Vector) = (-0.87, 0.5, 0, 0)
-        _Wave2 ("Wave 2 (Amp, Wavelength, Speed)", Vector) = (0.08, 2.5, 2.2, 0)
-        _WaveDir2 ("Wave 2 Direction", Vector) = (0.26, 0.97, 0, 0)
+        _Wave0 ("Wave 0 (Amp, Wavelength, Speed)", Vector) = (6.22, 8, 0.5, 0)
+        _WaveDir0 ("Wave 0 Direction", Vector) = (0.342, 0.940, 0, 0)
+        _Wave1 ("Wave 1 (Amp, Wavelength, Speed)", Vector) = (0, 5, 1.8, 0)
+        _WaveDir1 ("Wave 1 Direction", Vector) = (-0.5, 0.866, 0, 0)
+        _Wave2 ("Wave 2 (Amp, Wavelength, Speed)", Vector) = (3.7, 2.5, 0.5, 0)
+        _WaveDir2 ("Wave 2 Direction", Vector) = (0.966, 0.259, 0, 0)
         _Wave3 ("Wave 3 (Amp, Wavelength, Speed)", Vector) = (0.05, 1.5, 2.5, 0)
         _WaveDir3 ("Wave 3 Direction", Vector) = (0.71, 0.71, 0, 0)
 
@@ -49,7 +49,7 @@ Shader "POTCO/Ocean Water"
             Tags { "LightMode"="UniversalForward" }
 
             Blend SrcAlpha OneMinusSrcAlpha
-            ZWrite Off
+            ZWrite On
             Cull Back
 
             HLSLPROGRAM
@@ -219,7 +219,7 @@ Shader "POTCO/Ocean Water"
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
-            ZWrite Off
+            ZWrite On
 
             CGPROGRAM
             #pragma vertex vert
