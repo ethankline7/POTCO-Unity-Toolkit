@@ -7,7 +7,7 @@ namespace POTCO.Editor
     {
         private Vector2 scrollPosition;
 
-        [MenuItem("POTCO/Debug Controls")]
+        [MenuItem("POTCO/Extras/Debug Controls", false, 10003)]
         public static void ShowWindow()
         {
             GetWindow<DebugControlsWindow>("POTCO Debug Controls");

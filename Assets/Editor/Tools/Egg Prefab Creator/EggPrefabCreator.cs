@@ -6,7 +6,7 @@ using POTCO.Editor;
 
 public class EggPrefabCreator : EditorWindow
 {
-    [MenuItem("POTCO/EGG Prefab Creator")]
+    [MenuItem("POTCO/Extras/EGG Prefab Creator", false, 10001)]
     public static void ShowWindow()
     {
         GetWindow<EggPrefabCreator>("EGG Prefab Creator");

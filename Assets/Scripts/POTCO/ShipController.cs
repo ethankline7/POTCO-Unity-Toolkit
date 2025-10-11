@@ -849,18 +849,8 @@ namespace POTCO
                 currentOrbitPitch = Mathf.Clamp(currentOrbitPitch, -80f, 80f);
             }
 
-            // Calculate camera focus point (player character or ship center)
-            Vector3 focusPoint;
-            if (playerTransform != null)
-            {
-                // Focus on player character (slightly above their position)
-                focusPoint = playerTransform.position + Vector3.up * 3f;
-            }
-            else
-            {
-                // Fallback to ship center if player not found
-                focusPoint = transform.position + Vector3.up * orbitHeight;
-            }
+            // Calculate camera focus point (ship center)
+            Vector3 focusPoint = transform.position + Vector3.up * orbitHeight;
 
             // Calculate camera orbit position
             Quaternion rotation = Quaternion.Euler(currentOrbitPitch, currentOrbitAngle, 0);

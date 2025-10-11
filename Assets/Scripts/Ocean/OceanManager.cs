@@ -14,25 +14,25 @@ namespace POTCO.Ocean
 
         [Header("UV Animation")]
         [Tooltip("UV scale for texture tiling")]
-        public Vector2 uvScale = new Vector2(0.15f, 0.12f);
+        public Vector2 uvScale = new Vector2(0.03f, 0.03f);
 
         [Tooltip("UV scroll speed for first normal layer")]
-        public Vector2 uvSpeedA = new Vector2(0.03f, 0.015f);
+        public Vector2 uvSpeedA = new Vector2(0.54f, 0.015f);
 
         [Tooltip("UV scroll speed for second normal layer")]
         public Vector2 uvSpeedB = new Vector2(-0.02f, 0.008f);
 
         [Header("Water Color")]
-        [Tooltip("Base water color tint (POTCO default: roughly 77/128/179 RGB)")]
-        public Color waterColor = new Color(77f/255f, 128f/255f, 179f/255f, 1f);
+        [Tooltip("Base water color tint (BABABA = 186/186/186 RGB)")]
+        public Color waterColor = new Color(0.729f, 0.729f, 0.729f, 1f);
 
         [Header("Gerstner Waves")]
         [Tooltip("Wave parameters for vertex displacement")]
         public Wave[] waves = new Wave[]
         {
-            new Wave { amplitude = 0.25f, wavelength = 8f, speed = 1.2f, directionDegrees = 20f },
-            new Wave { amplitude = 0.15f, wavelength = 5f, speed = 1.8f, directionDegrees = -30f },
-            new Wave { amplitude = 0.08f, wavelength = 2.5f, speed = 2.2f, directionDegrees = 75f }
+            new Wave { amplitude = 6.22f, wavelength = 8f, speed = 0.5f, directionDegrees = 20f },
+            new Wave { amplitude = 0f, wavelength = 5f, speed = 1.8f, directionDegrees = -30f },
+            new Wave { amplitude = 3.7f, wavelength = 2.5f, speed = 0.5f, directionDegrees = 75f }
         };
 
         private Material[] allOceanMaterials;

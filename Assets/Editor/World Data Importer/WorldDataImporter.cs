@@ -13,7 +13,7 @@ public class WorldSceneBuilderEditor : EditorWindow
     private bool showAdvancedSettings = false;
     private bool showStatistics = false;
 
-    [MenuItem("POTCO/World Data Importer")]
+    [MenuItem("POTCO/World Data/Importer")]
     public static void ShowWindow()
     {
         GetWindow<WorldSceneBuilderEditor>("World Scene Importer");

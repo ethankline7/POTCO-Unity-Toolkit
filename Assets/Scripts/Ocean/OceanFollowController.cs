@@ -16,7 +16,7 @@ namespace POTCO.Ocean
         public bool autoTrackMainCamera = true;
 
         [Tooltip("Size of ocean patch")]
-        public float patchSize = 100f;
+        public float patchSize = 250f;
 
         [Tooltip("Update ocean position every N frames (0 = every frame)")]
         [Range(0, 5)]
@@ -65,9 +65,9 @@ namespace POTCO.Ocean
             // Create ocean patch instance
             oceanPatch = Instantiate(seaPatchPrefab, transform);
             oceanPatch.name = "SeaPatch_Ocean";
-            oceanPatch.transform.localPosition = Vector3.zero;
+            oceanPatch.transform.localPosition = new Vector3(0f, 0f, -20f);
             // Flip Y scale to invert normals (make visible from top)
-            oceanPatch.transform.localScale = new Vector3(patchSize / 10f, -1f, patchSize / 10f);
+            oceanPatch.transform.localScale = new Vector3(30f, -1f, 30f);
 
             // Set ocean to Water layer (4) to exclude from reflections
             SetLayerRecursively(oceanPatch, LayerMask.NameToLayer("Water"));

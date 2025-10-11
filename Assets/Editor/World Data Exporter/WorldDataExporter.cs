@@ -19,7 +19,7 @@ namespace WorldDataExporter
         // Mesh visibility settings
         private static bool hideMeshObjects = false;
 
-        [MenuItem("POTCO/World Data Exporter")]
+        [MenuItem("POTCO/World Data/Exporter")]
         public static void ShowWindow()
         {
             GetWindow<WorldDataExporter>("World Data Exporter");

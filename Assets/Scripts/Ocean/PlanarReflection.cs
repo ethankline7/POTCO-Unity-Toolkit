@@ -155,6 +155,12 @@ namespace POTCO.Ocean
             // Reset projection matrix to match camera settings
             reflectionCamera.ResetProjectionMatrix();
 
+            // Set oblique projection clipping plane to only render objects above water
+            Vector3 waterPlanePoint = new Vector3(0, waterPlaneY, 0);
+            Vector3 waterPlaneNormal = Vector3.up;
+            Vector4 clipPlane = CameraSpacePlane(reflectionCamera, waterPlaneNormal, waterPlanePoint, clipPlaneOffset);
+            reflectionCamera.projectionMatrix = CalculateObliqueMatrix(reflectionCamera.projectionMatrix, clipPlane);
+
             // Render reflection
             reflectionCamera.targetTexture = reflectionTexture;
             reflectionCamera.Render();
@@ -216,6 +222,26 @@ namespace POTCO.Ocean
             Vector3 cpos = m.MultiplyPoint(offsetPos);
             Vector3 cnormal = m.MultiplyVector(normal).normalized;
             return new Vector4(cnormal.x, cnormal.y, cnormal.z, -Vector3.Dot(cpos, cnormal));
+        }
+
+        Matrix4x4 CalculateObliqueMatrix(Matrix4x4 projection, Vector4 clipPlane)
+        {
+            Vector4 q = projection.inverse * new Vector4(
+                Mathf.Sign(clipPlane.x),
+                Mathf.Sign(clipPlane.y),
+                1.0f,
+                1.0f
+            );
+
+            Vector4 c = clipPlane * (2.0f / Vector4.Dot(clipPlane, q));
+
+            // Replace the third row of the projection matrix
+            projection[2] = c.x - projection[3];
+            projection[6] = c.y - projection[7];
+            projection[10] = c.z - projection[11];
+            projection[14] = c.w - projection[15];
+
+            return projection;
         }
 
         void OnValidate()
