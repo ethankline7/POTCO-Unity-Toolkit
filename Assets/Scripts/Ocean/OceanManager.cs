@@ -22,8 +22,35 @@ namespace POTCO.Ocean
         [Tooltip("UV scroll speed for second normal layer")]
         public Vector2 uvSpeedB = new Vector2(-0.02f, 0.008f);
 
-        [Header("Water Color")]
-        [Tooltip("Base water color tint (BABABA = 186/186/186 RGB)")]
+        [Header("Water Color (Time-Based)")]
+        [Tooltip("Enable automatic water color changes based on time of day from SkyboxManager")]
+        public bool enableTimeBasedColor = true;
+
+        [Tooltip("Reference to SkyboxManager for time-of-day synchronization")]
+        public POTCO.Sky.SkyboxManager skyboxManager;
+
+        [Tooltip("Water color transition speed")]
+        [Range(0.1f, 5f)]
+        public float colorTransitionSpeed = 1.0f;
+
+        [Header("Water Color Presets")]
+        [Tooltip("Water color at dawn (5:00-7:00)")]
+        public Color dawnWaterColor = new Color(0.4f, 0.5f, 0.6f, 1f);
+
+        [Tooltip("Water color during day (7:00-16:00)")]
+        public Color dayWaterColor = new Color(0.3f, 0.5f, 0.7f, 1f);
+
+        [Tooltip("Water color at sunset (16:00-19:00)")]
+        public Color sunsetWaterColor = new Color(0.6f, 0.4f, 0.5f, 1f);
+
+        [Tooltip("Water color at dusk (19:00-21:00)")]
+        public Color duskWaterColor = new Color(0.3f, 0.3f, 0.5f, 1f);
+
+        [Tooltip("Water color at night (21:00-5:00)")]
+        public Color nightWaterColor = new Color(0.15f, 0.2f, 0.3f, 1f);
+
+        [Header("Manual Water Color")]
+        [Tooltip("Manual water color (used when time-based color is disabled)")]
         public Color waterColor = new Color(0.729f, 0.729f, 0.729f, 1f);
 
         [Header("Gerstner Waves")]
@@ -36,10 +63,35 @@ namespace POTCO.Ocean
         };
 
         private Material[] allOceanMaterials;
+        private Color currentWaterColor;
+        private Color targetWaterColor;
 
         void Start()
         {
             CollectAllOceanMaterials();
+
+            // Find SkyboxManager if not assigned
+            if (enableTimeBasedColor && skyboxManager == null)
+            {
+                skyboxManager = FindObjectOfType<POTCO.Sky.SkyboxManager>();
+                if (skyboxManager == null)
+                {
+                    Debug.LogWarning("OceanManager: Time-based color enabled but no SkyboxManager found. Disabling time-based color.");
+                    enableTimeBasedColor = false;
+                }
+            }
+
+            // Initialize current color based on mode
+            if (enableTimeBasedColor && skyboxManager != null)
+            {
+                currentWaterColor = CalculateWaterColorForTime(skyboxManager.timeOfDay);
+                Debug.Log($"OceanManager: Time-based color enabled. Initial time: {skyboxManager.timeOfDay:F1}, Color: {currentWaterColor}");
+            }
+            else
+            {
+                currentWaterColor = waterColor;
+                Debug.Log($"OceanManager: Using manual water color: {waterColor}");
+            }
         }
 
         void CollectAllOceanMaterials()
@@ -73,6 +125,32 @@ namespace POTCO.Ocean
 
         void Update()
         {
+            // Calculate water color based on time of day
+            if (enableTimeBasedColor && skyboxManager != null)
+            {
+                targetWaterColor = CalculateWaterColorForTime(skyboxManager.timeOfDay);
+
+                // Smoothly transition to target color
+                currentWaterColor = Color.Lerp(currentWaterColor, targetWaterColor, Time.deltaTime * colorTransitionSpeed);
+
+                // Debug log every few seconds
+                if (Time.frameCount % 120 == 0)
+                {
+                    Debug.Log($"OceanManager: Time={skyboxManager.timeOfDay:F1}, Target Color={targetWaterColor}, Current Color={currentWaterColor}");
+                }
+            }
+            else
+            {
+                // Use manual water color
+                currentWaterColor = waterColor;
+
+                // Debug log if time-based is disabled
+                if (Time.frameCount % 300 == 0)
+                {
+                    Debug.Log($"OceanManager: Time-based disabled. enableTimeBasedColor={enableTimeBasedColor}, skyboxManager={(skyboxManager != null ? "found" : "null")}");
+                }
+            }
+
             // Update all ocean materials (for grid-based systems)
             if (allOceanMaterials != null && allOceanMaterials.Length > 0)
             {
@@ -96,7 +174,9 @@ namespace POTCO.Ocean
             mat.SetVector("_UVSpeedA", uvSpeedA);
             mat.SetVector("_UVSpeedB", uvSpeedB);
             mat.SetFloat("_TimeSec", Time.time);
-            mat.SetColor("_WaterColor", waterColor);
+
+            // Use time-based color if enabled, otherwise use manual color
+            mat.SetColor("_WaterColor", currentWaterColor);
 
             // Set wave parameters
             for (int i = 0; i < waves.Length && i < 4; i++)
@@ -108,6 +188,51 @@ namespace POTCO.Ocean
                 // Pack wave data: (amplitude, wavelength, speed, unused)
                 mat.SetVector($"_Wave{i}", new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
                 mat.SetVector($"_WaveDir{i}", new Vector4(direction.x, direction.y, 0f, 0f));
+            }
+        }
+
+        /// <summary>
+        /// Calculate water color based on time of day (0-24 hours)
+        /// </summary>
+        Color CalculateWaterColorForTime(float time)
+        {
+            // Dawn (5-7): Night to Day transition
+            if (time >= 5f && time < 7f)
+            {
+                float t = (time - 5f) / 2f;
+                return Color.Lerp(nightWaterColor, dawnWaterColor, t);
+            }
+            // Day (7-16): Full daylight water
+            else if (time >= 7f && time < 16f)
+            {
+                float t = (time - 7f) / 9f; // Progress through day
+                return Color.Lerp(dawnWaterColor, dayWaterColor, Mathf.Clamp01(t * 2f)); // Transition to bright day color
+            }
+            // Sunset (16-19): Day to Sunset transition
+            else if (time >= 16f && time < 19f)
+            {
+                float t = (time - 16f) / 3f;
+                return Color.Lerp(dayWaterColor, sunsetWaterColor, t);
+            }
+            // Dusk (19-21): Sunset to Night transition
+            else if (time >= 19f && time < 21f)
+            {
+                float t = (time - 19f) / 2f;
+                return Color.Lerp(sunsetWaterColor, duskWaterColor, t);
+            }
+            // Night (21-5): Dark water
+            else
+            {
+                // Handle wrap-around midnight
+                if (time >= 21f)
+                {
+                    float t = (time - 21f) / 3f; // 21:00 to 00:00
+                    return Color.Lerp(duskWaterColor, nightWaterColor, Mathf.Clamp01(t));
+                }
+                else // time < 5
+                {
+                    return nightWaterColor;
+                }
             }
         }
 
