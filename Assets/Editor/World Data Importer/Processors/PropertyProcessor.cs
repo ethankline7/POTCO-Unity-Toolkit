@@ -328,7 +328,7 @@ namespace WorldDataImporter.Processors
                 case "VisSize":
                     string visSize = ParsingUtilities.ExtractStringValue(val);
                     if (objectData != null) objectData.visSize = visSize;
-                    
+
                     // Store in ObjectListInfo only if ImportObjectListData is enabled
                     if (settings != null && settings.importObjectListData)
                     {
@@ -336,6 +336,20 @@ namespace WorldDataImporter.Processors
                         if (visSizeTypeInfo != null)
                         {
                             visSizeTypeInfo.visSize = visSize;
+                        }
+                    }
+                    break;
+                case "VisZone":
+                    string visZone = ParsingUtilities.ExtractStringValue(val);
+                    if (objectData != null) objectData.visZone = visZone;
+
+                    // Store in ObjectListInfo only if ImportObjectListData is enabled
+                    if (settings != null && settings.importObjectListData)
+                    {
+                        var visZoneTypeInfo = GetCachedObjectListInfo();
+                        if (visZoneTypeInfo != null)
+                        {
+                            visZoneTypeInfo.visZone = visZone;
                         }
                     }
                     break;

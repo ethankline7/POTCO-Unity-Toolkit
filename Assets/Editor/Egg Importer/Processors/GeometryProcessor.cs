@@ -249,22 +249,40 @@ public class GeometryProcessor
             DebugLogger.LogWarningEggImporter("Mesh bounds are very small, this might cause rendering issues");
         }
 
+        // Check if this is collision geometry (uses Collision-Material)
+        bool isCollisionGeometry = materialNames.Contains("Collision-Material");
+
         if (hasSkeletalData && rootJoint != null && rootBoneObject != null)
         {
             DebugLogger.LogEggImporter("Setting up skinned mesh renderer");
-            SetupSkinnedMeshRenderer(go, mesh, rendererMaterials.ToArray(), ctx, meshVertices, rootJoint, rootBoneObject, joints);
+            var skinnedRenderer = SetupSkinnedMeshRenderer(go, mesh, rendererMaterials.ToArray(), ctx, meshVertices, rootJoint, rootBoneObject, joints);
+
+            // Disable renderer if this is collision geometry
+            if (isCollisionGeometry && skinnedRenderer != null)
+            {
+                skinnedRenderer.enabled = false;
+                DebugLogger.LogEggImporter($"🚫 Disabled SkinnedMeshRenderer for collision geometry on '{go.name}'");
+            }
         }
         else
         {
             DebugLogger.LogEggImporter("Setting up static mesh renderer");
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterials = rendererMaterials.ToArray();
+            var meshRenderer = go.AddComponent<MeshRenderer>();
+            meshRenderer.sharedMaterials = rendererMaterials.ToArray();
+
+            // Disable renderer if this is collision geometry
+            if (isCollisionGeometry)
+            {
+                meshRenderer.enabled = false;
+                DebugLogger.LogEggImporter($"🚫 Disabled MeshRenderer for collision geometry on '{go.name}'");
+            }
         }
         ctx.AddObjectToAsset(mesh.name, mesh);
     }
 
-    private void SetupSkinnedMeshRenderer(GameObject go, Mesh mesh, Material[] materials, 
-        AssetImportContext ctx, Vector3[] masterVertices, EggJoint rootJoint, 
+    private SkinnedMeshRenderer SetupSkinnedMeshRenderer(GameObject go, Mesh mesh, Material[] materials,
+        AssetImportContext ctx, Vector3[] masterVertices, EggJoint rootJoint,
         GameObject rootBoneObject, Dictionary<string, EggJoint> joints)
     {
         var boneWeights = new BoneWeight[masterVertices.Length];
@@ -280,7 +298,7 @@ public class GeometryProcessor
             DebugLogger.LogWarningEggImporter("No bones found, falling back to static mesh");
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             go.AddComponent<MeshRenderer>().sharedMaterials = materials;
-            return;
+            return null;
         }
 
         // Highly optimized bone weight calculation - vertex-centric approach
@@ -380,6 +398,8 @@ public class GeometryProcessor
 
         // Force update bounds
         skinnedRenderer.localBounds = mesh.bounds;
+
+        return skinnedRenderer;
     }
 
     public void CreateBoneHierarchy(Transform parent, EggJoint joint)
@@ -570,50 +590,70 @@ public class GeometryProcessor
     }
 
 
-    private void ParsePolygon(string[] lines, ref int i, Dictionary<string, List<int>> subMeshes, List<string> materialNames)
+    private void ParsePolygon(string[] lines, ref int i, Dictionary<string, List<int>> subMeshes, List<string> materialNames, bool isInCollisionGroup = false)
     {
         string polygonTextureRef = "Default-Material";
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
 
-        // Check for collision tags - skip collision polygons based on settings
-        if (EggImporterSettings.Instance.skipCollisions)
+        // Check for collision tags at polygon level OR if we're in a collision group
+        bool isCollisionPolygon = isInCollisionGroup;
+        if (!isCollisionPolygon)
         {
             for (int j = i + 1; j < blockEnd; j++)
             {
                 string innerLine = lines[j].Trim();
                 if (innerLine.StartsWith("<Collide>"))
                 {
-                    i = blockEnd;
-                    return; // Skip this polygon entirely
+                    isCollisionPolygon = true;
+                    break;
                 }
             }
         }
 
-        // Collect ALL texture references for multi-texture support
-        var textureRefs = new List<string>();
-        for (int j = i + 1; j < blockEnd; j++)
+        // Handle collision polygons based on settings
+        if (isCollisionPolygon)
         {
-            string innerLine = lines[j].Trim();
-            if (innerLine.StartsWith("<TRef>"))
+            if (EggImporterSettings.Instance.skipCollisions)
             {
-                string texRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
-                textureRefs.Add(texRef);
+                i = blockEnd;
+                return; // Skip this polygon entirely
+            }
+            else
+            {
+                // Import with transparent collision material
+                polygonTextureRef = "Collision-Material";
+                DebugLogger.LogEggImporter($"🔧 Assigning Collision-Material to polygon");
             }
         }
 
-        // Create material name from all texture references
-        if (textureRefs.Count > 1)
+        // Collect ALL texture references for multi-texture support (skip if already set to Collision-Material)
+        if (polygonTextureRef != "Collision-Material")
         {
-            // Multiple textures - join with || separator for multi-texture material
-            polygonTextureRef = string.Join("||", textureRefs);
-            DebugLogger.LogEggImporter($"[MultiTex] Polygon uses {textureRefs.Count} textures: {polygonTextureRef}");
+            var textureRefs = new List<string>();
+            for (int j = i + 1; j < blockEnd; j++)
+            {
+                string innerLine = lines[j].Trim();
+                if (innerLine.StartsWith("<TRef>"))
+                {
+                    string texRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
+                    textureRefs.Add(texRef);
+                }
+            }
+
+            // Create material name from all texture references
+            if (textureRefs.Count > 1)
+            {
+                // Multiple textures - join with || separator for multi-texture material
+                polygonTextureRef = string.Join("||", textureRefs);
+                DebugLogger.LogEggImporter($"[MultiTex] Polygon uses {textureRefs.Count} textures: {polygonTextureRef}");
+            }
+            else if (textureRefs.Count == 1)
+            {
+                // Single texture
+                polygonTextureRef = textureRefs[0];
+            }
+            // else keep "Default-Material"
         }
-        else if (textureRefs.Count == 1)
-        {
-            // Single texture
-            polygonTextureRef = textureRefs[0];
-        }
-        // else keep "Default-Material"
 
         if (!subMeshes.ContainsKey(polygonTextureRef)) { subMeshes[polygonTextureRef] = new List<int>(); materialNames.Add(polygonTextureRef); }
         for (int j = i + 1; j < blockEnd; j++)
@@ -685,7 +725,7 @@ public class GeometryProcessor
         i = blockEnd;
     }
 
-    public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap)
+    public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap, bool isInCollisionContext = false)
     {
         // Detect ship LOD variant sets at this level if we're in a ship model
         Dictionary<string, List<string>> shipLODVariantSets = new Dictionary<string, List<string>>();
@@ -708,15 +748,25 @@ public class GeometryProcessor
                 // Cache the group end to avoid multiple expensive FindMatchingBrace calls
                 int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
 
-                // Skip collision groups based on settings - optimized
+                // Check if this is a collision group
+                bool isCollisionGroup = groupName.IndexOf("collision", System.StringComparison.OrdinalIgnoreCase) >= 0 || ContainsCollideTag(lines, i, groupEnd);
+
+                // Handle collision groups based on settings
                 if (EggImporterSettings.Instance.skipCollisions)
                 {
-                    bool isCollisionGroup = groupName.IndexOf("collision", System.StringComparison.OrdinalIgnoreCase) >= 0 || ContainsCollideTag(lines, i, groupEnd);
                     if (isCollisionGroup)
                     {
                         DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Skip Collisions enabled - contains <Collide> tag or collision in name)");
                         i = groupEnd + 1;
                         continue;
+                    }
+                }
+                else
+                {
+                    // If skipCollisions is false, still process collision groups but log that they will use transparent material
+                    if (isCollisionGroup)
+                    {
+                        DebugLogger.LogEggImporter($"✅ Importing collision group with transparent material: '{groupName}'");
                     }
                 }
 
@@ -749,7 +799,9 @@ public class GeometryProcessor
                 newGO.transform.SetParent(hierarchyMap[currentPath], false);
                 hierarchyMap[newPath] = newGO.transform;
 
-                BuildHierarchyAndMapGeometry(lines, i + 1, groupEnd, newPath, hierarchyMap, geometryMap);
+                // Pass collision context down recursively - either from parent context OR if this group is a collision group
+                bool childIsInCollisionContext = isInCollisionContext || isCollisionGroup;
+                BuildHierarchyAndMapGeometry(lines, i + 1, groupEnd, newPath, hierarchyMap, geometryMap, childIsInCollisionContext);
                 i = groupEnd + 1;
             }
             else if (line.StartsWith("<Transform>"))
@@ -786,7 +838,7 @@ public class GeometryProcessor
                 {
                     geometryMap[currentPath] = new GeometryData();
                 }
-                ParsePolygon(lines, ref i, geometryMap[currentPath].subMeshes, geometryMap[currentPath].materialNames);
+                ParsePolygon(lines, ref i, geometryMap[currentPath].subMeshes, geometryMap[currentPath].materialNames, isInCollisionContext);
             }
             else
             {

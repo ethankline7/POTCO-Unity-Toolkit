@@ -210,6 +210,12 @@ namespace WorldDataImporter.Algorithms
             // Post-import: Refresh all VisualColorHandlers to ensure colors are applied
             RefreshAllVisualColors(root);
 
+            // Post-import: Process VisZones if enabled
+            if (settings?.enableVisZones == true && settings?.importObjectListData == true)
+            {
+                VisZoneProcessor.ProcessVisZones(root, objectDataMap, path);
+            }
+
             return stats;
         }
 
@@ -421,6 +427,12 @@ namespace WorldDataImporter.Algorithms
 
             // Post-import: Refresh all VisualColorHandlers to ensure colors are applied
             RefreshAllVisualColors(root);
+
+            // Post-import: Process VisZones if enabled
+            if (settings?.enableVisZones == true && settings?.importObjectListData == true)
+            {
+                VisZoneProcessor.ProcessVisZones(root, objectDataMap, path);
+            }
 
             onComplete?.Invoke(stats);
         }
