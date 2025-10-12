@@ -319,13 +319,43 @@ namespace WorldDataImporter.Processors
                 }
                 else
                 {
-                    CreateTallBoxCollider(collisionTransform, kvp.Key);
+                    CreateColliderForZone(collisionTransform, kvp.Key);
                 }
             }
         }
 
         /// <summary>
-        /// Create a tall box collider for zone detection
+        /// Create collider for zone detection - uses mesh geometry if available, otherwise creates box
+        /// </summary>
+        private static void CreateColliderForZone(Transform collisionTransform, string zoneName)
+        {
+            // First, try to find mesh geometry to use for a MeshCollider
+            MeshFilter meshFilter = collisionTransform.GetComponent<MeshFilter>();
+            if (meshFilter == null)
+            {
+                // Check children for mesh filters
+                meshFilter = collisionTransform.GetComponentInChildren<MeshFilter>();
+            }
+
+            if (meshFilter != null && meshFilter.sharedMesh != null)
+            {
+                // Use the actual mesh geometry for collision
+                MeshCollider meshCollider = Undo.AddComponent<MeshCollider>(collisionTransform.gameObject);
+                meshCollider.sharedMesh = meshFilter.sharedMesh;
+                meshCollider.convex = true; // Required for triggers
+                meshCollider.isTrigger = true;
+
+                DebugLogger.LogWorldImporter($"  ✓ Created mesh trigger collider: {zoneName} (mesh: {meshFilter.sharedMesh.name}, vertices: {meshFilter.sharedMesh.vertexCount})");
+            }
+            else
+            {
+                // Fallback: create tall box collider for flying gameplay
+                CreateTallBoxCollider(collisionTransform, zoneName);
+            }
+        }
+
+        /// <summary>
+        /// Create a tall box collider for zone detection (fallback when no mesh is found)
         /// </summary>
         private static void CreateTallBoxCollider(Transform collisionTransform, string zoneName)
         {
@@ -347,7 +377,7 @@ namespace WorldDataImporter.Processors
             boxCollider.center = center;
             boxCollider.size = size;
 
-            DebugLogger.LogWorldImporter($"  ✓ Created tall trigger collider: {zoneName} (size: {size.x:F1} x {size.y:F1} x {size.z:F1})");
+            DebugLogger.LogWorldImporter($"  ✓ Created tall box trigger collider (fallback): {zoneName} (size: {size.x:F1} x {size.y:F1} x {size.z:F1})");
         }
 
         /// <summary>

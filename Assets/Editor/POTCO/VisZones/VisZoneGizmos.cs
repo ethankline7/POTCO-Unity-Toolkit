@@ -90,49 +90,147 @@ namespace POTCO.Editor
         }
 
         /// <summary>
-        /// Draw zone volume wireframe with tinted color
+        /// Draw zone volume wireframe with tinted color - matches actual collider shape
         /// </summary>
         private static void DrawZoneVolume(VisZoneVolume zone, bool isSelected)
         {
-            Bounds bounds = zone.GetBounds();
+            if (zone.zoneCollider == null)
+                return;
+
             Color color = zone.displayColor;
+            color.a = isSelected ? 0.5f : 0.3f;
+            Handles.color = color;
 
-            if (isSelected)
+            // Draw based on actual collider type
+            if (zone.zoneCollider is MeshCollider meshCol)
             {
-                color.a = 0.5f;
-                Handles.color = color;
-
-                // Draw filled cube for selected zone
-                Vector3 center = bounds.center;
-                Vector3 size = bounds.size;
-
-                // Draw filled sides
-                Handles.DrawSolidRectangleWithOutline(
-                    new Vector3[] {
-                        center + new Vector3(-size.x/2, -size.y/2, -size.z/2),
-                        center + new Vector3(size.x/2, -size.y/2, -size.z/2),
-                        center + new Vector3(size.x/2, size.y/2, -size.z/2),
-                        center + new Vector3(-size.x/2, size.y/2, -size.z/2)
-                    },
-                    new Color(color.r, color.g, color.b, 0.1f),
-                    color
-                );
+                DrawMeshColliderWireframe(meshCol, zone.transform, color, isSelected);
+            }
+            else if (zone.zoneCollider is BoxCollider boxCol)
+            {
+                DrawBoxColliderWireframe(boxCol, zone.transform, color, isSelected);
+            }
+            else if (zone.zoneCollider is SphereCollider sphereCol)
+            {
+                DrawSphereColliderWireframe(sphereCol, zone.transform, color, isSelected);
             }
             else
             {
-                color.a = 0.3f;
+                // Fallback: draw bounding box
+                Bounds bounds = zone.GetBounds();
+                DrawWireCube(bounds.center, bounds.size);
             }
+
+            // Draw pivot sphere at collider center for selected zone
+            if (isSelected)
+            {
+                Bounds bounds = zone.GetBounds();
+                Handles.color = Color.white;
+                Handles.SphereHandleCap(0, bounds.center, Quaternion.identity, 2f, EventType.Repaint);
+            }
+        }
+
+        /// <summary>
+        /// Draw mesh collider wireframe - shows actual collision shape
+        /// </summary>
+        private static void DrawMeshColliderWireframe(MeshCollider meshCol, Transform transform, Color color, bool isSelected)
+        {
+            if (meshCol.sharedMesh == null)
+                return;
+
+            Mesh mesh = meshCol.sharedMesh;
+            Matrix4x4 matrix = transform.localToWorldMatrix;
+
+            // Draw mesh wireframe using triangles
+            int[] triangles = mesh.triangles;
+            Vector3[] vertices = mesh.vertices;
 
             Handles.color = color;
 
-            // Draw wireframe cube
-            DrawWireCube(bounds.center, bounds.size);
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                Vector3 v0 = matrix.MultiplyPoint3x4(vertices[triangles[i]]);
+                Vector3 v1 = matrix.MultiplyPoint3x4(vertices[triangles[i + 1]]);
+                Vector3 v2 = matrix.MultiplyPoint3x4(vertices[triangles[i + 2]]);
 
-            // Draw pivot sphere at bounds center
+                // Draw triangle edges
+                Handles.DrawLine(v0, v1);
+                Handles.DrawLine(v1, v2);
+                Handles.DrawLine(v2, v0);
+            }
+
+            // Draw filled semi-transparent overlay for selected zone
             if (isSelected)
             {
-                Handles.color = Color.white;
-                Handles.SphereHandleCap(0, bounds.center, Quaternion.identity, 2f, EventType.Repaint);
+                Color fillColor = new Color(color.r, color.g, color.b, 0.1f);
+                Handles.color = fillColor;
+
+                // Draw filled triangles
+                for (int i = 0; i < triangles.Length; i += 3)
+                {
+                    Vector3 v0 = matrix.MultiplyPoint3x4(vertices[triangles[i]]);
+                    Vector3 v1 = matrix.MultiplyPoint3x4(vertices[triangles[i + 1]]);
+                    Vector3 v2 = matrix.MultiplyPoint3x4(vertices[triangles[i + 2]]);
+
+                    Handles.DrawAAConvexPolygon(v0, v1, v2);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Draw box collider wireframe
+        /// </summary>
+        private static void DrawBoxColliderWireframe(BoxCollider boxCol, Transform transform, Color color, bool isSelected)
+        {
+            Matrix4x4 matrix = transform.localToWorldMatrix;
+            Vector3 center = matrix.MultiplyPoint3x4(boxCol.center);
+            Vector3 size = Vector3.Scale(boxCol.size, transform.lossyScale);
+
+            Handles.color = color;
+            DrawWireCube(center, size);
+
+            // Draw filled sides for selected zone
+            if (isSelected)
+            {
+                Color fillColor = new Color(color.r, color.g, color.b, 0.1f);
+                Vector3 halfSize = size * 0.5f;
+
+                // Front face
+                Handles.DrawSolidRectangleWithOutline(
+                    new Vector3[] {
+                        center + new Vector3(-halfSize.x, -halfSize.y, -halfSize.z),
+                        center + new Vector3(halfSize.x, -halfSize.y, -halfSize.z),
+                        center + new Vector3(halfSize.x, halfSize.y, -halfSize.z),
+                        center + new Vector3(-halfSize.x, halfSize.y, -halfSize.z)
+                    },
+                    fillColor,
+                    color
+                );
+            }
+        }
+
+        /// <summary>
+        /// Draw sphere collider wireframe
+        /// </summary>
+        private static void DrawSphereColliderWireframe(SphereCollider sphereCol, Transform transform, Color color, bool isSelected)
+        {
+            Matrix4x4 matrix = transform.localToWorldMatrix;
+            Vector3 center = matrix.MultiplyPoint3x4(sphereCol.center);
+            float radius = sphereCol.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y, transform.lossyScale.z);
+
+            Handles.color = color;
+
+            // Draw three circles for sphere wireframe
+            Handles.DrawWireDisc(center, Vector3.up, radius);
+            Handles.DrawWireDisc(center, Vector3.right, radius);
+            Handles.DrawWireDisc(center, Vector3.forward, radius);
+
+            // Draw filled sphere for selected zone
+            if (isSelected)
+            {
+                Color fillColor = new Color(color.r, color.g, color.b, 0.1f);
+                Handles.color = fillColor;
+                Handles.SphereHandleCap(0, center, Quaternion.identity, radius * 2f, EventType.Repaint);
             }
         }
 
