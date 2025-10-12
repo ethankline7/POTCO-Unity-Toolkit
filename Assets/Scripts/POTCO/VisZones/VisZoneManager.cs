@@ -92,40 +92,61 @@ namespace POTCO.VisZones
 
         /// <summary>
         /// Build fast lookup dictionary for named static chunks (visTable[Z][2])
-        /// Named statics use GameObject name for lookup (e.g., "rockFormation_30")
+        /// Data-driven approach: only index GameObjects whose names appear in the imported visTable
         /// </summary>
         private void BuildNamedStaticDictionary()
         {
             namedStaticDict.Clear();
 
-            // Find all GameObjects in the scene
+            if (visZoneData == null)
+            {
+                Debug.LogWarning("[VisZoneManager] Cannot build named static dictionary: visZoneData is null");
+                return;
+            }
+
+            // Step 1: Collect all unique named static names from imported world data
+            HashSet<string> namedStaticsInData = new HashSet<string>();
+            foreach (var entry in visZoneData.visTable)
+            {
+                foreach (string staticName in entry.fortVisZones)
+                {
+                    namedStaticsInData.Add(staticName);
+                }
+            }
+
+            if (namedStaticsInData.Count == 0)
+            {
+                Debug.Log("[VisZoneManager] No named statics found in visTable data");
+                return;
+            }
+
+            // Step 2: Find GameObjects in scene whose names match the imported data
             GameObject[] allObjects = FindObjectsByType<GameObject>(FindObjectsSortMode.None);
 
-            // Look for objects with names matching named static patterns
-            // Common patterns: rockFormation_*, naturalBarrier_*, etc.
             foreach (var obj in allObjects)
             {
                 string name = obj.name;
 
-                // Check if this looks like a named static (contains common patterns)
-                if (name.Contains("rockFormation_") ||
-                    name.Contains("naturalBarrier_") ||
-                    name.Contains("terrain_") ||
-                    name.Contains("cliff_") ||
-                    name.Contains("rock_"))
+                // Check if this GameObject's name is in the imported data
+                if (namedStaticsInData.Contains(name))
                 {
-                    // Extract the base name (remove parent prefixes if any)
-                    string baseName = name;
-                    if (name.Contains("/"))
-                    {
-                        baseName = name.Substring(name.LastIndexOf("/") + 1);
-                    }
-
-                    namedStaticDict[baseName] = obj;
+                    namedStaticDict[name] = obj;
                 }
             }
 
-            Debug.Log($"[VisZoneManager] Built named static dictionary with {namedStaticDict.Count} objects");
+            Debug.Log($"[VisZoneManager] Built named static dictionary: {namedStaticDict.Count}/{namedStaticsInData.Count} objects found in scene");
+
+            // Warn if any named statics from data are missing in scene
+            if (namedStaticDict.Count < namedStaticsInData.Count)
+            {
+                foreach (string staticName in namedStaticsInData)
+                {
+                    if (!namedStaticDict.ContainsKey(staticName))
+                    {
+                        Debug.LogWarning($"[VisZoneManager] Named static '{staticName}' in visTable but not found in scene!");
+                    }
+                }
+            }
         }
 
         /// <summary>
