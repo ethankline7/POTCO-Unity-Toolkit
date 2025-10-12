@@ -2,6 +2,75 @@ using UnityEngine;
 using UnityEditor;
 using POTCO.Sky;
 
+public class SkyMenu
+{
+    [MenuItem("POTCO/Create Sky", false, 100)]
+    public static void CreatePOTCOSky()
+    {
+        // Check if POTCO Sky already exists
+        GameObject existingSky = GameObject.Find("POTCO Sky");
+        if (existingSky != null)
+        {
+            bool select = EditorUtility.DisplayDialog("POTCO Sky Already Exists",
+                "A 'POTCO Sky' GameObject already exists in the scene.\n\n" +
+                "Would you like to select it instead of creating a new one?",
+                "Select Existing", "Create New Anyway");
+
+            if (select)
+            {
+                Selection.activeGameObject = existingSky;
+                return;
+            }
+        }
+
+        // Create POTCO Sky GameObject
+        GameObject potcoSky = new GameObject("POTCO Sky");
+        Undo.RegisterCreatedObjectUndo(potcoSky, "Create POTCO Sky");
+
+        // Add SkyboxManager component
+        SkyboxManager skyboxManager = Undo.AddComponent<SkyboxManager>(potcoSky);
+
+        // Try to find and assign directional light
+        Light directionalLight = FindDirectionalLight();
+        if (directionalLight != null)
+        {
+            skyboxManager.directionalLight = directionalLight;
+            skyboxManager.updateDirectionalLight = true;
+        }
+
+        // Add POTCOFogManager component (automatically syncs with skybox)
+        POTCOFogManager fogManager = Undo.AddComponent<POTCOFogManager>(potcoSky);
+
+        // Position at origin
+        potcoSky.transform.position = Vector3.zero;
+
+        // Select the new GameObject
+        Selection.activeGameObject = potcoSky;
+
+        Debug.Log("✅ Created POTCO Sky with SkyboxManager and POTCOFogManager");
+        EditorUtility.DisplayDialog("POTCO Sky Created",
+            "Successfully created 'POTCO Sky' GameObject with:\n\n" +
+            "• SkyboxManager - Time-of-day sky system\n" +
+            "• POTCOFogManager - Automatic fog sync\n\n" +
+            "Click 'Create Skybox Material' in the Inspector to begin.\n" +
+            "Use 'Enable Fog' toggle in POTCOFogManager to control fog.",
+            "OK");
+    }
+
+    private static Light FindDirectionalLight()
+    {
+        Light[] lights = Object.FindObjectsOfType<Light>();
+        foreach (Light light in lights)
+        {
+            if (light.type == LightType.Directional)
+            {
+                return light;
+            }
+        }
+        return null;
+    }
+}
+
 [CustomEditor(typeof(SkyboxManager))]
 public class SkyboxManagerEditor : Editor
 {

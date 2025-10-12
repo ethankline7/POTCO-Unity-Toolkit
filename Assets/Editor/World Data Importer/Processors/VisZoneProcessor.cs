@@ -306,9 +306,10 @@ namespace WorldDataImporter.Processors
                     }
                     else if (existingCollider is MeshCollider meshCol)
                     {
-                        // For mesh colliders, replace with a tall box
-                        Object.DestroyImmediate(meshCol);
-                        CreateTallBoxCollider(collisionTransform, kvp.Key);
+                        // Keep mesh collider shape, just configure it as a trigger
+                        meshCol.isTrigger = true;
+                        meshCol.convex = true; // Required for triggers in Unity
+                        DebugLogger.LogWorldImporter($"  ✓ Configured mesh collider as trigger: {kvp.Key} (convex: {meshCol.convex})");
                     }
                     else
                     {

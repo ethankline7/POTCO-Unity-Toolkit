@@ -17,7 +17,7 @@ namespace POTCO.Ocean
         public Vector2 uvScale = new Vector2(0.03f, 0.03f);
 
         [Tooltip("UV scroll speed for first normal layer")]
-        public Vector2 uvSpeedA = new Vector2(0.54f, 0.015f);
+        public Vector2 uvSpeedA = new Vector2(0.2f, 0.2f);
 
         [Tooltip("UV scroll speed for second normal layer")]
         public Vector2 uvSpeedB = new Vector2(-0.02f, 0.008f);
@@ -57,9 +57,9 @@ namespace POTCO.Ocean
         [Tooltip("Wave parameters for vertex displacement")]
         public Wave[] waves = new Wave[]
         {
-            new Wave { amplitude = 6.22f, wavelength = 8f, speed = 0.5f, directionDegrees = 20f },
-            new Wave { amplitude = 0f, wavelength = 5f, speed = 1.8f, directionDegrees = -30f },
-            new Wave { amplitude = 3.7f, wavelength = 2.5f, speed = 0.5f, directionDegrees = 75f }
+            new Wave { amplitude = 0.1f, wavelength = 8f, speed = 0.5f, directionDegrees = 20f },
+            new Wave { amplitude = 0.1f, wavelength = 5f, speed = 1.8f, directionDegrees = -30f },
+            new Wave { amplitude = 0.1f, wavelength = 2.5f, speed = 0.5f, directionDegrees = 75f }
         };
 
         private Material[] allOceanMaterials;

@@ -241,9 +241,11 @@ namespace WorldDataImporter.Processors
                             }
 
                             // Apply visual color if it was set (now that the model is instantiated)
-                            if (objectData.visualColor.HasValue && settings?.importObjectListData == true)
+                            // IMPORTANT: Never apply color to root GameObject (it should only have Model, not Color)
+                            if (objectData.visualColor.HasValue && settings?.importObjectListData == true && currentGO != root)
                             {
-                                var typeInfo = GetCachedObjectListInfo();
+                                // IMPORTANT: Get ObjectListInfo directly from currentGO (not cache) to ensure correct GameObject
+                                var typeInfo = currentGO.GetComponent<ObjectListInfo>();
                                 if (typeInfo != null)
                                 {
                                     // Ensure the color is set on ObjectListInfo
@@ -264,10 +266,14 @@ namespace WorldDataImporter.Processors
                                     UnityEditor.EditorUtility.SetDirty(typeInfo);
                                     UnityEditor.EditorUtility.SetDirty(colorHandler);
 
-                                    DebugLogger.LogWorldImporter($"🎨 Applied Visual color to model {modelPath}: {objectData.visualColor.Value}");
+                                    DebugLogger.LogWorldImporter($"🎨 Applied Visual color to model {modelPath} on GameObject {currentGO.name}: {objectData.visualColor.Value}");
 
                                     if (stats != null) stats.visualColorsApplied++;
                                 }
+                            }
+                            else if (objectData.visualColor.HasValue && currentGO == root)
+                            {
+                                DebugLogger.LogWorldImporter($"⚠️ BLOCKED: Attempted to apply Visual color to root GameObject {currentGO.name} - Root should never have visual colors!");
                             }
                         }
                     }
@@ -359,8 +365,15 @@ namespace WorldDataImporter.Processors
                 case "Color":
                     // Parse Visual color from POTCO format and store it
                     // It will be applied after the Model is instantiated
+                    // IMPORTANT: Root GameObject should NEVER have a visual color
                     if (ParsingUtilities.ParseColor(val, out Color visualColor))
                     {
+                        if (currentGO == root)
+                        {
+                            DebugLogger.LogWorldImporter($"⚠️ WARNING: Color property found on ROOT GameObject {currentGO.name} - This should never happen! Skipping color assignment.");
+                            break;
+                        }
+
                         if (objectData != null)
                         {
                             objectData.visualColor = visualColor;
@@ -368,12 +381,14 @@ namespace WorldDataImporter.Processors
                         }
 
                         // Also store in ObjectListInfo if it exists
-                        if (settings != null && settings.importObjectListData)
+                        // IMPORTANT: Get ObjectListInfo directly from currentGO (not cache) to ensure correct GameObject
+                        if (settings != null && settings.importObjectListData && currentGO != null)
                         {
-                            var typeInfo = GetCachedObjectListInfo();
+                            var typeInfo = currentGO.GetComponent<ObjectListInfo>();
                             if (typeInfo != null)
                             {
                                 typeInfo.visualColor = visualColor;
+                                DebugLogger.LogWorldImporter($"🎨 Set visualColor on ObjectListInfo for GameObject: {currentGO.name}");
                             }
                         }
                     }

@@ -29,6 +29,17 @@ namespace POTCO.VisZones
         public List<VisZoneEntry> visTable = new List<VisZoneEntry>();
 
         /// <summary>
+        /// Complete visibility information for a zone
+        /// Matches POTCO Vis Table structure: (zones, objectUIDs, namedStatics)
+        /// </summary>
+        public struct VisibilitySet
+        {
+            public List<string> zones;          // All zones to show (Z + visTable[Z][0] + visHelper[Z])
+            public List<string> objectUIDs;     // Object UIDs to show (visTable[Z][1])
+            public List<string> namedStatics;   // Named statics to show (visTable[Z][2])
+        }
+
+        /// <summary>
         /// Get visible zones for a specific zone name
         /// Returns Z + visTable[Z][0] (forward neighbors) + visHelper[Z] (reverse neighbors)
         /// Implements bidirectional visibility: show zones that can see you AND zones you can see
@@ -68,6 +79,42 @@ namespace POTCO.VisZones
 
             Debug.LogWarning($"[VisZoneData] Zone '{zoneName}' not found in Vis Table! Using zone only.");
             return new List<string> { zoneName }; // Return at least the zone itself
+        }
+
+        /// <summary>
+        /// Get complete visibility set for a zone: zones + object UIDs + named statics
+        /// Implements full POTCO Vis Table pattern: visTable[Z] = (zones, objectUIDs, namedStatics)
+        /// </summary>
+        public VisibilitySet GetCompleteVisibilitySet(string zoneName)
+        {
+            VisibilitySet result = new VisibilitySet
+            {
+                zones = new List<string>(),
+                objectUIDs = new List<string>(),
+                namedStatics = new List<string>()
+            };
+
+            VisZoneEntry entry = visTable.Find(e => e.zoneName == zoneName);
+            if (entry != null)
+            {
+                // Get all visible zones (same as GetVisibleZones)
+                result.zones = GetVisibleZones(zoneName);
+
+                // Get object UIDs for this zone (visTable[Z][1])
+                result.objectUIDs = new List<string>(entry.objectUids);
+
+                // Get named statics for this zone (visTable[Z][2])
+                result.namedStatics = new List<string>(entry.fortVisZones);
+
+                Debug.Log($"[VisZoneData] Complete visibility for '{zoneName}': {result.zones.Count} zones, {result.objectUIDs.Count} UIDs, {result.namedStatics.Count} statics");
+            }
+            else
+            {
+                Debug.LogWarning($"[VisZoneData] Zone '{zoneName}' not found in Vis Table!");
+                result.zones.Add(zoneName); // At least include the zone itself
+            }
+
+            return result;
         }
 
         /// <summary>

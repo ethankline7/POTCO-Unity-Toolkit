@@ -109,6 +109,23 @@ namespace POTCO.VisZones
             {
                 string zoneName = ExtractZoneName(other.gameObject.name);
                 overlappingZones.Remove(zoneName);
+
+                // If we just exited our current zone, check if we should switch to another
+                if (zoneName == currentZone)
+                {
+                    // If we're still overlapping other zones, switch to one of them
+                    if (overlappingZones.Count > 0)
+                    {
+                        // Pick the first overlapping zone
+                        foreach (string newZone in overlappingZones)
+                        {
+                            EnterZone(newZone);
+                            break; // Only need the first one
+                        }
+                    }
+                    // If we exited all zones, keep current visibility (props stay until entering new zone)
+                    // This is intentional - POTCO zones are large and usually overlap at boundaries
+                }
             }
         }
 
