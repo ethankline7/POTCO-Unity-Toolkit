@@ -54,6 +54,10 @@ namespace POTCO.VisZones
             {
                 section.Hide();
             }
+
+            // NOTE: Large objects (tracked by UID) start VISIBLE by default
+            // They will be hidden when entering zones that don't reference them
+            // This matches POTCO behavior where Large objects are always visible unless explicitly hidden
         }
 
         // Removed Start() - VisZoneSensor now detects the initial zone when player spawns
@@ -255,6 +259,7 @@ namespace POTCO.VisZones
 
             // ============================================================
             // PART 2: Show/Hide Object UIDs (visTable[Z][1])
+            // Large objects stay at root level and are controlled by UID
             // ============================================================
 
             // Force-show objects by UID (even if their parent section is hidden)
@@ -267,6 +272,34 @@ namespace POTCO.VisZones
                         ShowObject(obj);
                         uidsShown++;
                     }
+                }
+            }
+
+            // Hide objects whose UIDs are NOT in the current zone's visibility set
+            // These are Large objects that shouldn't be visible from this zone
+            foreach (var kvp in objectUidDict)
+            {
+                string uid = kvp.Key;
+                GameObject obj = kvp.Value;
+
+                // Skip if this UID should be visible
+                if (visSet.objectUIDs.Contains(uid))
+                    continue;
+
+                // Check if this is actually a Large object
+                POTCO.ObjectListInfo objInfo = obj.GetComponent<POTCO.ObjectListInfo>();
+                if (objInfo == null || objInfo.visSize != "Large")
+                    continue; // Not a Large object, skip
+
+                // Check if this object is inside a zone section (should not be for Large objects)
+                bool inZoneSection = IsObjectInZoneSection(obj);
+
+                // Only hide Large objects (those NOT in zone sections)
+                // Normal objects inside sections are controlled by section visibility
+                if (!inZoneSection && IsObjectVisible(obj))
+                {
+                    HideObject(obj);
+                    uidsHidden++;
                 }
             }
 
@@ -464,8 +497,10 @@ namespace POTCO.VisZones
 
             // ============================================================
             // PART 2: Show/Hide Object UIDs (combined from all zones)
+            // Large objects: show if ANY zone wants them visible
             // ============================================================
 
+            // Show objects whose UIDs are in ANY active zone
             foreach (string uid in combinedUIDs)
             {
                 if (objectUidDict.TryGetValue(uid, out GameObject obj))
@@ -475,6 +510,32 @@ namespace POTCO.VisZones
                         ShowObject(obj);
                         uidsShown++;
                     }
+                }
+            }
+
+            // Hide objects whose UIDs are NOT in ANY active zone
+            foreach (var kvp in objectUidDict)
+            {
+                string uid = kvp.Key;
+                GameObject obj = kvp.Value;
+
+                // Skip if ANY zone wants this UID visible
+                if (combinedUIDs.Contains(uid))
+                    continue;
+
+                // Check if this is actually a Large object
+                POTCO.ObjectListInfo objInfo = obj.GetComponent<POTCO.ObjectListInfo>();
+                if (objInfo == null || objInfo.visSize != "Large")
+                    continue; // Not a Large object, skip
+
+                // Check if this object is inside a zone section
+                bool inZoneSection = IsObjectInZoneSection(obj);
+
+                // Only hide Large objects (those NOT in zone sections)
+                if (!inZoneSection && IsObjectVisible(obj))
+                {
+                    HideObject(obj);
+                    uidsHidden++;
                 }
             }
 

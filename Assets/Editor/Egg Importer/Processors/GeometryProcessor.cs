@@ -257,11 +257,10 @@ public class GeometryProcessor
             DebugLogger.LogEggImporter("Setting up skinned mesh renderer");
             var skinnedRenderer = SetupSkinnedMeshRenderer(go, mesh, rendererMaterials.ToArray(), ctx, meshVertices, rootJoint, rootBoneObject, joints);
 
-            // Disable renderer if this is collision geometry
+            // Collision geometry uses invisible material instead of disabling renderer
             if (isCollisionGeometry && skinnedRenderer != null)
             {
-                skinnedRenderer.enabled = false;
-                DebugLogger.LogEggImporter($"🚫 Disabled SkinnedMeshRenderer for collision geometry on '{go.name}'");
+                DebugLogger.LogEggImporter($"👻 Collision geometry on '{go.name}' using invisible Collision-Material");
             }
         }
         else
@@ -271,11 +270,10 @@ public class GeometryProcessor
             var meshRenderer = go.AddComponent<MeshRenderer>();
             meshRenderer.sharedMaterials = rendererMaterials.ToArray();
 
-            // Disable renderer if this is collision geometry
+            // Collision geometry uses invisible material instead of disabling renderer
             if (isCollisionGeometry)
             {
-                meshRenderer.enabled = false;
-                DebugLogger.LogEggImporter($"🚫 Disabled MeshRenderer for collision geometry on '{go.name}'");
+                DebugLogger.LogEggImporter($"👻 Collision geometry on '{go.name}' using invisible Collision-Material");
             }
         }
         ctx.AddObjectToAsset(mesh.name, mesh);
