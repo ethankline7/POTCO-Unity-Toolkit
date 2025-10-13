@@ -1251,6 +1251,15 @@ namespace POTCO.Editor
 
         private void EnterPreviewMode(string zoneName)
         {
+            if (manager == null)
+            {
+                EditorUtility.DisplayDialog("Preview Failed",
+                    "No VisZoneManager found!\n\nMake sure you've imported a world with VisZones enabled.",
+                    "OK");
+                Debug.LogWarning("[VisZone] Cannot enter preview mode: No VisZoneManager found");
+                return;
+            }
+
             if (visZoneData == null)
             {
                 EditorUtility.DisplayDialog("Preview Failed",
@@ -1270,131 +1279,31 @@ namespace POTCO.Editor
                 return;
             }
 
-            previewMode = true;
-            previewZoneName = zoneName;
-
-            // Get complete visibility set (zones, objectUIDs, namedStatics)
-            VisZoneData.VisibilitySet visSet = visZoneData.GetCompleteVisibilitySet(zoneName);
-            Debug.Log($"[VisZone] Visible zones for '{zoneName}': [{string.Join(", ", visSet.zones)}]");
-            Debug.Log($"[VisZone] Named statics for '{zoneName}': [{string.Join(", ", visSet.namedStatics)}]");
-
-            // Find all sections
+            // Check if sections exist
             VisZoneSection[] allSections = FindObjectsByType<VisZoneSection>(FindObjectsSortMode.None);
-            Debug.Log($"[VisZone] Found {allSections.Length} total VisZoneSection components in scene");
-
             if (allSections.Length == 0)
             {
                 EditorUtility.DisplayDialog("Preview Failed",
                     "No VisZone Sections found in scene!\n\nClick 'Create Sections' in the toolbar to create Section-* GameObjects.",
                     "OK");
                 Debug.LogWarning("[VisZone] Cannot preview: No sections found. Click 'Create Sections' to generate them.");
-                previewMode = false;
-                previewZoneName = "";
                 return;
             }
+
+            previewMode = true;
+            previewZoneName = zoneName;
 
             // Clear previous state tracking
             previewOriginalStates.Clear();
             previewOriginalStaticStates.Clear();
 
-            // ============================================================
-            // PART 1: Show/Hide Zone Sections
-            // ============================================================
-            int shown = 0;
-            int hidden = 0;
-            int nullSections = 0;
-            List<string> sectionNames = new List<string>();
+            // Ensure dictionaries are built (needed in edit mode)
+            manager.EnsureDictionariesBuilt();
 
-            foreach (var section in allSections)
-            {
-                if (section == null)
-                {
-                    nullSections++;
-                    continue;
-                }
+            // Use shared visibility update method with state saving
+            manager.UpdateVisibilityForZone(zoneName, previewOriginalStates, previewOriginalStaticStates);
 
-                // Save original visibility state BEFORE changing it
-                previewOriginalStates[section] = section.gameObject.activeSelf;
-
-                sectionNames.Add(section.zoneName);
-
-                if (visSet.zones.Contains(section.zoneName))
-                {
-                    section.Show();
-                    shown++;
-                    Debug.Log($"[VisZone]   → Showing section '{section.zoneName}'");
-                }
-                else
-                {
-                    section.Hide();
-                    hidden++;
-                }
-            }
-
-            if (nullSections > 0)
-            {
-                Debug.LogWarning($"[VisZone] {nullSections} sections were null!");
-            }
-
-            if (shown == 0 && hidden == 0)
-            {
-                Debug.LogError($"[VisZone] DIAGNOSTIC: No sections were shown or hidden!");
-                Debug.LogError($"[VisZone]   - Section zone names: [{string.Join(", ", sectionNames)}]");
-                Debug.LogError($"[VisZone]   - Visible zone names: [{string.Join(", ", visSet.zones)}]");
-                Debug.LogError($"[VisZone]   - Sections found: {allSections.Length}, Null sections: {nullSections}");
-            }
-
-            // ============================================================
-            // PART 2: Show/Hide Named Statics
-            // ============================================================
-            int staticsShown = 0;
-            int staticsHidden = 0;
-
-            // Build dictionary of all named statics from imported data
-            HashSet<string> allStaticNames = new HashSet<string>();
-            foreach (var entry in visZoneData.visTable)
-            {
-                foreach (string staticName in entry.fortVisZones)
-                {
-                    allStaticNames.Add(staticName);
-                }
-            }
-
-            // Find GameObjects matching those names
-            if (allStaticNames.Count > 0)
-            {
-                GameObject[] allObjects = FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-
-                foreach (var obj in allObjects)
-                {
-                    if (obj == null || !allStaticNames.Contains(obj.name))
-                        continue;
-
-                    // Save original state
-                    previewOriginalStaticStates[obj] = obj.activeSelf;
-
-                    // Show/hide based on visibility set
-                    if (visSet.namedStatics.Contains(obj.name))
-                    {
-                        if (!obj.activeSelf)
-                        {
-                            obj.SetActive(true);
-                            staticsShown++;
-                            Debug.Log($"[VisZone]   → Showing named static '{obj.name}'");
-                        }
-                    }
-                    else
-                    {
-                        if (obj.activeSelf)
-                        {
-                            obj.SetActive(false);
-                            staticsHidden++;
-                        }
-                    }
-                }
-            }
-
-            Debug.Log($"[VisZone] Preview mode: '{zoneName}' → Showing {shown} zones, hiding {hidden} zones, showing {staticsShown} statics, hiding {staticsHidden} statics");
+            Debug.Log($"[VisZone] Entered preview mode for zone '{zoneName}'");
             SceneView.RepaintAll();
             Repaint();
         }
@@ -1408,68 +1317,17 @@ namespace POTCO.Editor
             previewMode = false;
             previewZoneName = "";
 
-            // Restore original visibility states for sections
-            int sectionsRestored = 0;
-            int sectionsNotFound = 0;
-
-            foreach (var kvp in previewOriginalStates)
+            // Use shared restore method
+            if (manager != null)
             {
-                VisZoneSection section = kvp.Key;
-                bool originalState = kvp.Value;
-
-                if (section != null)
-                {
-                    // Restore to original state
-                    if (originalState)
-                    {
-                        section.Show();
-                    }
-                    else
-                    {
-                        section.Hide();
-                    }
-                    sectionsRestored++;
-                }
-                else
-                {
-                    sectionsNotFound++;
-                }
-            }
-
-            // Restore original visibility states for named statics
-            int staticsRestored = 0;
-            int staticsNotFound = 0;
-
-            foreach (var kvp in previewOriginalStaticStates)
-            {
-                GameObject obj = kvp.Key;
-                bool originalState = kvp.Value;
-
-                if (obj != null)
-                {
-                    obj.SetActive(originalState);
-                    staticsRestored++;
-                }
-                else
-                {
-                    staticsNotFound++;
-                }
+                manager.RestoreVisibilityStates(previewOriginalStates, previewOriginalStaticStates);
             }
 
             // Clear the state tracking
             previewOriginalStates.Clear();
             previewOriginalStaticStates.Clear();
 
-            Debug.Log($"[VisZone] Exited preview mode (was previewing '{previousZone}') → Restored {sectionsRestored} sections and {staticsRestored} named statics to original state");
-            if (sectionsNotFound > 0)
-            {
-                Debug.LogWarning($"[VisZone] {sectionsNotFound} sections were destroyed during preview");
-            }
-            if (staticsNotFound > 0)
-            {
-                Debug.LogWarning($"[VisZone] {staticsNotFound} named statics were destroyed during preview");
-            }
-
+            Debug.Log($"[VisZone] Exited preview mode (was previewing '{previousZone}')");
             SceneView.RepaintAll();
             Repaint();
         }

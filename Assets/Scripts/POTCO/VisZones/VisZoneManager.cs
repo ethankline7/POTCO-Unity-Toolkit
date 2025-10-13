@@ -162,22 +162,25 @@ namespace POTCO.VisZones
         }
 
         /// <summary>
-        /// Update visibility based on current zone
+        /// Update visibility for a specific zone (public for editor use)
         /// Implements full POTCO Vis Table algorithm:
         /// - Show/hide zone sections (visTable[Z][0])
         /// - Show/hide object UIDs (visTable[Z][1])
         /// - Show/hide named statics (visTable[Z][2])
         /// </summary>
-        private void UpdateVisibility()
+        /// <param name="zoneName">Zone to update visibility for</param>
+        /// <param name="originalStates">Optional: Dictionary to store original states (for editor preview restoration)</param>
+        /// <param name="originalStaticStates">Optional: Dictionary to store original named static states (for editor preview restoration)</param>
+        public void UpdateVisibilityForZone(string zoneName, Dictionary<VisZoneSection, bool> originalStates = null, Dictionary<GameObject, bool> originalStaticStates = null)
         {
-            if (visZoneData == null || string.IsNullOrEmpty(currentZone))
+            if (visZoneData == null || string.IsNullOrEmpty(zoneName))
             {
-                Debug.LogWarning($"[VisZoneManager] Cannot update visibility: visZoneData={visZoneData != null}, currentZone={currentZone}");
+                Debug.LogWarning($"[VisZoneManager] Cannot update visibility: visZoneData={visZoneData != null}, zoneName={zoneName}");
                 return;
             }
 
-            // Get complete visibility set for current zone
-            VisZoneData.VisibilitySet visSet = visZoneData.GetCompleteVisibilitySet(currentZone);
+            // Get complete visibility set for zone
+            VisZoneData.VisibilitySet visSet = visZoneData.GetCompleteVisibilitySet(zoneName);
 
             int zonesShown = 0, zonesHidden = 0;
             int uidsShown = 0, uidsHidden = 0;
@@ -192,6 +195,12 @@ namespace POTCO.VisZones
             {
                 if (zoneSectionDict.TryGetValue(zone, out VisZoneSection section))
                 {
+                    // Save original state if dictionary provided
+                    if (originalStates != null && !originalStates.ContainsKey(section))
+                    {
+                        originalStates[section] = section.gameObject.activeSelf;
+                    }
+
                     if (!section.IsVisible)
                     {
                         section.Show();
@@ -207,6 +216,12 @@ namespace POTCO.VisZones
             // Hide zones that should NOT be visible
             foreach (var kvp in zoneSectionDict)
             {
+                // Save original state if dictionary provided
+                if (originalStates != null && !originalStates.ContainsKey(kvp.Value))
+                {
+                    originalStates[kvp.Value] = kvp.Value.gameObject.activeSelf;
+                }
+
                 if (!visSet.zones.Contains(kvp.Key))
                 {
                     if (kvp.Value.IsVisible)
@@ -220,10 +235,6 @@ namespace POTCO.VisZones
             // ============================================================
             // PART 2: Show/Hide Object UIDs (visTable[Z][1])
             // ============================================================
-            // The UID list contains cross-zone objects that should be visible
-            // even when their parent zone section is hidden. These are objects
-            // that appear "across zone boundaries" (e.g., a pier that spans zones).
-            // We ONLY force-show these objects; hiding is handled by section visibility.
 
             // Force-show objects by UID (even if their parent section is hidden)
             foreach (string uid in visSet.objectUIDs)
@@ -238,21 +249,21 @@ namespace POTCO.VisZones
                 }
             }
 
-            // NOTE: We don't hide objects by UID. Object visibility is primarily
-            // controlled by zone sections. The UID list only ADDS visibility,
-            // it doesn't REMOVE it. This matches POTCO behavior.
-
             // ============================================================
             // PART 3: Show/Hide Named Statics (visTable[Z][2])
             // ============================================================
-            // Named statics are environmental pieces (rocks, barriers) that can be
-            // shared across zones. Like UIDs, they might be inside zone sections.
 
             // Show named statics that should be visible from this zone
             foreach (string staticName in visSet.namedStatics)
             {
                 if (namedStaticDict.TryGetValue(staticName, out GameObject obj))
                 {
+                    // Save original state if dictionary provided
+                    if (originalStaticStates != null && !originalStaticStates.ContainsKey(obj))
+                    {
+                        originalStaticStates[obj] = obj.activeSelf;
+                    }
+
                     if (!obj.activeSelf)
                     {
                         obj.SetActive(true);
@@ -262,9 +273,14 @@ namespace POTCO.VisZones
             }
 
             // Hide named statics that should NOT be visible
-            // Only hide if not inside a zone section (section visibility takes precedence)
             foreach (var kvp in namedStaticDict)
             {
+                // Save original state if dictionary provided
+                if (originalStaticStates != null && !originalStaticStates.ContainsKey(kvp.Value))
+                {
+                    originalStaticStates[kvp.Value] = kvp.Value.activeSelf;
+                }
+
                 if (!visSet.namedStatics.Contains(kvp.Key))
                 {
                     // Check if this static is inside a zone section
@@ -279,16 +295,68 @@ namespace POTCO.VisZones
                 }
             }
 
-            currentlyVisibleZones = visSet.zones;
+            // Update current state (for runtime use)
+            if (zoneName == currentZone)
+            {
+                currentlyVisibleZones = visSet.zones;
+            }
 
             // Log when something actually changed
             if (zonesShown > 0 || zonesHidden > 0 || uidsShown > 0 || uidsHidden > 0 || staticsShown > 0 || staticsHidden > 0)
             {
-                Debug.Log($"[VisZoneManager] Zone '{currentZone}' visibility update:\n" +
+                Debug.Log($"[VisZoneManager] Zone '{zoneName}' visibility update:\n" +
                          $"  Zones: +{zonesShown} -{zonesHidden} ({visSet.zones.Count} total)\n" +
                          $"  UIDs:  +{uidsShown} -{uidsHidden} ({visSet.objectUIDs.Count} total)\n" +
                          $"  Statics: +{staticsShown} -{staticsHidden} ({visSet.namedStatics.Count} total)");
             }
+        }
+
+        /// <summary>
+        /// Restore zone visibility to original states (for editor preview exit)
+        /// </summary>
+        /// <param name="originalStates">Original section states to restore</param>
+        /// <param name="originalStaticStates">Original named static states to restore</param>
+        public void RestoreVisibilityStates(Dictionary<VisZoneSection, bool> originalStates, Dictionary<GameObject, bool> originalStaticStates)
+        {
+            int sectionsRestored = 0;
+            int staticsRestored = 0;
+
+            // Restore sections
+            foreach (var kvp in originalStates)
+            {
+                if (kvp.Key != null)
+                {
+                    if (kvp.Value)
+                    {
+                        kvp.Key.Show();
+                    }
+                    else
+                    {
+                        kvp.Key.Hide();
+                    }
+                    sectionsRestored++;
+                }
+            }
+
+            // Restore named statics
+            foreach (var kvp in originalStaticStates)
+            {
+                if (kvp.Key != null)
+                {
+                    kvp.Key.SetActive(kvp.Value);
+                    staticsRestored++;
+                }
+            }
+
+            Debug.Log($"[VisZoneManager] Restored {sectionsRestored} sections and {staticsRestored} named statics to original state");
+        }
+
+        /// <summary>
+        /// Update visibility based on current zone (private wrapper for runtime use)
+        /// </summary>
+        private void UpdateVisibility()
+        {
+            UpdateVisibilityForZone(currentZone);
         }
 
         /// <summary>
@@ -355,6 +423,25 @@ namespace POTCO.VisZones
             zoneSections.AddRange(GetComponentsInChildren<VisZoneSection>(true));
             BuildSectionDictionary();
             Debug.Log($"[VisZoneManager] Refreshed {zoneSections.Count} zone sections");
+        }
+
+        /// <summary>
+        /// Ensure all dictionaries are built (for editor use when Awake hasn't been called)
+        /// </summary>
+        public void EnsureDictionariesBuilt()
+        {
+            if (zoneSectionDict.Count == 0)
+            {
+                BuildSectionDictionary();
+            }
+            if (objectUidDict.Count == 0)
+            {
+                BuildObjectUidDictionary();
+            }
+            if (namedStaticDict.Count == 0)
+            {
+                BuildNamedStaticDictionary();
+            }
         }
 
         private void OnDrawGizmosSelected()
