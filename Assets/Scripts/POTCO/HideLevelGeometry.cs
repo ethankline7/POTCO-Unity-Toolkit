@@ -6,6 +6,7 @@ namespace POTCO
     /// Hides level geometry and map objects on play
     /// - pir_m_prp_lev_* objects: Hide mesh, keep collisions
     /// - minimap/smiley objects: Hide completely (disable GameObject)
+    /// - Any mesh with no material: Hide mesh, keep collisions
     /// </summary>
     public class HideLevelGeometry : MonoBehaviour
     {
@@ -13,12 +14,14 @@ namespace POTCO
         [SerializeField] private int levelGeometryHidden = 0;
         [SerializeField] private int mapObjectsHidden = 0;
         [SerializeField] private int renderersDisabled = 0;
+        [SerializeField] private int noMaterialMeshesHidden = 0;
 
         public void HideObjects()
         {
             levelGeometryHidden = 0;
             mapObjectsHidden = 0;
             renderersDisabled = 0;
+            noMaterialMeshesHidden = 0;
 
             Debug.Log("[HideLevelGeometry] Starting hide process...");
 
@@ -53,6 +56,28 @@ namespace POTCO
                     obj.SetActive(false);
                     mapObjectsHidden++;
                 }
+                // Category 3: Any mesh with no material (hide mesh only)
+                else
+                {
+                    Renderer renderer = obj.GetComponent<Renderer>();
+                    if (renderer != null)
+                    {
+                        bool hasNoMaterial = renderer.sharedMaterial == null ||
+                                           (renderer.sharedMaterials != null && renderer.sharedMaterials.Length == 0);
+
+                        if (hasNoMaterial)
+                        {
+                            Debug.Log($"[HideLevelGeometry] Found mesh with no material: {obj.name} at path: {GetGameObjectPath(obj)}");
+                            renderer.enabled = false;
+                            // Add marker component so VisZones know not to re-enable this
+                            if (renderer.GetComponent<VisZones.PermanentlyHiddenRenderer>() == null)
+                            {
+                                renderer.gameObject.AddComponent<VisZones.PermanentlyHiddenRenderer>();
+                            }
+                            noMaterialMeshesHidden++;
+                        }
+                    }
+                }
             }
 
             Debug.Log($"[HideLevelGeometry] Search results:");
@@ -63,6 +88,7 @@ namespace POTCO
             Debug.Log($"  - Scanned: {scannedCount} scene objects");
             Debug.Log($"  - Level geometry hidden: {levelGeometryHidden} objects ({renderersDisabled} renderers)");
             Debug.Log($"  - Map objects disabled: {mapObjectsHidden} objects");
+            Debug.Log($"  - Meshes with no material hidden: {noMaterialMeshesHidden} objects");
         }
 
         /// <summary>
@@ -83,6 +109,7 @@ namespace POTCO
         /// <summary>
         /// Hide all renderers on this object and its children, but keep colliders active
         /// Adds PermanentlyHiddenRenderer marker so VisZone system won't re-enable them
+        /// Also hides any renderers that have no material assigned
         /// </summary>
         private void HideMeshOnly(GameObject obj)
         {
@@ -111,7 +138,19 @@ namespace POTCO
             {
                 if (childRenderer != null)
                 {
-                    Debug.Log($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name}, enabled: {childRenderer.enabled}");
+                    // Check if renderer has no material
+                    bool hasNoMaterial = childRenderer.sharedMaterial == null ||
+                                        (childRenderer.sharedMaterials != null && childRenderer.sharedMaterials.Length == 0);
+
+                    if (hasNoMaterial)
+                    {
+                        Debug.Log($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name} has no material, hiding it");
+                    }
+                    else
+                    {
+                        Debug.Log($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name}, enabled: {childRenderer.enabled}");
+                    }
+
                     childRenderer.enabled = false;
                     // Add marker component so VisZones know not to re-enable this
                     if (childRenderer.GetComponent<VisZones.PermanentlyHiddenRenderer>() == null)

@@ -92,12 +92,25 @@ namespace POTCO.VisZones
             if (other.gameObject.name.StartsWith("collision_zone_"))
             {
                 string zoneName = ExtractZoneName(other.gameObject.name);
-                overlappingZones.Add(zoneName);
+                bool wasNewZone = overlappingZones.Add(zoneName);
 
-                // Only switch zones if this is a new zone and we're past the cooldown
-                if (currentZone != zoneName && Time.time - lastZoneChangeTime > ZONE_CHANGE_COOLDOWN)
+                if (!wasNewZone)
+                    return; // Already in this zone
+
+                // If this is our first zone or it's time to switch primary zone
+                if (string.IsNullOrEmpty(currentZone) || (currentZone != zoneName && Time.time - lastZoneChangeTime > ZONE_CHANGE_COOLDOWN))
                 {
                     EnterZone(zoneName);
+                }
+                else
+                {
+                    // Entered a new zone but keeping current zone as primary
+                    // Still need to update visibility to combine all overlapping zones
+                    if (zoneManager != null)
+                    {
+                        zoneManager.SetCurrentZones(new List<string>(overlappingZones));
+                        Debug.Log($"[VisZoneSensor] Entered zone {zoneName}, now in {overlappingZones.Count} zones: {string.Join(", ", overlappingZones)}");
+                    }
                 }
             }
         }
@@ -126,6 +139,15 @@ namespace POTCO.VisZones
                     // If we exited all zones, keep current visibility (props stay until entering new zone)
                     // This is intentional - POTCO zones are large and usually overlap at boundaries
                 }
+                else
+                {
+                    // Not our current zone but still need to update visibility since we left an overlapping zone
+                    if (zoneManager != null && overlappingZones.Count > 0)
+                    {
+                        zoneManager.SetCurrentZones(new List<string>(overlappingZones));
+                        Debug.Log($"[VisZoneSensor] Exited zone {zoneName}, still in {overlappingZones.Count} zones");
+                    }
+                }
             }
         }
 
@@ -141,10 +163,10 @@ namespace POTCO.VisZones
             currentZone = zoneName;
             lastZoneChangeTime = Time.time;
 
-            // Notify the zone manager
+            // Notify the zone manager with ALL overlapping zones
             if (zoneManager != null)
             {
-                zoneManager.SetCurrentZone(zoneName);
+                zoneManager.SetCurrentZones(new List<string>(overlappingZones));
             }
 
             // Log zone transition
@@ -155,6 +177,12 @@ namespace POTCO.VisZones
             else
             {
                 Debug.Log($"[VisZoneSensor] Zone changed: {previousZone} → {zoneName}");
+            }
+
+            // Log if in multiple zones
+            if (overlappingZones.Count > 1)
+            {
+                Debug.Log($"[VisZoneSensor] Player in {overlappingZones.Count} overlapping zones: {string.Join(", ", overlappingZones)}");
             }
         }
 

@@ -37,6 +37,7 @@ namespace POTCO.Editor
         private Vector2 availableStaticsScroll;
         private Vector2 memberListScroll;
         private Vector2 problemsScroll;
+        private Vector2 zoneProvidersScroll;
 
         private bool previewMode = false;
         private string previewZoneName = "";
@@ -54,6 +55,14 @@ namespace POTCO.Editor
 
         // Validation problems
         private List<string> validationProblems = new List<string>();
+
+        // Performance caching
+        private Dictionary<string, int> cachedMemberCounts = new Dictionary<string, int>();
+        private Dictionary<string, int> cachedNeighborCounts = new Dictionary<string, int>();
+        private Dictionary<GameObject, List<VisZoneVolume>> cachedZoneProviders;
+        private Dictionary<string, VisZoneSection> cachedSectionLookup = new Dictionary<string, VisZoneSection>();
+        private string lastSelectedZoneForStatics = "";
+        private List<string> cachedAvailableStatics = new List<string>();
 
         // ========== Unity Lifecycle ==========
         private void OnEnable()
@@ -207,11 +216,16 @@ namespace POTCO.Editor
                 if (zone == null) continue;
 
                 // Apply search filter
-                if (!string.IsNullOrEmpty(searchFilter) &&
-                    !zone.zoneName.ToLower().Contains(searchFilter.ToLower()) &&
-                    !zone.zoneGuid.ToLower().Contains(searchFilter.ToLower()))
+                if (!string.IsNullOrEmpty(searchFilter))
                 {
-                    continue;
+                    string zoneName = zone.zoneName ?? "";
+                    string zoneGuid = zone.zoneGuid ?? "";
+
+                    if (!zoneName.ToLower().Contains(searchFilter.ToLower()) &&
+                        !zoneGuid.ToLower().Contains(searchFilter.ToLower()))
+                    {
+                        continue;
+                    }
                 }
 
                 // Draw zone item
@@ -566,8 +580,15 @@ namespace POTCO.Editor
             GUILayout.Label("Available in Scene", EditorStyles.boldLabel);
 
             availableStaticsScroll = EditorGUILayout.BeginScrollView(availableStaticsScroll, GUILayout.Height(120));
-            List<string> availableStatics = GetAvailableNamedStatics(entry);
-            foreach (string staticName in availableStatics)
+
+            // Only recompute available statics when zone changes (expensive operation!)
+            if (lastSelectedZoneForStatics != selectedZone.zoneName)
+            {
+                lastSelectedZoneForStatics = selectedZone.zoneName;
+                cachedAvailableStatics = GetAvailableNamedStatics(entry);
+            }
+
+            foreach (string staticName in cachedAvailableStatics)
             {
                 EditorGUILayout.BeginHorizontal();
                 if (GUILayout.Button("+", GUILayout.Width(20)))
@@ -577,7 +598,7 @@ namespace POTCO.Editor
                 GUILayout.Label(staticName, EditorStyles.miniLabel);
                 EditorGUILayout.EndHorizontal();
             }
-            if (availableStatics.Count == 0)
+            if (cachedAvailableStatics.Count == 0)
             {
                 EditorGUILayout.LabelField("No named statics found", EditorStyles.centeredGreyMiniLabel);
             }
@@ -721,6 +742,77 @@ namespace POTCO.Editor
 
             EditorGUILayout.Space(10);
 
+            // Zone Providers (Props with collision_zone_* children)
+            EditorGUILayout.BeginVertical("box");
+            GUILayout.Label("Zone Providers", EditorStyles.boldLabel);
+
+            // Get parent objects containing collision_zone_* children
+            Dictionary<GameObject, List<VisZoneVolume>> zoneProviders = GetZoneProviders();
+
+            EditorGUILayout.LabelField($"{zoneProviders.Count} props providing zones", EditorStyles.miniLabel);
+
+            zoneProvidersScroll = EditorGUILayout.BeginScrollView(zoneProvidersScroll, GUILayout.Height(150));
+
+            foreach (var kvp in zoneProviders)
+            {
+                GameObject parent = kvp.Key;
+                List<VisZoneVolume> zones = kvp.Value;
+
+                if (parent == null) continue;
+
+                EditorGUILayout.BeginHorizontal();
+
+                // Check if ALL zones are enabled
+                bool allEnabled = zones.All(z => z != null && z.gameObject.activeSelf);
+                bool anyEnabled = zones.Any(z => z != null && z.gameObject.activeSelf);
+
+                // Toggle for enable/disable zones
+                EditorGUI.showMixedValue = !allEnabled && anyEnabled;
+                bool newEnabled = EditorGUILayout.Toggle(allEnabled, GUILayout.Width(20));
+                EditorGUI.showMixedValue = false;
+
+                if (newEnabled != allEnabled)
+                {
+                    ToggleZonesForProvider(parent, zones, newEnabled);
+                }
+
+                // Parent object name (clickable)
+                string displayName = $"{parent.name} ({zones.Count} zone{(zones.Count > 1 ? "s" : "")})";
+                if (GUILayout.Button(displayName, EditorStyles.label))
+                {
+                    Selection.activeGameObject = parent;
+                    EditorGUIUtility.PingObject(parent);
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            if (zoneProviders.Count == 0)
+            {
+                EditorGUILayout.LabelField("No props with collision_zone_* children found", EditorStyles.centeredGreyMiniLabel);
+            }
+
+            EditorGUILayout.EndScrollView();
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Detect", GUILayout.Height(20)))
+            {
+                DetectZoneProviders();
+            }
+            if (GUILayout.Button("Enable All", GUILayout.Height(20)))
+            {
+                ToggleAllZoneProviders(true);
+            }
+            if (GUILayout.Button("Disable All", GUILayout.Height(20)))
+            {
+                ToggleAllZoneProviders(false);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(10);
+
             // Batch tools
             EditorGUILayout.BeginVertical("box");
             GUILayout.Label("Batch Tools", EditorStyles.boldLabel);
@@ -778,32 +870,181 @@ namespace POTCO.Editor
                 visZoneData = manager.visZoneData;
             }
 
+            // Auto-detect and link existing zones (doesn't create new collision_zone_* objects)
+            AutoLinkExistingZones();
+
             // Find all VisZoneVolumes
             allZoneVolumes = FindObjectsByType<VisZoneVolume>(FindObjectsSortMode.None).ToList();
 
             // Sort by name
             allZoneVolumes.Sort((a, b) => a.zoneName.CompareTo(b.zoneName));
+
+            // Rebuild all caches
+            RebuildCaches();
+        }
+
+        /// <summary>
+        /// Auto-link existing collision_zone_* objects to VisZoneVolume components
+        /// Only adds missing VisZoneVolume components to existing collision zones
+        /// Does NOT create new collision_zone_* objects (those come from .py import)
+        /// </summary>
+        private void AutoLinkExistingZones()
+        {
+            // Find all collision_zone_* GameObjects
+            GameObject[] allGameObjects = FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+            int linkedCount = 0;
+            int skippedNoCollider = 0;
+
+            foreach (var obj in allGameObjects)
+            {
+                if (obj == null || !obj.name.StartsWith("collision_zone_"))
+                    continue;
+
+                // Check if it already has VisZoneVolume
+                VisZoneVolume existingVolume = obj.GetComponent<VisZoneVolume>();
+                if (existingVolume != null)
+                    continue; // Already has component
+
+                // VisZoneVolume requires a collider - check if one exists, if not create one from mesh geometry
+                Collider collider = obj.GetComponent<Collider>();
+                if (collider == null)
+                {
+                    // No collider found - try to use mesh geometry for accurate collision shape
+                    MeshFilter meshFilter = obj.GetComponent<MeshFilter>();
+                    if (meshFilter == null)
+                    {
+                        meshFilter = obj.GetComponentInChildren<MeshFilter>();
+                    }
+
+                    if (meshFilter != null && meshFilter.sharedMesh != null)
+                    {
+                        // Use mesh geometry for accurate collision shape
+                        MeshCollider meshCollider = Undo.AddComponent<MeshCollider>(obj);
+                        meshCollider.sharedMesh = meshFilter.sharedMesh;
+                        meshCollider.convex = true; // Required for triggers
+                        meshCollider.isTrigger = true;
+                        collider = meshCollider;
+                        Debug.Log($"[VisZone] Added MeshCollider to '{obj.name}' using geometry from mesh");
+                    }
+                    else
+                    {
+                        // Fallback: no mesh found, skip this object
+                        Debug.LogWarning($"[VisZone] No mesh geometry found for '{obj.name}' - cannot add collider. Use 'Discover Zones' button.");
+                        skippedNoCollider++;
+                        continue;
+                    }
+                }
+
+                // Extract zone name
+                string zoneName = obj.name.Substring("collision_zone_".Length);
+
+                // Add VisZoneVolume component (safe now because collider exists)
+                VisZoneVolume volume = Undo.AddComponent<VisZoneVolume>(obj);
+                if (volume == null)
+                {
+                    Debug.LogWarning($"[VisZone] Failed to add VisZoneVolume to '{obj.name}'");
+                    continue;
+                }
+
+                volume.zoneName = zoneName;
+                volume.displayColor = Random.ColorHSV(0f, 1f, 0.5f, 1f, 0.8f, 1f);
+
+                // Try to find corresponding section and link
+                VisZoneSection[] allSections = FindObjectsByType<VisZoneSection>(FindObjectsSortMode.None);
+                foreach (var section in allSections)
+                {
+                    if (section != null && section.zoneName == zoneName)
+                    {
+                        volume.sectionRoot = section;
+                        section.zoneCollider = collider;
+                        EditorUtility.SetDirty(section);
+                        break;
+                    }
+                }
+
+                EditorUtility.SetDirty(obj);
+                linkedCount++;
+            }
+
+            if (linkedCount > 0)
+            {
+                Debug.Log($"[VisZone] Auto-linked {linkedCount} collision zones to VisZoneVolume components");
+            }
+
+            if (skippedNoCollider > 0)
+            {
+                Debug.LogWarning($"[VisZone] Skipped {skippedNoCollider} collision_zone_* objects (no mesh geometry found - use 'Discover Zones' to add colliders)");
+            }
+        }
+
+        private void RebuildCaches()
+        {
+            // Cache section lookup
+            cachedSectionLookup.Clear();
+            VisZoneSection[] allSections = FindObjectsByType<VisZoneSection>(FindObjectsSortMode.None);
+            foreach (var section in allSections)
+            {
+                if (section != null && !string.IsNullOrEmpty(section.zoneName))
+                {
+                    cachedSectionLookup[section.zoneName] = section;
+                }
+            }
+
+            // Cache member counts
+            cachedMemberCounts.Clear();
+            foreach (var kvp in cachedSectionLookup)
+            {
+                cachedMemberCounts[kvp.Key] = kvp.Value.transform.childCount;
+            }
+
+            // Cache neighbor counts
+            cachedNeighborCounts.Clear();
+            if (visZoneData != null)
+            {
+                foreach (var entry in visZoneData.visTable)
+                {
+                    if (entry != null)
+                    {
+                        cachedNeighborCounts[entry.zoneName] = entry.visibleZones.Count;
+                    }
+                }
+            }
+
+            // Cache zone providers
+            cachedZoneProviders = new Dictionary<GameObject, List<VisZoneVolume>>();
+            foreach (VisZoneVolume zone in allZoneVolumes)
+            {
+                if (zone == null) continue;
+
+                Transform parent = zone.transform.parent;
+                if (parent != null)
+                {
+                    GameObject parentObj = parent.gameObject;
+                    if (!cachedZoneProviders.ContainsKey(parentObj))
+                    {
+                        cachedZoneProviders[parentObj] = new List<VisZoneVolume>();
+                    }
+                    cachedZoneProviders[parentObj].Add(zone);
+                }
+            }
         }
 
         private int GetZoneMemberCount(string zoneName)
         {
-            VisZoneSection section = FindObjectsByType<VisZoneSection>(FindObjectsSortMode.None)
-                .FirstOrDefault(s => s.zoneName == zoneName);
-
-            if (section != null)
+            if (cachedMemberCounts.TryGetValue(zoneName, out int count))
             {
-                return section.transform.childCount;
+                return count;
             }
-
             return 0;
         }
 
         private int GetNeighborCount(string zoneName)
         {
-            if (visZoneData == null) return 0;
-
-            VisZoneEntry entry = visZoneData.visTable.Find(e => e.zoneName == zoneName);
-            return entry != null ? entry.visibleZones.Count : 0;
+            if (cachedNeighborCounts.TryGetValue(zoneName, out int count))
+            {
+                return count;
+            }
+            return 0;
         }
 
         private List<string> GetAvailableZones(VisZoneEntry currentEntry)
@@ -832,10 +1073,7 @@ namespace POTCO.Editor
         {
             List<GameObject> members = new List<GameObject>();
 
-            VisZoneSection section = FindObjectsByType<VisZoneSection>(FindObjectsSortMode.None)
-                .FirstOrDefault(s => s.zoneName == zoneName);
-
-            if (section != null)
+            if (cachedSectionLookup.TryGetValue(zoneName, out VisZoneSection section) && section != null)
             {
                 foreach (Transform child in section.transform)
                 {
@@ -1734,6 +1972,73 @@ namespace POTCO.Editor
 
             EditorUtility.SetDirty(visZoneData);
             Debug.Log($"Made {oneWayNeighbors.Count} neighbor relationships symmetric");
+        }
+
+        // ========== Zone Provider Operations ==========
+        private Dictionary<GameObject, List<VisZoneVolume>> GetZoneProviders()
+        {
+            // Return cached zone providers (built in RefreshData)
+            return cachedZoneProviders ?? new Dictionary<GameObject, List<VisZoneVolume>>();
+        }
+
+        private void ToggleZonesForProvider(GameObject provider, List<VisZoneVolume> zones, bool enable)
+        {
+            foreach (VisZoneVolume zone in zones)
+            {
+                if (zone != null)
+                {
+                    Undo.RecordObject(zone.gameObject, enable ? "Enable Zone" : "Disable Zone");
+                    zone.gameObject.SetActive(enable);
+                    EditorUtility.SetDirty(zone.gameObject);
+                }
+            }
+
+            Debug.Log($"[VisZone] {(enable ? "Enabled" : "Disabled")} {zones.Count} zones from provider '{provider.name}'");
+            RefreshData();
+            Repaint();
+        }
+
+        private void ToggleAllZoneProviders(bool enable)
+        {
+            Dictionary<GameObject, List<VisZoneVolume>> providers = GetZoneProviders();
+            int totalZones = 0;
+
+            foreach (var kvp in providers)
+            {
+                foreach (VisZoneVolume zone in kvp.Value)
+                {
+                    if (zone != null && zone.gameObject.activeSelf != enable)
+                    {
+                        Undo.RecordObject(zone.gameObject, enable ? "Enable Zone" : "Disable Zone");
+                        zone.gameObject.SetActive(enable);
+                        EditorUtility.SetDirty(zone.gameObject);
+                        totalZones++;
+                    }
+                }
+            }
+
+            Debug.Log($"[VisZone] {(enable ? "Enabled" : "Disabled")} {totalZones} zones from {providers.Count} providers");
+            RefreshData();
+            Repaint();
+        }
+
+        private void DetectZoneProviders()
+        {
+            // Refresh the zone list first
+            RefreshData();
+
+            Dictionary<GameObject, List<VisZoneVolume>> providers = GetZoneProviders();
+
+            Debug.Log($"[VisZone] Detected {providers.Count} zone providers:");
+            foreach (var kvp in providers)
+            {
+                GameObject parent = kvp.Key;
+                List<VisZoneVolume> zones = kvp.Value;
+                int enabledCount = zones.Count(z => z != null && z.gameObject.activeSelf);
+                Debug.Log($"  - {parent.name}: {zones.Count} zones ({enabledCount} enabled, {zones.Count - enabledCount} disabled)");
+            }
+
+            Repaint();
         }
 
         private void RunValidation()

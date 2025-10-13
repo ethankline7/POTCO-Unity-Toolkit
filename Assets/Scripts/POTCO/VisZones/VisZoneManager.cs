@@ -24,6 +24,10 @@ namespace POTCO.VisZones
         [SerializeField]
         private string currentZone = "";
 
+        [Tooltip("All zones player is currently inside (for overlap handling)")]
+        [SerializeField]
+        private List<string> currentPlayerZones = new List<string>();
+
         [Tooltip("Zones currently visible")]
         [SerializeField]
         private List<string> currentlyVisibleZones = new List<string>();
@@ -162,6 +166,23 @@ namespace POTCO.VisZones
         }
 
         /// <summary>
+        /// Set all zones player is currently inside (handles overlapping zones)
+        /// When in multiple zones, props are NOT hidden if ANY zone wants them visible
+        /// </summary>
+        public void SetCurrentZones(List<string> zoneNames)
+        {
+            currentPlayerZones = new List<string>(zoneNames);
+
+            // Set primary zone as first in list
+            if (zoneNames.Count > 0)
+            {
+                currentZone = zoneNames[0];
+            }
+
+            UpdateVisibilityForMultipleZones();
+        }
+
+        /// <summary>
         /// Update visibility for a specific zone (public for editor use)
         /// Implements full POTCO Vis Table algorithm:
         /// - Show/hide zone sections (visTable[Z][0])
@@ -241,9 +262,9 @@ namespace POTCO.VisZones
             {
                 if (objectUidDict.TryGetValue(uid, out GameObject obj))
                 {
-                    if (!obj.activeSelf)
+                    if (!IsObjectVisible(obj))
                     {
-                        obj.SetActive(true);
+                        ShowObject(obj);
                         uidsShown++;
                     }
                 }
@@ -261,12 +282,12 @@ namespace POTCO.VisZones
                     // Save original state if dictionary provided
                     if (originalStaticStates != null && !originalStaticStates.ContainsKey(obj))
                     {
-                        originalStaticStates[obj] = obj.activeSelf;
+                        originalStaticStates[obj] = IsObjectVisible(obj);
                     }
 
-                    if (!obj.activeSelf)
+                    if (!IsObjectVisible(obj))
                     {
-                        obj.SetActive(true);
+                        ShowObject(obj);
                         staticsShown++;
                     }
                 }
@@ -278,7 +299,7 @@ namespace POTCO.VisZones
                 // Save original state if dictionary provided
                 if (originalStaticStates != null && !originalStaticStates.ContainsKey(kvp.Value))
                 {
-                    originalStaticStates[kvp.Value] = kvp.Value.activeSelf;
+                    originalStaticStates[kvp.Value] = IsObjectVisible(kvp.Value);
                 }
 
                 if (!visSet.namedStatics.Contains(kvp.Key))
@@ -287,9 +308,9 @@ namespace POTCO.VisZones
                     bool inZoneSection = IsObjectInZoneSection(kvp.Value);
 
                     // Only hide if it's NOT in a zone section (independent statics)
-                    if (!inZoneSection && kvp.Value.activeSelf)
+                    if (!inZoneSection && IsObjectVisible(kvp.Value))
                     {
-                        kvp.Value.SetActive(false);
+                        HideObject(kvp.Value);
                         staticsHidden++;
                     }
                 }
@@ -343,7 +364,14 @@ namespace POTCO.VisZones
             {
                 if (kvp.Key != null)
                 {
-                    kvp.Key.SetActive(kvp.Value);
+                    if (kvp.Value)
+                    {
+                        ShowObject(kvp.Key);
+                    }
+                    else
+                    {
+                        HideObject(kvp.Key);
+                    }
                     staticsRestored++;
                 }
             }
@@ -357,6 +385,140 @@ namespace POTCO.VisZones
         private void UpdateVisibility()
         {
             UpdateVisibilityForZone(currentZone);
+        }
+
+        /// <summary>
+        /// Update visibility when player is in multiple zones
+        /// Combines visibility from all zones - if ANY zone wants something visible, keep it visible
+        /// </summary>
+        private void UpdateVisibilityForMultipleZones()
+        {
+            if (visZoneData == null || currentPlayerZones.Count == 0)
+            {
+                Debug.LogWarning($"[VisZoneManager] Cannot update visibility: visZoneData={visZoneData != null}, zones={currentPlayerZones.Count}");
+                return;
+            }
+
+            // If only in one zone, use standard logic
+            if (currentPlayerZones.Count == 1)
+            {
+                UpdateVisibilityForZone(currentPlayerZones[0]);
+                return;
+            }
+
+            // In multiple zones - combine visibility sets from all zones
+            Debug.Log($"[VisZoneManager] Player in {currentPlayerZones.Count} zones: {string.Join(", ", currentPlayerZones)} - combining visibility");
+
+            HashSet<string> combinedZones = new HashSet<string>();
+            HashSet<string> combinedUIDs = new HashSet<string>();
+            HashSet<string> combinedStatics = new HashSet<string>();
+
+            // Collect visibility from ALL zones player is in (union)
+            foreach (string zoneName in currentPlayerZones)
+            {
+                VisZoneData.VisibilitySet visSet = visZoneData.GetCompleteVisibilitySet(zoneName);
+
+                foreach (string zone in visSet.zones)
+                    combinedZones.Add(zone);
+
+                foreach (string uid in visSet.objectUIDs)
+                    combinedUIDs.Add(uid);
+
+                foreach (string staticName in visSet.namedStatics)
+                    combinedStatics.Add(staticName);
+            }
+
+            int zonesShown = 0, zonesHidden = 0;
+            int uidsShown = 0, uidsHidden = 0;
+            int staticsShown = 0, staticsHidden = 0;
+
+            // ============================================================
+            // PART 1: Show/Hide Zone Sections (combined from all zones)
+            // ============================================================
+
+            // Show zones that ANY zone wants visible
+            foreach (string zone in combinedZones)
+            {
+                if (zoneSectionDict.TryGetValue(zone, out VisZoneSection section))
+                {
+                    if (!section.IsVisible)
+                    {
+                        section.Show();
+                        zonesShown++;
+                    }
+                }
+            }
+
+            // Hide zones that NO zone wants visible
+            foreach (var kvp in zoneSectionDict)
+            {
+                if (!combinedZones.Contains(kvp.Key))
+                {
+                    if (kvp.Value.IsVisible)
+                    {
+                        kvp.Value.Hide();
+                        zonesHidden++;
+                    }
+                }
+            }
+
+            // ============================================================
+            // PART 2: Show/Hide Object UIDs (combined from all zones)
+            // ============================================================
+
+            foreach (string uid in combinedUIDs)
+            {
+                if (objectUidDict.TryGetValue(uid, out GameObject obj))
+                {
+                    if (!IsObjectVisible(obj))
+                    {
+                        ShowObject(obj);
+                        uidsShown++;
+                    }
+                }
+            }
+
+            // ============================================================
+            // PART 3: Show/Hide Named Statics (combined from all zones)
+            // ============================================================
+
+            // Show statics that ANY zone wants visible
+            foreach (string staticName in combinedStatics)
+            {
+                if (namedStaticDict.TryGetValue(staticName, out GameObject obj))
+                {
+                    if (!IsObjectVisible(obj))
+                    {
+                        ShowObject(obj);
+                        staticsShown++;
+                    }
+                }
+            }
+
+            // Hide statics that NO zone wants visible
+            foreach (var kvp in namedStaticDict)
+            {
+                if (!combinedStatics.Contains(kvp.Key))
+                {
+                    bool inZoneSection = IsObjectInZoneSection(kvp.Value);
+
+                    if (!inZoneSection && IsObjectVisible(kvp.Value))
+                    {
+                        HideObject(kvp.Value);
+                        staticsHidden++;
+                    }
+                }
+            }
+
+            // Update current state
+            currentlyVisibleZones = new List<string>(combinedZones);
+
+            // Log results
+            Debug.Log($"[VisZoneManager] Multi-zone visibility update:\n" +
+                     $"  Combined from {currentPlayerZones.Count} zones\n" +
+                     $"  Zones: +{zonesShown} -{zonesHidden} ({combinedZones.Count} total visible)\n" +
+                     $"  UIDs:  +{uidsShown} -{uidsHidden} ({combinedUIDs.Count} total)\n" +
+                     $"  Statics: +{staticsShown} -{staticsHidden} ({combinedStatics.Count} total)");
         }
 
         /// <summary>
@@ -401,6 +563,54 @@ namespace POTCO.VisZones
             }
 
             return false; // Not inside any zone section
+        }
+
+        /// <summary>
+        /// Hide object by disabling renderers (preserves component data unlike SetActive)
+        /// </summary>
+        private void HideObject(GameObject obj)
+        {
+            // Disable all renderers on this object and its children
+            Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer != null && renderer.enabled)
+                {
+                    renderer.enabled = false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Show object by enabling renderers
+        /// </summary>
+        private void ShowObject(GameObject obj)
+        {
+            // Enable all renderers on this object and its children
+            Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer != null && !renderer.enabled)
+                {
+                    renderer.enabled = true;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Check if object is visible (any renderer enabled)
+        /// </summary>
+        private bool IsObjectVisible(GameObject obj)
+        {
+            Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer != null && renderer.enabled)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>

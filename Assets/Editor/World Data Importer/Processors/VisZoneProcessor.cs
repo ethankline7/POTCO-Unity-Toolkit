@@ -43,12 +43,19 @@ namespace WorldDataImporter.Processors
             Dictionary<string, Transform> collisionZones = FindCollisionZones(root);
             DebugLogger.LogWorldImporter($"🔍 Found {collisionZones.Count} collision zones in scene");
 
+            // Step 2.5: Discover prop-linked zones from object data and create collision zones for them
+            Dictionary<string, string> propLinkedZones = DiscoverPropLinkedZones(objectDataMap, root, collisionZones, visTable);
+            if (propLinkedZones.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🔗 Discovered {propLinkedZones.Count} prop-linked zones");
+            }
+
             // Step 3: Create Section GameObjects for each zone
             Dictionary<string, GameObject> sections = CreateZoneSections(root, visTable, collisionZones);
             DebugLogger.LogWorldImporter($"📦 Created {sections.Count} zone sections");
 
             // Step 4: Parent objects to appropriate sections based on VisZone property
-            ParentObjectsToSections(objectDataMap, sections);
+            ParentObjectsToSections(objectDataMap, sections, visTable);
 
             // Step 5: Create trigger colliders for player detection
             CreateZoneTriggers(collisionZones);
@@ -194,6 +201,103 @@ namespace WorldDataImporter.Processors
         }
 
         /// <summary>
+        /// Discover prop-linked zones (format: "zoneName_propId") and create collision zones for them
+        /// Prop-linked zones are parented to specific props and move with them
+        /// </summary>
+        private static Dictionary<string, string> DiscoverPropLinkedZones(
+            Dictionary<string, ObjectData> objectDataMap,
+            GameObject root,
+            Dictionary<string, Transform> collisionZones,
+            Dictionary<string, VisZoneEntry> visTable)
+        {
+            Dictionary<string, string> propLinkedZones = new Dictionary<string, string>(); // zoneName → propId
+            HashSet<string> discoveredZones = new HashSet<string>();
+
+            // Scan all objects for prop-linked zone patterns
+            foreach (var kvp in objectDataMap)
+            {
+                ObjectData data = kvp.Value;
+
+                if (string.IsNullOrEmpty(data.visZone))
+                    continue;
+
+                // Check if this is prop-linked
+                string baseZoneName = ParseZoneName(data.visZone, out bool isPropLinked, out string propId);
+
+                // Skip if not prop-linked
+                if (!isPropLinked)
+                    continue;
+
+                // Use FULL visZone name (including prop ID) as unique zone name
+                string zoneName = data.visZone;
+
+                // Skip if already discovered
+                if (discoveredZones.Contains(zoneName))
+                    continue;
+
+                // Don't skip even if base zone exists - prop-linked zones are unique per prop
+                // if (collisionZones.ContainsKey(zoneName) || visTable.ContainsKey(zoneName))
+                //     continue;
+
+                // Find the prop by ID
+                GameObject propObject = null;
+                foreach (var objKvp in objectDataMap)
+                {
+                    if (objKvp.Value.id == propId && objKvp.Value.gameObject != null)
+                    {
+                        propObject = objKvp.Value.gameObject;
+                        break;
+                    }
+                }
+
+                if (propObject == null)
+                {
+                    DebugLogger.LogWorldImporter($"  ⚠️ Prop {propId} not found for prop-linked zone '{zoneName}' (base: {baseZoneName})");
+                    continue;
+                }
+
+                // Create collision_zone_* GameObject parented to the prop
+                // Use full name including prop ID to make it unique
+                GameObject collisionZoneObj = new GameObject($"collision_zone_{zoneName}");
+                collisionZoneObj.transform.SetParent(propObject.transform, false);
+
+                // Add a box collider (will be sized based on prop bounds)
+                BoxCollider boxCollider = Undo.AddComponent<BoxCollider>(collisionZoneObj);
+                boxCollider.isTrigger = true;
+
+                // Size the collider to match the prop's bounds
+                Bounds propBounds = CalculateBounds(propObject.transform);
+                boxCollider.center = propBounds.center - propObject.transform.position;
+                boxCollider.size = propBounds.size;
+
+                // Add VisZoneVolume component
+                VisZoneVolume volume = Undo.AddComponent<VisZoneVolume>(collisionZoneObj);
+                volume.zoneName = zoneName;
+                volume.displayColor = Random.ColorHSV(0f, 1f, 0.5f, 1f, 0.8f, 1f);
+
+                // Add to collision zones dictionary
+                collisionZones[zoneName] = collisionZoneObj.transform;
+
+                // Add to vis table (empty entry, will be configured manually)
+                VisZoneEntry newEntry = new VisZoneEntry
+                {
+                    zoneName = zoneName,
+                    visibleZones = new List<string>(),
+                    objectUids = new List<string>(),
+                    fortVisZones = new List<string>()
+                };
+                visTable[zoneName] = newEntry;
+
+                propLinkedZones[zoneName] = propId;
+                discoveredZones.Add(zoneName);
+
+                DebugLogger.LogWorldImporter($"  🔗 Created prop-linked zone '{zoneName}' (base: {baseZoneName}) on prop {propId} ({propObject.name})");
+            }
+
+            return propLinkedZones;
+        }
+
+        /// <summary>
         /// Create Section-<ZoneName> GameObjects for each zone in vis table
         /// </summary>
         private static Dictionary<string, GameObject> CreateZoneSections(GameObject root, Dictionary<string, VisZoneEntry> visTable, Dictionary<string, Transform> collisionZones)
@@ -236,10 +340,14 @@ namespace WorldDataImporter.Processors
 
         /// <summary>
         /// Parent objects to appropriate sections based on VisZone property
+        /// Supports both simple zones ("town_center") and prop-linked zones ("pierBridge_1235002112.0akelts")
+        /// Large objects are NOT parented (stay visible always) but ARE added to zone's objectUids for visibility control
         /// </summary>
-        private static void ParentObjectsToSections(Dictionary<string, ObjectData> objectDataMap, Dictionary<string, GameObject> sections)
+        private static void ParentObjectsToSections(Dictionary<string, ObjectData> objectDataMap, Dictionary<string, GameObject> sections, Dictionary<string, VisZoneEntry> visTable)
         {
             int parentedCount = 0;
+            int propLinkedZones = 0;
+            int largeObjectsTracked = 0;
 
             foreach (var kvp in objectDataMap)
             {
@@ -249,30 +357,101 @@ namespace WorldDataImporter.Processors
                 if (string.IsNullOrEmpty(data.visZone))
                     continue;
 
-                // Skip "Large" objects (they stay visible always, don't parent to sections)
-                if (!string.IsNullOrEmpty(data.visSize) && data.visSize == "Large")
+                // Parse zone name - handle both simple and prop-linked formats
+                // Format: "zoneName" OR "zoneName_propId" (e.g., "pierBridge_1235002112.0akelts")
+                ParseZoneName(data.visZone, out bool isPropLinked, out string propId);
+
+                // Use full visZone name (for prop-linked, this includes the prop ID making it unique)
+                string zoneName = data.visZone;
+
+                bool isLarge = !string.IsNullOrEmpty(data.visSize) && data.visSize == "Large";
+
+                // Handle Large objects specially: don't parent, but track in vis table
+                if (isLarge)
                 {
-                    DebugLogger.LogWorldImporter($"  ⏭️ Skipping Large object: {data.id}");
-                    continue;
+                    // Add Large object's UID to the zone's objectUids list
+                    if (visTable.TryGetValue(zoneName, out VisZoneEntry entry))
+                    {
+                        if (!string.IsNullOrEmpty(data.id) && !entry.objectUids.Contains(data.id))
+                        {
+                            entry.objectUids.Add(data.id);
+                            largeObjectsTracked++;
+                            DebugLogger.LogWorldImporter($"  📍 Large object '{data.id}' tracked for zone '{zoneName}' (always visible unless zone says otherwise)");
+                        }
+                    }
+                    else
+                    {
+                        DebugLogger.LogWorldImporter($"  ⚠️ Large object '{data.id}' assigned to zone '{zoneName}' but zone not in Vis Table");
+                    }
+                    continue; // Don't parent Large objects to sections
                 }
 
-                // Find the section for this zone
-                if (sections.TryGetValue(data.visZone, out GameObject section))
+                // Find the section for this zone (non-Large objects only)
+                if (sections.TryGetValue(zoneName, out GameObject section))
                 {
                     // Parent this object to the section
                     if (data.gameObject != null)
                     {
                         Undo.SetTransformParent(data.gameObject.transform, section.transform, "Parent to VisZone Section");
                         parentedCount++;
+
+                        if (isPropLinked)
+                        {
+                            propLinkedZones++;
+                            DebugLogger.LogWorldImporter($"  🔗 Prop-linked zone: {zoneName} → prop {propId}");
+                        }
                     }
                 }
                 else
                 {
-                    DebugLogger.LogWorldImporter($"  ⚠️ VisZone '{data.visZone}' not found in Vis Table for object {data.id}");
+                    // Zone not found in sections
+                    if (isPropLinked)
+                    {
+                        DebugLogger.LogWorldImporter($"  ⚠️ Prop-linked zone '{zoneName}' not found - prop {propId} may not exist or zone wasn't created");
+                    }
+                    else
+                    {
+                        DebugLogger.LogWorldImporter($"  ⚠️ VisZone '{zoneName}' not found in Vis Table for object {data.id}");
+                    }
                 }
             }
 
-            DebugLogger.LogWorldImporter($"  ✓ Parented {parentedCount} objects to zone sections");
+            DebugLogger.LogWorldImporter($"  ✓ Parented {parentedCount} objects to zone sections ({propLinkedZones} prop-linked)");
+            DebugLogger.LogWorldImporter($"  ✓ Tracked {largeObjectsTracked} Large objects for zone visibility control");
+        }
+
+        /// <summary>
+        /// Parse zone name from VisZone property
+        /// Handles both simple zones ("town_center") and prop-linked zones ("pierBridge_1235002112.0akelts")
+        /// </summary>
+        /// <param name="visZone">VisZone property value</param>
+        /// <param name="isPropLinked">Output: true if this is a prop-linked zone</param>
+        /// <param name="propId">Output: prop ID if prop-linked</param>
+        /// <returns>Zone name</returns>
+        private static string ParseZoneName(string visZone, out bool isPropLinked, out string propId)
+        {
+            isPropLinked = false;
+            propId = "";
+
+            // Pattern: zoneName_propId where propId starts with a digit
+            // Example: "pierBridge_1235002112.0akelts" → zone: "pierBridge", propId: "1235002112.0akelts"
+            int lastUnderscore = visZone.LastIndexOf('_');
+
+            if (lastUnderscore > 0 && lastUnderscore < visZone.Length - 1)
+            {
+                string potentialPropId = visZone.Substring(lastUnderscore + 1);
+
+                // Check if it starts with a digit (prop IDs are numeric timestamps)
+                if (potentialPropId.Length > 0 && char.IsDigit(potentialPropId[0]))
+                {
+                    isPropLinked = true;
+                    propId = potentialPropId;
+                    return visZone.Substring(0, lastUnderscore);
+                }
+            }
+
+            // Not a prop-linked zone, return as-is
+            return visZone;
         }
 
         /// <summary>
