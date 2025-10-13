@@ -95,6 +95,20 @@ namespace Player
             controller.skinWidth = skinWidth;
 
             Debug.Log($"✅ CharacterController configured - Step Offset: {stepOffset}, Skin Width: {skinWidth}");
+
+            // Auto-attach VisZoneSensor if not present
+            if (GetComponent<POTCO.VisZones.VisZoneSensor>() == null)
+            {
+                gameObject.AddComponent<POTCO.VisZones.VisZoneSensor>();
+                Debug.Log("✅ Auto-attached VisZoneSensor to player");
+            }
+
+            // Auto-attach HideLevelGeometry if not present (but don't run it yet)
+            if (GetComponent<POTCO.HideLevelGeometry>() == null)
+            {
+                gameObject.AddComponent<POTCO.HideLevelGeometry>();
+                Debug.Log("✅ Auto-attached HideLevelGeometry to player");
+            }
         }
 
         private void Start()
@@ -104,6 +118,14 @@ namespace Player
             if (playerCamera == null)
             {
                 Debug.LogWarning("⚠️ PlayerCamera not found. Camera-based controls may not work.");
+            }
+
+            // Hide level geometry AFTER VisZone system has initialized
+            POTCO.HideLevelGeometry hideLevelGeo = GetComponent<POTCO.HideLevelGeometry>();
+            if (hideLevelGeo != null)
+            {
+                hideLevelGeo.HideObjects();
+                Debug.Log("✅ HideLevelGeometry executed after VisZone initialization");
             }
 
             // Setup model hierarchy with rotation offset (proper fix)

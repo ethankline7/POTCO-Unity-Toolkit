@@ -22,26 +22,67 @@ namespace POTCO.VisZones
         [SerializeField]
         private bool isVisible = true;
 
+        // Cache renderers on first hide/show to avoid repeated GetComponentsInChildren calls
+        private Renderer[] cachedRenderers;
+
         /// <summary>
-        /// Show this section (activate all children)
+        /// Show this section (enable all renderers, collisions stay active)
+        /// Skips renderers marked with PermanentlyHiddenRenderer
         /// </summary>
         public void Show()
         {
             if (!isVisible)
             {
-                gameObject.SetActive(true);
+                if (cachedRenderers == null)
+                {
+                    cachedRenderers = GetComponentsInChildren<Renderer>(true);
+                }
+
+                foreach (Renderer renderer in cachedRenderers)
+                {
+                    if (renderer != null)
+                    {
+                        // Skip renderers marked as permanently hidden (e.g., pir_m_prp_lev_* objects)
+                        if (renderer.GetComponent<PermanentlyHiddenRenderer>() != null)
+                        {
+                            continue;
+                        }
+
+                        renderer.enabled = true;
+                    }
+                }
+
                 isVisible = true;
             }
         }
 
         /// <summary>
-        /// Hide this section (deactivate all children)
+        /// Hide this section (disable all renderers, collisions stay active)
+        /// Skips renderers marked with PermanentlyHiddenRenderer (already hidden)
         /// </summary>
         public void Hide()
         {
             if (isVisible)
             {
-                gameObject.SetActive(false);
+                if (cachedRenderers == null)
+                {
+                    cachedRenderers = GetComponentsInChildren<Renderer>(true);
+                }
+
+                foreach (Renderer renderer in cachedRenderers)
+                {
+                    if (renderer != null)
+                    {
+                        // Skip renderers marked as permanently hidden (already disabled)
+                        if (renderer.GetComponent<PermanentlyHiddenRenderer>() != null)
+                        {
+                            continue;
+                        }
+
+                        renderer.enabled = false;
+                    }
+                }
+
                 isVisible = false;
             }
         }
