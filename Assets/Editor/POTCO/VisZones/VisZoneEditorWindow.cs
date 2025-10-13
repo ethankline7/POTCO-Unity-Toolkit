@@ -958,6 +958,7 @@ namespace POTCO.Editor
                 Undo.RecordObject(visZoneData, "Add Neighbor");
                 visZoneData.AddNeighbor(entry.zoneName, neighborName);
                 EditorUtility.SetDirty(visZoneData);
+                RefreshPreviewIfActive();
                 Repaint();
             }
         }
@@ -969,6 +970,7 @@ namespace POTCO.Editor
                 Undo.RecordObject(visZoneData, "Remove Neighbor");
                 visZoneData.RemoveNeighbor(entry.zoneName, neighborName);
                 EditorUtility.SetDirty(visZoneData);
+                RefreshPreviewIfActive();
                 Repaint();
             }
         }
@@ -1001,6 +1003,7 @@ namespace POTCO.Editor
                     visZoneData.AddNeighbor(neighbor, entry.zoneName);
                 }
                 EditorUtility.SetDirty(visZoneData);
+                RefreshPreviewIfActive();
                 Debug.Log($"Made all neighbors of '{entry.zoneName}' symmetric");
             }
         }
@@ -1014,8 +1017,6 @@ namespace POTCO.Editor
                 return new List<string>();
 
             // Collect all named statics from OTHER zones' fortVisZones lists
-            // This shows what was imported from the world data
-            // We don't hardcode patterns - we use what the world data provides
             foreach (var entry in visZoneData.visTable)
             {
                 if (entry.zoneName == currentEntry.zoneName)
@@ -1027,6 +1028,36 @@ namespace POTCO.Editor
                     if (!currentEntry.fortVisZones.Contains(staticName))
                     {
                         available.Add(staticName);
+                    }
+                }
+            }
+
+            // Additionally scan scene for common named static containers
+            string[] staticContainerPatterns = new string[]
+            {
+                "island_terrain",
+                "island_nat_wall",
+                "island_nat_rock",
+                "island_nat_formation",
+                "island_barrier"
+            };
+
+            GameObject[] allGameObjects = FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+            foreach (GameObject obj in allGameObjects)
+            {
+                foreach (string pattern in staticContainerPatterns)
+                {
+                    if (obj.name.StartsWith(pattern))
+                    {
+                        // Add all children of this container as potential named statics
+                        foreach (Transform child in obj.transform)
+                        {
+                            if (child != null && !currentEntry.fortVisZones.Contains(child.name))
+                            {
+                                available.Add(child.name);
+                            }
+                        }
+                        break;
                     }
                 }
             }
@@ -1046,6 +1077,7 @@ namespace POTCO.Editor
                 {
                     entry.fortVisZones.Add(staticName);
                     EditorUtility.SetDirty(visZoneData);
+                    RefreshPreviewIfActive();
                     Debug.Log($"[VisZone] Added named static '{staticName}' to zone '{entry.zoneName}'");
                 }
                 Repaint();
@@ -1060,6 +1092,7 @@ namespace POTCO.Editor
                 if (entry.fortVisZones.Remove(staticName))
                 {
                     EditorUtility.SetDirty(visZoneData);
+                    RefreshPreviewIfActive();
                     Debug.Log($"[VisZone] Removed named static '{staticName}' from zone '{entry.zoneName}'");
                 }
                 Repaint();
@@ -1093,7 +1126,6 @@ namespace POTCO.Editor
             }
 
             // Collect all named statics from imported world data
-            // We ONLY show what was in the Python file's visTable, no hardcoded pattern matching
             Dictionary<string, List<string>> staticsByZone = new Dictionary<string, List<string>>();
             HashSet<string> allStatics = new HashSet<string>();
 
@@ -1109,19 +1141,64 @@ namespace POTCO.Editor
                 }
             }
 
+            // Additionally scan scene for common named static containers
+            HashSet<string> sceneStatics = new HashSet<string>();
+            string[] staticContainerPatterns = new string[]
+            {
+                "island_terrain",
+                "island_nat_wall",
+                "island_nat_rock",
+                "island_nat_formation",
+                "island_barrier"
+            };
+
+            GameObject[] allGameObjects = FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+            foreach (GameObject obj in allGameObjects)
+            {
+                foreach (string pattern in staticContainerPatterns)
+                {
+                    if (obj.name.StartsWith(pattern))
+                    {
+                        // Add all children of this container as potential named statics
+                        foreach (Transform child in obj.transform)
+                        {
+                            if (child != null && !allStatics.Contains(child.name))
+                            {
+                                sceneStatics.Add(child.name);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
             // Log results
-            Debug.Log($"[VisZone] Named Statics Report (from imported world data):");
-            Debug.Log($"  Total unique named statics: {allStatics.Count}");
+            Debug.Log($"[VisZone] Named Statics Report:");
+            Debug.Log($"  From imported world data: {allStatics.Count}");
+            Debug.Log($"  From scene containers: {sceneStatics.Count}");
             Debug.Log($"  Zones with named statics: {staticsByZone.Count}");
             Debug.Log("");
 
-            // List all unique statics
+            // List all unique statics from world data
             List<string> sortedStatics = allStatics.ToList();
             sortedStatics.Sort();
-            Debug.Log($"  All named statics:");
+            Debug.Log($"  Named statics (from world data):");
             foreach (string name in sortedStatics)
             {
                 Debug.Log($"    - {name}");
+            }
+
+            // List all scene statics
+            if (sceneStatics.Count > 0)
+            {
+                Debug.Log("");
+                List<string> sortedSceneStatics = sceneStatics.ToList();
+                sortedSceneStatics.Sort();
+                Debug.Log($"  Named statics (from scene containers):");
+                foreach (string name in sortedSceneStatics)
+                {
+                    Debug.Log($"    - {name}");
+                }
             }
 
             Debug.Log("");
@@ -1133,7 +1210,8 @@ namespace POTCO.Editor
 
             // Show summary dialog
             EditorUtility.DisplayDialog("Scan Complete",
-                $"Total unique named statics: {allStatics.Count}\n" +
+                $"Total from world data: {allStatics.Count}\n" +
+                $"Total from scene containers: {sceneStatics.Count}\n" +
                 $"Zones with named statics: {staticsByZone.Count}\n\n" +
                 $"Check Console for full breakdown.",
                 "OK");
@@ -1193,30 +1271,78 @@ namespace POTCO.Editor
                 return;
             }
 
-            Bounds bounds = selectedZone.GetBounds();
             ObjectListInfo[] allObjects = FindObjectsByType<ObjectListInfo>(FindObjectsSortMode.None);
 
+            Debug.Log($"[VisZone] Starting auto-assign for zone '{selectedZone.zoneName}'");
+            Debug.Log($"[VisZone] Found {allObjects.Length} total objects with ObjectListInfo");
+            Debug.Log($"[VisZone] Zone collider type: {selectedZone.zoneCollider.GetType().Name}");
+            Debug.Log($"[VisZone] Zone bounds: {selectedZone.GetBounds()}");
+
             int assigned = 0;
+            int skippedLarge = 0;
+            int skippedAlreadyAssigned = 0;
+            int outsideZone = 0;
+            int tested = 0;
+
             foreach (var info in allObjects)
             {
+                if (info == null) continue;
+
+                tested++;
+
                 // Skip if Large
                 if (info.visSize == "Large")
+                {
+                    skippedLarge++;
                     continue;
+                }
 
                 // Skip if already has a zone
                 if (!string.IsNullOrEmpty(info.visZone))
+                {
+                    skippedAlreadyAssigned++;
                     continue;
+                }
 
-                // Check if inside bounds
-                if (bounds.Contains(info.transform.position))
+                // Check if point is inside the collider
+                Vector3 position = info.transform.position;
+                bool isInside = false;
+
+                // For MeshColliders, use bounds check (ClosestPoint is unreliable for non-convex meshes)
+                MeshCollider meshCollider = selectedZone.zoneCollider as MeshCollider;
+                if (meshCollider != null)
+                {
+                    Bounds bounds = meshCollider.bounds;
+                    isInside = bounds.Contains(position);
+                }
+                else
+                {
+                    // For other collider types, use ClosestPoint method
+                    Vector3 closestPoint = selectedZone.zoneCollider.ClosestPoint(position);
+                    float distance = Vector3.Distance(position, closestPoint);
+                    isInside = distance < 1.0f;
+                }
+
+                if (assigned < 5) // Log first few tests for debugging
+                {
+                    Debug.Log($"[VisZone] Testing '{info.gameObject.name}': pos={position}, collider={selectedZone.zoneCollider.GetType().Name}, inside={isInside}");
+                }
+
+                if (isInside)
                 {
                     Undo.SetTransformParent(info.transform, section.transform, "Auto-Assign to Zone");
                     info.visZone = selectedZone.zoneName;
+                    EditorUtility.SetDirty(info);
                     assigned++;
+                    Debug.Log($"[VisZone] ✓ Assigned '{info.gameObject.name}' to zone '{selectedZone.zoneName}'");
+                }
+                else
+                {
+                    outsideZone++;
                 }
             }
 
-            Debug.Log($"Auto-assigned {assigned} objects to zone '{selectedZone.zoneName}'");
+            Debug.Log($"[VisZone] Auto-assign complete: {assigned} assigned, {outsideZone} outside zone, {skippedLarge} Large, {skippedAlreadyAssigned} already assigned (tested {tested} total)");
             RefreshData();
         }
 
@@ -1338,6 +1464,25 @@ namespace POTCO.Editor
             {
                 Bounds bounds = selectedZone.GetBounds();
                 SceneView.lastActiveSceneView.Frame(bounds, false);
+            }
+        }
+
+        /// <summary>
+        /// Refresh preview if currently active for the selected zone
+        /// Call this after modifying neighbors or named statics
+        /// </summary>
+        private void RefreshPreviewIfActive()
+        {
+            if (previewMode && selectedZone != null && previewZoneName == selectedZone.zoneName && manager != null)
+            {
+                // Clear the saved states and rebuild preview with updated neighbor list
+                previewOriginalStates.Clear();
+                previewOriginalStaticStates.Clear();
+
+                // Re-apply visibility with new neighbors/statics
+                manager.UpdateVisibilityForZone(previewZoneName, previewOriginalStates, previewOriginalStaticStates);
+                SceneView.RepaintAll();
+                Debug.Log($"[VisZone] Refreshed preview for zone '{previewZoneName}' with updated neighbors/statics");
             }
         }
 
@@ -1511,30 +1656,66 @@ namespace POTCO.Editor
         private void AutoAssignAllZones()
         {
             int totalAssigned = 0;
+            int skippedLarge = 0;
+            int skippedAlreadyAssigned = 0;
+
+            // Get all objects once
+            ObjectListInfo[] allObjects = FindObjectsByType<ObjectListInfo>(FindObjectsSortMode.None);
 
             foreach (VisZoneVolume zone in allZoneVolumes)
             {
                 if (zone == null || zone.zoneCollider == null || zone.sectionRoot == null)
                     continue;
 
-                Bounds bounds = zone.GetBounds();
-                ObjectListInfo[] allObjects = FindObjectsByType<ObjectListInfo>(FindObjectsSortMode.None);
-
                 foreach (var info in allObjects)
                 {
-                    if (info == null || info.visSize == "Large" || !string.IsNullOrEmpty(info.visZone))
+                    if (info == null)
                         continue;
 
-                    if (bounds.Contains(info.transform.position))
+                    // Skip if Large
+                    if (info.visSize == "Large")
+                    {
+                        skippedLarge++;
+                        continue;
+                    }
+
+                    // Skip if already has a zone
+                    if (!string.IsNullOrEmpty(info.visZone))
+                    {
+                        skippedAlreadyAssigned++;
+                        continue;
+                    }
+
+                    // Check if point is inside the collider
+                    Vector3 position = info.transform.position;
+                    bool isInside = false;
+
+                    // For MeshColliders, use bounds check (ClosestPoint is unreliable for non-convex meshes)
+                    MeshCollider meshCollider = zone.zoneCollider as MeshCollider;
+                    if (meshCollider != null)
+                    {
+                        Bounds bounds = meshCollider.bounds;
+                        isInside = bounds.Contains(position);
+                    }
+                    else
+                    {
+                        // For other collider types, use ClosestPoint method
+                        Vector3 closestPoint = zone.zoneCollider.ClosestPoint(position);
+                        float distance = Vector3.Distance(position, closestPoint);
+                        isInside = distance < 1.0f;
+                    }
+
+                    if (isInside)
                     {
                         Undo.SetTransformParent(info.transform, zone.sectionRoot.transform, "Auto-Assign to Zone");
                         info.visZone = zone.zoneName;
+                        EditorUtility.SetDirty(info);
                         totalAssigned++;
                     }
                 }
             }
 
-            Debug.Log($"[VisZone] Auto-assigned {totalAssigned} total objects across all zones");
+            Debug.Log($"[VisZone] Auto-assigned {totalAssigned} total objects across all zones (skipped {skippedLarge} Large, {skippedAlreadyAssigned} already assigned)");
             RefreshData();
         }
 
