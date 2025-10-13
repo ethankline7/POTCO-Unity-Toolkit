@@ -271,7 +271,17 @@ namespace POTCO.Editor
             {
                 selectedZone = zone;
                 selectedZoneIndex = index;
-                Selection.activeGameObject = zone.gameObject;
+
+                // Select the Section GameObject if it exists, otherwise select collision_zone
+                if (zone.sectionRoot != null)
+                {
+                    Selection.activeGameObject = zone.sectionRoot.gameObject;
+                }
+                else
+                {
+                    Selection.activeGameObject = zone.gameObject;
+                }
+
                 Event.current.Use();
                 Repaint();
             }
@@ -1541,6 +1551,15 @@ namespace POTCO.Editor
         {
             int created = 0;
 
+            // Find or create VisZone_Sections container
+            GameObject sectionsContainer = GameObject.Find("VisZone_Sections");
+            if (sectionsContainer == null && manager != null)
+            {
+                sectionsContainer = new GameObject("VisZone_Sections");
+                sectionsContainer.transform.SetParent(manager.transform, false);
+                Undo.RegisterCreatedObjectUndo(sectionsContainer, "Create Sections Container");
+            }
+
             foreach (VisZoneVolume zone in allZoneVolumes)
             {
                 if (zone == null)
@@ -1552,11 +1571,19 @@ namespace POTCO.Editor
                     {
                         // Create section
                         GameObject sectionObj = new GameObject($"Section-{zone.zoneName}");
+
+                        // Parent to container if it exists
+                        if (sectionsContainer != null)
+                        {
+                            sectionObj.transform.SetParent(sectionsContainer.transform, false);
+                        }
+
                         VisZoneSection section = Undo.AddComponent<VisZoneSection>(sectionObj);
                         section.zoneName = zone.zoneName;
                         section.zoneBounds = zone.GetBounds();
                         sectionObj.transform.position = section.zoneBounds.center;
 
+                        // Link section to volume
                         zone.sectionRoot = section;
                         section.zoneCollider = zone.zoneCollider;
 

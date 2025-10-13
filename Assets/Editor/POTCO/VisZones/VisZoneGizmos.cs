@@ -145,18 +145,30 @@ namespace POTCO.Editor
             int[] triangles = mesh.triangles;
             Vector3[] vertices = mesh.vertices;
 
+            // The extruded mesh has 3 layers, only draw the original (first third of vertices)
+            int originalVertCount = vertices.Length / 3;
+
             Handles.color = color;
 
-            for (int i = 0; i < triangles.Length; i += 3)
+            // Only draw triangles from the original middle layer
+            for (int i = 0; i < triangles.Length / 3; i += 3)
             {
-                Vector3 v0 = matrix.MultiplyPoint3x4(vertices[triangles[i]]);
-                Vector3 v1 = matrix.MultiplyPoint3x4(vertices[triangles[i + 1]]);
-                Vector3 v2 = matrix.MultiplyPoint3x4(vertices[triangles[i + 2]]);
+                int idx0 = triangles[i];
+                int idx1 = triangles[i + 1];
+                int idx2 = triangles[i + 2];
 
-                // Draw triangle edges
-                Handles.DrawLine(v0, v1);
-                Handles.DrawLine(v1, v2);
-                Handles.DrawLine(v2, v0);
+                // Only draw triangles where all vertices are from the original layer
+                if (idx0 < originalVertCount && idx1 < originalVertCount && idx2 < originalVertCount)
+                {
+                    Vector3 v0 = matrix.MultiplyPoint3x4(vertices[idx0]);
+                    Vector3 v1 = matrix.MultiplyPoint3x4(vertices[idx1]);
+                    Vector3 v2 = matrix.MultiplyPoint3x4(vertices[idx2]);
+
+                    // Draw triangle edges
+                    Handles.DrawLine(v0, v1);
+                    Handles.DrawLine(v1, v2);
+                    Handles.DrawLine(v2, v0);
+                }
             }
 
             // Draw filled semi-transparent overlay for selected zone
@@ -165,14 +177,22 @@ namespace POTCO.Editor
                 Color fillColor = new Color(color.r, color.g, color.b, 0.1f);
                 Handles.color = fillColor;
 
-                // Draw filled triangles
-                for (int i = 0; i < triangles.Length; i += 3)
+                // Draw filled triangles from original layer only
+                for (int i = 0; i < triangles.Length / 3; i += 3)
                 {
-                    Vector3 v0 = matrix.MultiplyPoint3x4(vertices[triangles[i]]);
-                    Vector3 v1 = matrix.MultiplyPoint3x4(vertices[triangles[i + 1]]);
-                    Vector3 v2 = matrix.MultiplyPoint3x4(vertices[triangles[i + 2]]);
+                    int idx0 = triangles[i];
+                    int idx1 = triangles[i + 1];
+                    int idx2 = triangles[i + 2];
 
-                    Handles.DrawAAConvexPolygon(v0, v1, v2);
+                    // Only draw triangles where all vertices are from the original layer
+                    if (idx0 < originalVertCount && idx1 < originalVertCount && idx2 < originalVertCount)
+                    {
+                        Vector3 v0 = matrix.MultiplyPoint3x4(vertices[idx0]);
+                        Vector3 v1 = matrix.MultiplyPoint3x4(vertices[idx1]);
+                        Vector3 v2 = matrix.MultiplyPoint3x4(vertices[idx2]);
+
+                        Handles.DrawAAConvexPolygon(v0, v1, v2);
+                    }
                 }
             }
         }
@@ -240,7 +260,33 @@ namespace POTCO.Editor
         private static void DrawZoneLabel(VisZoneVolume zone, bool isSelected)
         {
             Bounds bounds = zone.GetBounds();
-            Vector3 labelPos = bounds.center + Vector3.up * (bounds.extents.y + 2f);
+
+            // For extruded meshes, calculate the original mesh center height
+            Vector3 labelPos = bounds.center;
+
+            // If this is a mesh collider with extruded geometry, get the middle layer height
+            if (zone.zoneCollider is MeshCollider meshCol && meshCol.sharedMesh != null)
+            {
+                Mesh mesh = meshCol.sharedMesh;
+                Vector3[] vertices = mesh.vertices;
+                int originalVertCount = vertices.Length / 3;
+
+                // Calculate average Y of original layer vertices
+                float avgY = 0f;
+                for (int i = 0; i < originalVertCount; i++)
+                {
+                    avgY += vertices[i].y;
+                }
+                avgY /= originalVertCount;
+
+                // Set label position at original mesh height + offset
+                labelPos = new Vector3(bounds.center.x, zone.transform.TransformPoint(new Vector3(0, avgY, 0)).y + 10f, bounds.center.z);
+            }
+            else
+            {
+                // For box colliders, use center with small offset
+                labelPos = new Vector3(bounds.center.x, bounds.center.y + 10f, bounds.center.z);
+            }
 
             // Create style with background for better visibility
             GUIStyle style = new GUIStyle(EditorStyles.whiteLargeLabel);

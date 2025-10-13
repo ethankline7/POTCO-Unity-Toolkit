@@ -53,6 +53,9 @@ namespace WorldDataImporter.Processors
             // Step 5: Create trigger colliders for player detection
             CreateZoneTriggers(collisionZones);
 
+            // Step 5.5: Link collider references to sections
+            LinkCollidersToSections(collisionZones, sections);
+
             // Step 6: Set up VisZoneData and VisZoneManager on root
             SetupVisZoneComponents(root, visTable, sections);
 
@@ -306,10 +309,22 @@ namespace WorldDataImporter.Processors
                     }
                     else if (existingCollider is MeshCollider meshCol)
                     {
-                        // Keep mesh collider shape, just configure it as a trigger
-                        meshCol.isTrigger = true;
-                        meshCol.convex = true; // Required for triggers in Unity
-                        DebugLogger.LogWorldImporter($"  ✓ Configured mesh collider as trigger: {kvp.Key} (convex: {meshCol.convex})");
+                        // Extrude mesh vertically for flying gameplay
+                        if (meshCol.sharedMesh != null)
+                        {
+                            Mesh extrudedMesh = ExtrudeMeshVertically(meshCol.sharedMesh, VERTICAL_EXTENSION);
+                            meshCol.sharedMesh = extrudedMesh;
+                            meshCol.convex = true; // Required for triggers in Unity
+                            meshCol.isTrigger = true;
+                            DebugLogger.LogWorldImporter($"  ✓ Extended mesh collider vertically: {kvp.Key} (height: ±{VERTICAL_EXTENSION})");
+                        }
+                        else
+                        {
+                            // No mesh to extrude, just configure as trigger
+                            meshCol.isTrigger = true;
+                            meshCol.convex = true;
+                            DebugLogger.LogWorldImporter($"  ✓ Configured mesh collider as trigger: {kvp.Key} (no mesh to extrude)");
+                        }
                     }
                     else
                     {
@@ -322,6 +337,38 @@ namespace WorldDataImporter.Processors
                     CreateColliderForZone(collisionTransform, kvp.Key);
                 }
             }
+        }
+
+        /// <summary>
+        /// Link collider references to section components after colliders are created
+        /// </summary>
+        private static void LinkCollidersToSections(Dictionary<string, Transform> collisionZones, Dictionary<string, GameObject> sections)
+        {
+            int linkedCount = 0;
+
+            foreach (var kvp in collisionZones)
+            {
+                string zoneName = kvp.Key;
+                Transform collisionTransform = kvp.Value;
+
+                // Find the corresponding section
+                if (sections.TryGetValue(zoneName, out GameObject section))
+                {
+                    VisZoneSection sectionComp = section.GetComponent<VisZoneSection>();
+                    if (sectionComp != null)
+                    {
+                        // Get the collider from the collision zone
+                        Collider collider = collisionTransform.GetComponent<Collider>();
+                        if (collider != null)
+                        {
+                            sectionComp.zoneCollider = collider;
+                            linkedCount++;
+                        }
+                    }
+                }
+            }
+
+            DebugLogger.LogWorldImporter($"  ✓ Linked {linkedCount} colliders to sections");
         }
 
         /// <summary>
@@ -339,13 +386,18 @@ namespace WorldDataImporter.Processors
 
             if (meshFilter != null && meshFilter.sharedMesh != null)
             {
-                // Use the actual mesh geometry for collision
+                const float VERTICAL_EXTENSION = 1000f;
+
+                // Extrude the mesh vertically for flying gameplay
+                Mesh extrudedMesh = ExtrudeMeshVertically(meshFilter.sharedMesh, VERTICAL_EXTENSION);
+
+                // Use the extruded mesh geometry for collision
                 MeshCollider meshCollider = Undo.AddComponent<MeshCollider>(collisionTransform.gameObject);
-                meshCollider.sharedMesh = meshFilter.sharedMesh;
+                meshCollider.sharedMesh = extrudedMesh;
                 meshCollider.convex = true; // Required for triggers
                 meshCollider.isTrigger = true;
 
-                DebugLogger.LogWorldImporter($"  ✓ Created mesh trigger collider: {zoneName} (mesh: {meshFilter.sharedMesh.name}, vertices: {meshFilter.sharedMesh.vertexCount})");
+                DebugLogger.LogWorldImporter($"  ✓ Created extruded mesh trigger collider: {zoneName} (height: ±{VERTICAL_EXTENSION}, original vertices: {meshFilter.sharedMesh.vertexCount})");
             }
             else
             {
@@ -450,6 +502,81 @@ namespace WorldDataImporter.Processors
             }
 
             return combinedBounds;
+        }
+
+        /// <summary>
+        /// Extrude a mesh vertically for flying gameplay
+        /// Creates a new mesh with vertices duplicated at +/- vertical extension
+        /// Unity's convex hull will create the proper collision volume
+        /// </summary>
+        private static Mesh ExtrudeMeshVertically(Mesh originalMesh, float verticalExtension)
+        {
+            // Get original mesh data
+            Vector3[] originalVertices = originalMesh.vertices;
+            int[] originalTriangles = originalMesh.triangles;
+
+            // Calculate the center Y of the original mesh
+            Bounds bounds = originalMesh.bounds;
+            float centerY = bounds.center.y;
+
+            // Create new vertex arrays (original + top copy + bottom copy)
+            int originalVertCount = originalVertices.Length;
+            Vector3[] newVertices = new Vector3[originalVertCount * 3];
+
+            // Copy original vertices (middle layer)
+            for (int i = 0; i < originalVertCount; i++)
+            {
+                newVertices[i] = originalVertices[i];
+            }
+
+            // Create top layer (offset up)
+            for (int i = 0; i < originalVertCount; i++)
+            {
+                Vector3 vert = originalVertices[i];
+                vert.y = centerY + verticalExtension;
+                newVertices[originalVertCount + i] = vert;
+            }
+
+            // Create bottom layer (offset down)
+            for (int i = 0; i < originalVertCount; i++)
+            {
+                Vector3 vert = originalVertices[i];
+                vert.y = centerY - verticalExtension;
+                newVertices[originalVertCount * 2 + i] = vert;
+            }
+
+            // Create triangle arrays (original + top + bottom)
+            // The convex hull algorithm will connect these automatically
+            int originalTriCount = originalTriangles.Length;
+            int[] newTriangles = new int[originalTriCount * 3];
+
+            // Original triangles
+            for (int i = 0; i < originalTriCount; i++)
+            {
+                newTriangles[i] = originalTriangles[i];
+            }
+
+            // Top layer triangles (offset indices by originalVertCount)
+            for (int i = 0; i < originalTriCount; i++)
+            {
+                newTriangles[originalTriCount + i] = originalTriangles[i] + originalVertCount;
+            }
+
+            // Bottom layer triangles (offset indices by originalVertCount * 2)
+            for (int i = 0; i < originalTriCount; i++)
+            {
+                newTriangles[originalTriCount * 2 + i] = originalTriangles[i] + (originalVertCount * 2);
+            }
+
+            // Create new mesh
+            Mesh extrudedMesh = new Mesh();
+            extrudedMesh.name = originalMesh.name + "_Extruded";
+            extrudedMesh.vertices = newVertices;
+            extrudedMesh.triangles = newTriangles;
+            extrudedMesh.RecalculateNormals();
+            extrudedMesh.RecalculateBounds();
+
+            return extrudedMesh;
         }
 
         /// <summary>
