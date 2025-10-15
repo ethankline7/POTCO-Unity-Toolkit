@@ -94,6 +94,7 @@ namespace POTCO
         private Vector3 avoidanceDirection = Vector3.zero;
         private float avoidanceWeight = 0f;
         private float obstacleDetectionRange = 30f;
+        private BoxCollider hullCollider;
 
         #endregion
 
@@ -131,10 +132,14 @@ namespace POTCO
             if (rb != null)
             {
                 rb.useGravity = false;
+                rb.isKinematic = true; // Kinematic since we use manual movement
                 rb.linearDamping = 1f;
                 rb.angularDamping = 2f;
                 rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
             }
+
+            // Add ship hull collider for collision detection
+            AddShipHullCollider();
 
             // Find player
             if (playerTransform == null)
@@ -182,6 +187,30 @@ namespace POTCO
 
         private void Update()
         {
+            // Continuously re-check player collision ignore every frame until successful
+            if (hullCollider != null)
+            {
+                GameObject player = GameObject.FindGameObjectWithTag("Player");
+                if (player == null)
+                {
+                    Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
+                    if (pc != null) player = pc.gameObject;
+                }
+
+                // If player exists, ignore collision every frame (ensures it stays ignored)
+                if (player != null)
+                {
+                    Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
+                    foreach (Collider playerCollider in playerColliders)
+                    {
+                        if (playerCollider != null && hullCollider != null)
+                        {
+                            Physics.IgnoreCollision(hullCollider, playerCollider, true);
+                        }
+                    }
+                }
+            }
+
             // Find player if lost or re-check if player switched to/from ship
             if (playerTransform == null || Time.frameCount % 120 == 0) // Re-check every 2 seconds
             {
@@ -748,10 +777,10 @@ namespace POTCO
             direction.y = 0;
             direction.Normalize();
 
-            // Blend with avoidance
+            // Blend with avoidance (much stronger for ship collisions)
             if (avoidanceWeight > 0 && avoidObstacles)
             {
-                direction = Vector3.Lerp(direction, avoidanceDirection, avoidanceWeight * 0.7f);
+                direction = Vector3.Lerp(direction, avoidanceDirection, avoidanceWeight);
                 direction.Normalize();
             }
 
@@ -775,9 +804,13 @@ namespace POTCO
             else if (angleToTarget > 20f)
                 speedMultiplier = 0.6f;
 
-            // Slow down near obstacles
-            if (avoidanceWeight > 0.5f)
-                speedMultiplier *= 0.5f;
+            // Dramatically slow down near ships (much stronger avoidance)
+            if (avoidanceWeight > 0.7f)
+                speedMultiplier *= 0.1f; // Almost stop when very close to ships
+            else if (avoidanceWeight > 0.4f)
+                speedMultiplier *= 0.3f; // Slow significantly when near ships
+            else if (avoidanceWeight > 0f)
+                speedMultiplier *= 0.6f; // Moderate slowdown
 
             currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed * speedMultiplier, acceleration * Time.deltaTime);
         }
@@ -795,15 +828,16 @@ namespace POTCO
         }
 
         /// <summary>
-        /// Detect obstacles ahead
+        /// Detect obstacles ahead - prioritizes ship collision detection
         /// </summary>
         private void DetectObstacles()
         {
             avoidanceWeight = 0f;
             avoidanceDirection = Vector3.zero;
 
-            int rayCount = 5;
-            float arcAngle = 60f;
+            int rayCount = 7;
+            float arcAngle = 90f;
+            float minShipDistance = 15f; // Minimum safe distance from other ships
 
             for (int i = 0; i < rayCount; i++)
             {
@@ -811,17 +845,56 @@ namespace POTCO
                 Vector3 direction = Quaternion.Euler(0, angle, 0) * -transform.forward;
 
                 RaycastHit hit;
-                if (Physics.Raycast(transform.position + Vector3.up * 2f, direction, out hit, obstacleDetectionRange))
+                if (Physics.Raycast(transform.position + Vector3.up * 5f, direction, out hit, obstacleDetectionRange))
                 {
-                    // Ignore player and self
-                    if (hit.collider.transform.root == transform ||
-                        (playerTransform != null && hit.collider.transform.root == playerTransform.root))
+                    // Check if we hit a ship (AI or player)
+                    ShipController otherPlayerShip = hit.collider.GetComponentInParent<ShipController>();
+                    ShipAIController otherAIShip = hit.collider.GetComponentInParent<ShipAIController>();
+
+                    bool hitShip = false;
+
+                    // Ignore self
+                    if (otherPlayerShip != null && otherPlayerShip.transform.root == transform)
+                        continue;
+                    if (otherAIShip != null && otherAIShip.transform.root == transform)
+                        continue;
+
+                    // Check if we hit a ship
+                    if (otherPlayerShip != null || otherAIShip != null)
+                    {
+                        hitShip = true;
+                    }
+
+                    // Ignore player ship when it's our target (allow close combat)
+                    if (playerTransform != null && hit.collider.transform.root == playerTransform.root)
                         continue;
 
                     Vector3 avoidDir = (transform.position - hit.point).normalized;
                     avoidDir.y = 0;
 
                     float weight = 1f - (hit.distance / obstacleDetectionRange);
+
+                    // Apply stronger avoidance for ships
+                    if (hitShip)
+                    {
+                        // DRAMATICALLY increase weight when very close to another ship (exponential curve)
+                        if (hit.distance < minShipDistance)
+                        {
+                            // Square the weight to make it exponentially stronger
+                            float closenessFactor = 1f - (hit.distance / minShipDistance);
+                            weight = Mathf.Lerp(weight, 1f, closenessFactor * closenessFactor);
+                        }
+
+                        // Ships get 2x avoidance priority vs terrain
+                        weight *= 2.0f;
+
+                        Debug.DrawRay(transform.position + Vector3.up * 5f, direction * hit.distance, Color.red);
+                    }
+                    else
+                    {
+                        Debug.DrawRay(transform.position + Vector3.up * 5f, direction * hit.distance, Color.yellow);
+                    }
+
                     avoidanceDirection += avoidDir * weight;
                     avoidanceWeight += weight;
                 }
@@ -951,6 +1024,85 @@ namespace POTCO
             isRamming = false;
             ChangeState(previousState);
             Debug.Log($"[{gameObject.name}] Ram complete, returning to {previousState}");
+        }
+
+        /// <summary>
+        /// Add ship hull collider for collision detection (same as ShipController)
+        /// </summary>
+        private void AddShipHullCollider()
+        {
+            // Check if hull collider already exists on root
+            hullCollider = GetComponent<BoxCollider>();
+            if (hullCollider != null)
+            {
+                Debug.Log($"[{gameObject.name}] Ship hull collider already exists");
+                IgnorePlayerCollision(hullCollider);
+                return;
+            }
+
+            // Calculate bounds from all mesh renderers
+            Renderer[] renderers = GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                Debug.LogWarning($"[{gameObject.name}] No renderers found to calculate ship bounds");
+                return;
+            }
+
+            Bounds combinedBounds = renderers[0].bounds;
+            foreach (Renderer renderer in renderers)
+            {
+                // Skip masts and sails for hull calculation
+                if (renderer.name.ToLower().Contains("mast") ||
+                    renderer.name.ToLower().Contains("sail"))
+                    continue;
+
+                combinedBounds.Encapsulate(renderer.bounds);
+            }
+
+            // Add box collider to root (where Rigidbody is)
+            hullCollider = gameObject.AddComponent<BoxCollider>();
+            hullCollider.center = transform.InverseTransformPoint(combinedBounds.center);
+            hullCollider.size = new Vector3(
+                combinedBounds.size.x / transform.lossyScale.x,
+                combinedBounds.size.y / transform.lossyScale.y,
+                combinedBounds.size.z / transform.lossyScale.z
+            );
+
+            // Ignore collision with player
+            IgnorePlayerCollision(hullCollider);
+
+            Debug.Log($"[{gameObject.name}] ✅ Added ship hull collider - Size: {hullCollider.size}, Center: {hullCollider.center}");
+        }
+
+        private void IgnorePlayerCollision(Collider shipCollider)
+        {
+            if (shipCollider == null) return;
+
+            // Find player and ignore collision with hull
+            GameObject player = GameObject.FindGameObjectWithTag("Player");
+            if (player == null)
+            {
+                Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
+                if (pc != null) player = pc.gameObject;
+            }
+
+            if (player != null)
+            {
+                // Get all colliders on player (CharacterController and any others)
+                Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
+                foreach (Collider playerCollider in playerColliders)
+                {
+                    if (playerCollider != null)
+                    {
+                        Physics.IgnoreCollision(shipCollider, playerCollider, true);
+                    }
+                }
+            }
+            else
+            {
+                // Player not found yet - will retry in Update()
+                Debug.LogWarning($"[{gameObject.name}] Player not found for collision ignore - will retry");
+            }
         }
 
         #endregion

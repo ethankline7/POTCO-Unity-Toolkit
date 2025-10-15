@@ -4,6 +4,7 @@ using System.Collections.Generic;
 
 namespace POTCO
 {
+    [RequireComponent(typeof(Rigidbody))]
     public class ShipController : MonoBehaviour
     {
         [Header("Ship Movement")]
@@ -47,6 +48,14 @@ namespace POTCO
         private Vector3 originalCameraPosition;
         private Quaternion originalCameraRotation;
         private Transform originalCameraParent;
+        private Rigidbody rb;
+
+        // Ship collision detection (same system as ShipAIController)
+        private Vector3 shipAvoidanceDirection = Vector3.zero;
+        private float shipAvoidanceWeight = 0f;
+        private float shipCollisionDetectionRange = 40f;
+        private float minShipDistance = 15f;
+        private BoxCollider hullCollider;
 
         // Ship components
         private class MastAnimationData
@@ -94,10 +103,23 @@ namespace POTCO
         void Start()
         {
             mainCamera = Camera.main;
+
+            // Initialize Rigidbody (same configuration as ShipAIController)
+            rb = GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.useGravity = false;
+                rb.isKinematic = true; // Kinematic since we use manual movement
+                rb.linearDamping = 1f;
+                rb.angularDamping = 2f;
+                rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            }
+
             FindShipComponents();
             LoadAnimationClips();
             CreateCameraPoint();
             AddDeckColliders();
+            AddShipHullCollider();
 
             // Initialize bobbing
             basePosition = transform.position;
@@ -119,6 +141,30 @@ namespace POTCO
 
         void Update()
         {
+            // Continuously re-check player collision ignore every frame until successful
+            if (hullCollider != null)
+            {
+                GameObject player = GameObject.FindGameObjectWithTag("Player");
+                if (player == null)
+                {
+                    Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
+                    if (pc != null) player = pc.gameObject;
+                }
+
+                // If player exists, ignore collision every frame (ensures it stays ignored)
+                if (player != null)
+                {
+                    Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
+                    foreach (Collider playerCollider in playerColliders)
+                    {
+                        if (playerCollider != null && hullCollider != null)
+                        {
+                            Physics.IgnoreCollision(hullCollider, playerCollider, true);
+                        }
+                    }
+                }
+            }
+
             // Apply bobbing motion always
             if (enableBobbing)
             {
@@ -686,6 +732,9 @@ namespace POTCO
 
         private void HandleShipControls()
         {
+            // Detect ship collisions every frame (same as ShipAIController)
+            DetectShipCollisions();
+
             // W - Roll down sails and start moving
             if (Input.GetKeyDown(KeyCode.W))
             {
@@ -713,6 +762,31 @@ namespace POTCO
                 }
             }
 
+            // Calculate movement direction with ship avoidance
+            Vector3 forwardDirection = baseRotation * Vector3.forward;
+
+            // Blend with ship avoidance (same as ShipAIController)
+            if (shipAvoidanceWeight > 0f)
+            {
+                // Much stronger avoidance blending
+                forwardDirection = Vector3.Lerp(forwardDirection, shipAvoidanceDirection, shipAvoidanceWeight);
+                forwardDirection.Normalize();
+
+                // Dramatically slow down when avoiding ships
+                if (shipAvoidanceWeight > 0.7f)
+                {
+                    currentSpeed *= 0.1f; // Almost stop
+                }
+                else if (shipAvoidanceWeight > 0.4f)
+                {
+                    currentSpeed *= 0.3f; // Slow significantly
+                }
+                else
+                {
+                    currentSpeed *= 0.6f; // Moderate slowdown
+                }
+            }
+
             // Continuous automatic movement while sails are down
             if (sailsDown)
             {
@@ -720,7 +794,6 @@ namespace POTCO
                 currentSpeed = Mathf.MoveTowards(currentSpeed, moveSpeed, acceleration * Time.deltaTime);
 
                 // Move forward automatically using base rotation (not affected by bobbing)
-                Vector3 forwardDirection = baseRotation * Vector3.forward;
                 basePosition -= forwardDirection * currentSpeed * Time.deltaTime;
             }
             else
@@ -731,7 +804,6 @@ namespace POTCO
                 // Continue moving if still have momentum
                 if (currentSpeed > 0f)
                 {
-                    Vector3 forwardDirection = baseRotation * Vector3.forward;
                     basePosition -= forwardDirection * currentSpeed * Time.deltaTime;
                 }
             }
@@ -764,11 +836,27 @@ namespace POTCO
             // Calculate roll (side-to-side tilt)
             float roll = Mathf.Sin(bobbingTime * bobbingRotationSpeed * 1.3f) * bobbingRotationAmount * intensityMultiplier;
 
-            // Apply position with bobbing offset
-            transform.position = basePosition + new Vector3(0, yOffset, 0);
+            // Apply position with bobbing offset using Rigidbody for physics-based movement
+            Vector3 targetPosition = basePosition + new Vector3(0, yOffset, 0);
+            if (rb != null)
+            {
+                rb.MovePosition(targetPosition);
+            }
+            else
+            {
+                transform.position = targetPosition;
+            }
 
             // Apply rotation with bobbing
-            transform.rotation = baseRotation * Quaternion.Euler(pitch, 0, roll);
+            Quaternion targetRotation = baseRotation * Quaternion.Euler(pitch, 0, roll);
+            if (rb != null)
+            {
+                rb.MoveRotation(targetRotation);
+            }
+            else
+            {
+                transform.rotation = targetRotation;
+            }
         }
 
         private IEnumerator SwitchToIdleAfterRollDown()
@@ -857,7 +945,12 @@ namespace POTCO
             Vector3 offset = rotation * new Vector3(0, 0, -orbitDistance);
 
             // Position camera and look at focus point (player character)
-            mainCamera.transform.position = focusPoint + offset;
+            Vector3 cameraPosition = focusPoint + offset;
+
+            // Clamp camera Y position to prevent going below ocean (Y = 0)
+            cameraPosition.y = Mathf.Max(cameraPosition.y, 0.5f); // 0.5f minimum to stay slightly above water
+
+            mainCamera.transform.position = cameraPosition;
             mainCamera.transform.LookAt(focusPoint);
         }
 
@@ -897,12 +990,18 @@ namespace POTCO
                 Debug.Log("Player unparented from ship");
             }
 
-            // Move player back onto the ship at the wheel position (slightly above deck)
+            // Move player back onto the ship at the wheel position (in front of wheel, relative to ship)
             if (playerTransform != null && wheelTransform != null)
             {
-                // Position player at the wheel, raised up to avoid falling through
-                playerTransform.position = wheelTransform.position + Vector3.up * 2f + Vector3.back * 2f;
-                playerTransform.rotation = Quaternion.LookRotation(wheelTransform.forward);
+                // Position player in front of the wheel (relative to the wheel's facing direction)
+                // Use the wheel's forward direction to place player correctly regardless of ship rotation
+                Vector3 exitOffset = wheelTransform.forward * 2.5f; // 2.5 units in front of wheel
+                playerTransform.position = wheelTransform.position + Vector3.up * 0.5f + exitOffset;
+
+                // Face player in same direction as wheel
+                playerTransform.rotation = wheelTransform.rotation;
+
+                Debug.Log($"Player exited ship control at position: {playerTransform.position}");
             }
 
             // Restore camera to original state
@@ -1207,6 +1306,146 @@ namespace POTCO
             Debug.Log($"✅ Added {colliderCount} colliders to ship deck - player can now walk on it");
         }
 
+        private void AddShipHullCollider()
+        {
+            // Check if hull collider already exists on root
+            hullCollider = GetComponent<BoxCollider>();
+            if (hullCollider != null)
+            {
+                Debug.Log("Ship hull collider already exists");
+                IgnorePlayerCollision(hullCollider);
+                return;
+            }
+
+            // Calculate bounds from all mesh renderers
+            Renderer[] renderers = GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0)
+            {
+                Debug.LogWarning("No renderers found to calculate ship bounds");
+                return;
+            }
+
+            Bounds combinedBounds = renderers[0].bounds;
+            foreach (Renderer renderer in renderers)
+            {
+                // Skip masts and sails for hull calculation
+                if (renderer.name.ToLower().Contains("mast") ||
+                    renderer.name.ToLower().Contains("sail"))
+                    continue;
+
+                combinedBounds.Encapsulate(renderer.bounds);
+            }
+
+            // Add box collider to root (where Rigidbody is)
+            hullCollider = gameObject.AddComponent<BoxCollider>();
+            hullCollider.center = transform.InverseTransformPoint(combinedBounds.center);
+            hullCollider.size = new Vector3(
+                combinedBounds.size.x / transform.lossyScale.x,
+                combinedBounds.size.y / transform.lossyScale.y,
+                combinedBounds.size.z / transform.lossyScale.z
+            );
+
+            // Ignore collision with player
+            IgnorePlayerCollision(hullCollider);
+
+            Debug.Log($"✅ Added ship hull collider - Size: {hullCollider.size}, Center: {hullCollider.center}");
+        }
+
+        private void IgnorePlayerCollision(Collider shipCollider)
+        {
+            if (shipCollider == null) return;
+
+            // Find player and ignore collision with hull
+            GameObject player = GameObject.FindGameObjectWithTag("Player");
+            if (player == null)
+            {
+                Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
+                if (pc != null) player = pc.gameObject;
+            }
+
+            if (player != null)
+            {
+                // Get all colliders on player (CharacterController and any others)
+                Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
+                foreach (Collider playerCollider in playerColliders)
+                {
+                    if (playerCollider != null)
+                    {
+                        Physics.IgnoreCollision(shipCollider, playerCollider, true);
+                    }
+                }
+            }
+            else
+            {
+                // Player not found yet - will retry in Update()
+                Debug.LogWarning("Player not found for collision ignore - will retry");
+            }
+        }
+
+        /// <summary>
+        /// Detect nearby ships for collision avoidance (same system as ShipAIController)
+        /// </summary>
+        private void DetectShipCollisions()
+        {
+            shipAvoidanceWeight = 0f;
+            shipAvoidanceDirection = Vector3.zero;
+
+            // Use same raycast pattern as ShipAIController.DetectObstacles()
+            int rayCount = 7;
+            float arcAngle = 90f;
+
+            for (int i = 0; i < rayCount; i++)
+            {
+                float angle = -arcAngle / 2f + (arcAngle / (rayCount - 1)) * i;
+                Vector3 direction = Quaternion.Euler(0, angle, 0) * -transform.forward;
+
+                RaycastHit hit;
+                if (Physics.Raycast(transform.position + Vector3.up * 5f, direction, out hit, shipCollisionDetectionRange))
+                {
+                    // Check if we hit another ship (AI or player)
+                    ShipController otherPlayerShip = hit.collider.GetComponentInParent<ShipController>();
+                    ShipAIController otherAIShip = hit.collider.GetComponentInParent<ShipAIController>();
+
+                    // Ignore self
+                    if (otherPlayerShip != null && otherPlayerShip.transform.root == transform)
+                        continue;
+                    if (otherAIShip != null && otherAIShip.transform.root == transform)
+                        continue;
+
+                    // If we hit a ship, calculate avoidance
+                    if (otherPlayerShip != null || otherAIShip != null)
+                    {
+                        Vector3 avoidDir = (transform.position - hit.point).normalized;
+                        avoidDir.y = 0;
+
+                        float weight = 1f - (hit.distance / shipCollisionDetectionRange);
+
+                        // DRAMATICALLY increase weight when very close (exponential curve)
+                        if (hit.distance < minShipDistance)
+                        {
+                            // Square the weight to make it exponentially stronger
+                            float closenessFactor = 1f - (hit.distance / minShipDistance);
+                            weight = Mathf.Lerp(weight, 1f, closenessFactor * closenessFactor);
+                        }
+
+                        // Apply 2x multiplier for ship avoidance vs terrain
+                        weight *= 2.0f;
+
+                        shipAvoidanceDirection += avoidDir * weight;
+                        shipAvoidanceWeight += weight;
+
+                        Debug.DrawRay(transform.position + Vector3.up * 5f, direction * hit.distance, Color.red);
+                    }
+                }
+            }
+
+            if (shipAvoidanceWeight > 0)
+            {
+                shipAvoidanceDirection.Normalize();
+                shipAvoidanceWeight = Mathf.Clamp01(shipAvoidanceWeight);
+            }
+        }
+
         private void OnDrawGizmosSelected()
         {
             // Draw interaction range around wheel
@@ -1215,6 +1454,10 @@ namespace POTCO
                 Gizmos.color = Color.yellow;
                 Gizmos.DrawWireSphere(wheelTransform.position, interactionDistance);
             }
+
+            // Draw ship collision detection range
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(transform.position, shipCollisionDetectionRange);
         }
     }
 }

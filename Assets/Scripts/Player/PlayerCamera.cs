@@ -36,6 +36,7 @@ namespace Player
         [SerializeField] private float collisionRadius = 2.27f;
         [SerializeField] private LayerMask collisionMask = ~0;
         [SerializeField] private float collisionSpringBack = 8f;
+        [SerializeField] private float minCollisionDistance = 1.5f; // Minimum distance to prevent camera flip
 
         [Header("FOV")]
         [SerializeField] private float baseFOV = 60f;
@@ -236,16 +237,63 @@ namespace Player
             Vector3 direction = transform.position - targetFocusPoint;
             float distance = direction.magnitude;
 
-            if (Physics.SphereCast(targetFocusPoint, collisionRadius, direction.normalized, out RaycastHit hit, distance, collisionMask))
+            // Use multiple raycasts for better accuracy
+            bool foundMeshCollision = false;
+            float closestMeshDistance = distance;
+
+            // Center raycast
+            if (Physics.Raycast(targetFocusPoint, direction.normalized, out RaycastHit centerHit, distance, collisionMask))
             {
-                // Collision detected - retract camera
-                currentDistance = Mathf.MoveTowards(currentDistance, hit.distance - collisionRadius, collisionSpringBack * Time.deltaTime);
+                if (centerHit.collider is MeshCollider)
+                {
+                    closestMeshDistance = Mathf.Min(closestMeshDistance, centerHit.distance);
+                    foundMeshCollision = true;
+                }
+            }
+
+            // Additional raycasts in a cone pattern for better collision detection
+            Vector3[] offsets = new Vector3[]
+            {
+                Vector3.up * collisionRadius * 0.5f,
+                Vector3.down * collisionRadius * 0.5f,
+                Vector3.left * collisionRadius * 0.5f,
+                Vector3.right * collisionRadius * 0.5f
+            };
+
+            foreach (Vector3 offset in offsets)
+            {
+                Vector3 offsetStart = targetFocusPoint + offset;
+                Vector3 offsetDirection = (transform.position + offset) - offsetStart;
+
+                if (Physics.Raycast(offsetStart, offsetDirection.normalized, out RaycastHit hit, distance, collisionMask))
+                {
+                    if (hit.collider is MeshCollider)
+                    {
+                        closestMeshDistance = Mathf.Min(closestMeshDistance, hit.distance);
+                        foundMeshCollision = true;
+                    }
+                }
+            }
+
+            // Calculate target distance with minimum clamp
+            float targetDistance;
+            if (foundMeshCollision)
+            {
+                // Mesh collision detected - retract camera but respect minimum distance
+                targetDistance = Mathf.Max(closestMeshDistance - collisionRadius, minCollisionDistance);
             }
             else
             {
-                // No collision - spring back to desired distance
-                currentDistance = Mathf.MoveTowards(currentDistance, desiredDistance, collisionSpringBack * Time.deltaTime);
+                // No mesh collision - spring back to desired distance
+                targetDistance = desiredDistance;
             }
+
+            // Smoothly move to target distance (faster retraction, slower spring back)
+            float moveSpeed = (targetDistance < currentDistance) ? collisionSpringBack * 2f : collisionSpringBack;
+            currentDistance = Mathf.MoveTowards(currentDistance, targetDistance, moveSpeed * Time.deltaTime);
+
+            // Clamp to absolute minimum to prevent camera flip
+            currentDistance = Mathf.Max(currentDistance, minCollisionDistance);
 
             // Apply distance adjustment
             if (currentDistance < desiredDistance)
