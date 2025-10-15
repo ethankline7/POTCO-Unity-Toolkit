@@ -18,25 +18,25 @@ namespace POTCO
 
         [Header("Detection & Aggro")]
         [Tooltip("How far ship can detect player")]
-        public float detectionRange = 80f;
+        public float detectionRange = 1000f;
         [Tooltip("Maximum chase distance from spawn")]
-        public float maxChaseDistance = 200f;
+        public float maxChaseDistance = 1500f;
 
         [Header("Movement")]
-        public float moveSpeed = 30f;
+        public float moveSpeed = 90f;
         public float rotateSpeed = 20f;
-        public float acceleration = 8f;
+        public float acceleration = 10f;
 
         [Header("Combat Distances")]
         [Tooltip("Flank-and-Broadside range (150-300m)")]
-        public float flankMinDistance = 150f;
-        public float flankMaxDistance = 300f;
+        public float flankMinDistance = 300f;
+        public float flankMaxDistance = 500f;
         [Tooltip("Sniper range (500-1200m)")]
-        public float sniperMinDistance = 500f;
-        public float sniperMaxDistance = 1200f;
+        public float sniperMinDistance = 700f;
+        public float sniperMaxDistance = 1300f;
         [Tooltip("Circle orbit range")]
-        public float circleMinDistance = 100f;
-        public float circleMaxDistance = 200f;
+        public float circleMinDistance = 400f;
+        public float circleMaxDistance = 700f;
 
         [Header("Broadside Settings")]
         [Tooltip("Maximum angle from perpendicular to fire (degrees)")]
@@ -50,7 +50,7 @@ namespace POTCO
         public float ramMinTargetSpeed = 5f; // Ram only if target is slow
 
         [Header("Patrol Settings")]
-        public float patrolRadius = 100f;
+        public float patrolRadius = 1000f;
         public float patrolWaitTime = 10f;
 
         [Header("Health Thresholds")]
@@ -293,6 +293,14 @@ namespace POTCO
                 return;
             }
 
+            // Only check for state changes every 2 seconds to avoid rapid switching
+            if (stateTimer < 2f)
+            {
+                // Continue chasing with lead prediction
+                NavigateToPoint(PredictInterceptPoint(), moveSpeed, true);
+                return;
+            }
+
             // Choose combat state based on distance and opportunity
             if (distanceToPlayer >= sniperMinDistance && distanceToPlayer <= sniperMaxDistance)
             {
@@ -339,9 +347,8 @@ namespace POTCO
                 return;
             }
 
-            // Continue chasing with lead prediction
-            Vector3 interceptPoint = PredictInterceptPoint();
-            NavigateToPoint(interceptPoint, moveSpeed, true);
+            // Continue chasing with lead prediction (fallback if no state selected)
+            NavigateToPoint(PredictInterceptPoint(), moveSpeed, true);
         }
 
         /// <summary>
@@ -819,6 +826,10 @@ namespace POTCO
                 RaycastHit hit;
                 if (Physics.Raycast(transform.position + Vector3.up * 5f, direction, out hit, obstacleDetectionRange))
                 {
+                    // Ignore cannonballs - don't avoid projectiles
+                    if (hit.collider.GetComponent<CannonProjectile>() != null)
+                        continue;
+
                     ShipController otherPlayerShip = hit.collider.GetComponentInParent<ShipController>();
                     ShipAIController otherAIShip = hit.collider.GetComponentInParent<ShipAIController>();
 

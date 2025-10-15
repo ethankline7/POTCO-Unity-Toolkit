@@ -97,6 +97,14 @@ namespace POTCO
         }
 
         /// <summary>
+        /// Check if currently firing a volley
+        /// </summary>
+        public bool IsFiring()
+        {
+            return isFiring;
+        }
+
+        /// <summary>
         /// Fire broadside cannons
         /// </summary>
         /// <param name="isLeftSide">True to fire left side, false for right side</param>
