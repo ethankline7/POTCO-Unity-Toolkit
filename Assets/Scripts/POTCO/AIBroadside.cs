@@ -498,10 +498,16 @@ namespace POTCO
             }
 
             // Check if player is at a perpendicular angle (not too far forward/back)
-            float forwardDot = Vector3.Dot(-transform.forward, toPlayer);
-            if (Mathf.Abs(forwardDot) > Mathf.Cos(maxAngleDeviation * Mathf.Deg2Rad))
+            // Calculate angle from ship's bow to player
+            float angleFromForward = Vector3.Angle(-transform.forward, toPlayer);
+
+            // Calculate how far from perpendicular (90 degrees) we are
+            float angleFromPerpendicular = Mathf.Abs(angleFromForward - 90f);
+
+            // Player must be within maxAngleDeviation degrees of perpendicular
+            if (angleFromPerpendicular > maxAngleDeviation)
             {
-                Debug.Log($"[AIBroadside] Player angle too extreme (forward dot: {forwardDot:F2}, max: {Mathf.Cos(maxAngleDeviation * Mathf.Deg2Rad):F2})");
+                Debug.Log($"[AIBroadside] Player angle too extreme (angle from perpendicular: {angleFromPerpendicular:F1}°, max: {maxAngleDeviation}°)");
                 return false;
             }
 

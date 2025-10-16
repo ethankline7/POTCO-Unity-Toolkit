@@ -4,8 +4,8 @@ using System.Collections;
 namespace POTCO
 {
     /// <summary>
-    /// Advanced Ship AI Controller with 8 distinct combat states
-    /// States: Patrol → Chase → Flank/Circle/Sniper/Ram/Feint → Panic
+    /// Simplified Ship AI Controller with 5 combat states
+    /// States: Patrol → Circle/Sniper/Ram → Panic
     /// All states fire opportunistically when broadsides are aligned
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
@@ -79,16 +79,11 @@ namespace POTCO
         // Circle/Orbit variables
         private float circleTargetDistance;
         private float circleAngleOffset;
-        private float circleNoiseTime;
-        private float circleNoiseFrequency = 0.3f;
-        private float circleNoiseAmplitude = 20f;
+        private bool circleClockwise = true; // true = right side broadside, false = left side broadside
 
         // Sniper variables
         private bool isSniperAiming = false;
         private float sniperAimStartTime = 0f;
-
-        // Feint variables
-        private Vector3 feintReturnPosition;
 
         // Obstacle avoidance (kept from original)
         private Vector3 avoidanceDirection = Vector3.zero;
@@ -103,12 +98,9 @@ namespace POTCO
         public enum AIState
         {
             Patrol,         // Wandering and scanning
-            Chase,          // Intercepting target
-            FlankBroadside, // Main attack: 150-300m broadside volleys
-            Circle,         // Realistic imperfect orbit
+            Circle,         // Orbit attack with broadsides
             Sniper,         // Long range 500-1200m precision shots
             Ram,            // Collision attack on slow targets
-            Feint,          // Fake flee then turn
             Panic           // Low health escape
         }
 
@@ -149,7 +141,7 @@ namespace POTCO
             // Initialize circle variables
             circleTargetDistance = Random.Range(circleMinDistance, circleMaxDistance);
             circleAngleOffset = Random.Range(0f, 360f);
-            circleNoiseTime = Random.Range(0f, 100f);
+            circleClockwise = Random.value > 0.5f;
 
             // Start patrol
             currentWaypoint = GetRandomPatrolPoint();
@@ -216,12 +208,6 @@ namespace POTCO
                 case AIState.Patrol:
                     UpdatePatrol();
                     break;
-                case AIState.Chase:
-                    UpdateChase();
-                    break;
-                case AIState.FlankBroadside:
-                    UpdateFlankBroadside();
-                    break;
                 case AIState.Circle:
                     UpdateCircle();
                     break;
@@ -230,9 +216,6 @@ namespace POTCO
                     break;
                 case AIState.Ram:
                     UpdateRam();
-                    break;
-                case AIState.Feint:
-                    UpdateFeint();
                     break;
                 case AIState.Panic:
                     UpdatePanic();
@@ -261,7 +244,20 @@ namespace POTCO
             if (distanceToPlayer <= detectionRange)
             {
                 Debug.Log($"[{gameObject.name}] Player detected! Engaging...");
-                ChangeState(AIState.Chase);
+
+                // Choose combat state based on distance
+                if (distanceToPlayer >= sniperMinDistance && distanceToPlayer <= sniperMaxDistance)
+                {
+                    ChangeState(AIState.Sniper);
+                }
+                else if (ShouldRam() && distanceToPlayer < flankMinDistance)
+                {
+                    ChangeState(AIState.Ram);
+                }
+                else
+                {
+                    ChangeState(AIState.Circle);
+                }
                 return;
             }
 
@@ -277,117 +273,8 @@ namespace POTCO
         }
 
         /// <summary>
-        /// Chase: Intercept target with velocity prediction
-        /// </summary>
-        private void UpdateChase()
-        {
-            float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
-            float distanceFromSpawn = Vector3.Distance(transform.position, spawnPosition);
-
-            // Lost player or too far
-            if (distanceToPlayer > detectionRange * 1.5f || distanceFromSpawn > maxChaseDistance)
-            {
-                Debug.Log($"[{gameObject.name}] Lost target or too far, returning to patrol");
-                ChangeState(AIState.Patrol);
-                currentWaypoint = spawnPosition;
-                return;
-            }
-
-            // Only check for state changes every 2 seconds to avoid rapid switching
-            if (stateTimer < 2f)
-            {
-                // Continue chasing with lead prediction
-                NavigateToPoint(PredictInterceptPoint(), moveSpeed, true);
-                return;
-            }
-
-            // Choose combat state based on distance and opportunity
-            if (distanceToPlayer >= sniperMinDistance && distanceToPlayer <= sniperMaxDistance)
-            {
-                // Sniper range - check if player is fleeing
-                if (IsPlayerFleeing() && Random.value < 0.4f)
-                {
-                    ChangeState(AIState.Sniper);
-                    return;
-                }
-            }
-
-            if (distanceToPlayer >= flankMinDistance && distanceToPlayer <= flankMaxDistance)
-            {
-                // Flank range - primary combat mode
-                if (Random.value < 0.5f)
-                {
-                    ChangeState(AIState.FlankBroadside);
-                    return;
-                }
-                else
-                {
-                    ChangeState(AIState.Circle);
-                    return;
-                }
-            }
-
-            if (distanceToPlayer < flankMinDistance)
-            {
-                // Close range - chance for ram or feint
-                if (ShouldRam() && Random.value < 0.3f)
-                {
-                    ChangeState(AIState.Ram);
-                    return;
-                }
-
-                if (Random.value < 0.2f)
-                {
-                    ChangeState(AIState.Feint);
-                    return;
-                }
-
-                // Default to circle at close range
-                ChangeState(AIState.Circle);
-                return;
-            }
-
-            // Continue chasing with lead prediction (fallback if no state selected)
-            NavigateToPoint(PredictInterceptPoint(), moveSpeed, true);
-        }
-
-        /// <summary>
-        /// Flank-and-Broadside: Position for 60-120° angle, 150-300m distance, chain volleys
-        /// </summary>
-        private void UpdateFlankBroadside()
-        {
-            float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
-
-            // Exit conditions
-            if (distanceToPlayer > flankMaxDistance * 1.2f)
-            {
-                ChangeState(AIState.Chase);
-                return;
-            }
-
-            if (distanceToPlayer < flankMinDistance * 0.8f)
-            {
-                ChangeState(AIState.Circle);
-                return;
-            }
-
-            // Timeout after 15 seconds - switch tactics
-            if (stateTimer > 15f)
-            {
-                if (Random.value < 0.5f)
-                    ChangeState(AIState.Circle);
-                else
-                    ChangeState(AIState.Feint);
-                return;
-            }
-
-            // Position for flank angle (60-120 degrees from target heading)
-            Vector3 flankPosition = CalculateFlankPosition(distanceToPlayer);
-            NavigateToPoint(flankPosition, moveSpeed * 0.5f, true);
-        }
-
-        /// <summary>
-        /// Circle: Realistic imperfect orbit around player
+        /// Circle: Orbit player at broadside angle, alternating sides
+        /// Maintains broadside angle while continuing to move during firing
         /// </summary>
         private void UpdateCircle()
         {
@@ -396,44 +283,79 @@ namespace POTCO
             // Exit if too far
             if (distanceToPlayer > circleMaxDistance * 1.5f)
             {
-                ChangeState(AIState.Chase);
+                ChangeState(AIState.Patrol);
                 return;
             }
 
-            // Timeout after 12 seconds
+            // Timeout after 12 seconds - switch tactics
             if (stateTimer > 12f)
             {
                 // Choose next state randomly
                 float roll = Random.value;
-                if (roll < 0.4f && distanceToPlayer >= flankMinDistance)
-                    ChangeState(AIState.FlankBroadside);
-                else if (roll < 0.6f)
-                    ChangeState(AIState.Feint);
+                if (roll < 0.5f && distanceToPlayer >= sniperMinDistance)
+                    ChangeState(AIState.Sniper);
+                else if (ShouldRam())
+                    ChangeState(AIState.Ram);
                 else
-                    ChangeState(AIState.Chase);
+                    ChangeState(AIState.Patrol);
                 return;
             }
 
-            // Calculate imperfect circle position
-            circleNoiseTime += Time.deltaTime * circleNoiseFrequency;
+            // Update orbit angle (15 degrees per second clockwise or counter-clockwise)
+            float angleSpeed = 15f;
+            if (circleClockwise)
+                circleAngleOffset -= angleSpeed * Time.deltaTime; // Clockwise = decrease angle
+            else
+                circleAngleOffset += angleSpeed * Time.deltaTime; // Counter-clockwise = increase angle
 
-            // Add Perlin noise for realistic imperfection
-            float noiseAngle = Mathf.PerlinNoise(circleNoiseTime, 0f) * circleNoiseAmplitude;
-            float noiseDistance = Mathf.PerlinNoise(0f, circleNoiseTime) * 30f;
+            // Keep angle in 0-360 range
+            if (circleAngleOffset < 0f) circleAngleOffset += 360f;
+            if (circleAngleOffset > 360f) circleAngleOffset -= 360f;
 
-            float currentAngle = circleAngleOffset + (Time.time * 10f) + noiseAngle;
-            float currentDistance = circleTargetDistance + noiseDistance;
-
-            Vector3 offset = new Vector3(
-                Mathf.Cos(currentAngle * Mathf.Deg2Rad),
+            // Calculate position on circle around player
+            Vector3 offsetDirection = new Vector3(
+                Mathf.Cos(circleAngleOffset * Mathf.Deg2Rad),
                 0f,
-                Mathf.Sin(currentAngle * Mathf.Deg2Rad)
-            ) * currentDistance;
+                Mathf.Sin(circleAngleOffset * Mathf.Deg2Rad)
+            );
 
-            Vector3 targetPosition = playerTransform.position + offset;
+            Vector3 orbitPosition = playerTransform.position + offsetDirection * circleTargetDistance;
+            orbitPosition.y = transform.position.y; // Keep same height
 
-            // Navigate with moderate speed
-            NavigateToPoint(targetPosition, moveSpeed * 0.6f, true);
+            // Check if we're currently firing
+            bool isFiring = aiBroadside != null && aiBroadside.IsFiring();
+
+            if (isFiring)
+            {
+                // Continue moving but lock rotation to maintain broadside angle
+                // Calculate tangent direction (perpendicular to radius for circular motion)
+                Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
+                Vector3 tangent = Vector3.Cross(Vector3.up, toPlayer);
+
+                // Flip tangent based on orbit direction
+                if (!circleClockwise)
+                    tangent = -tangent;
+
+                // Override rotation to face perpendicular (broadside angle)
+                // Ship should face along the tangent so broadsides point at player
+                if (tangent != Vector3.zero)
+                {
+                    Quaternion broadsideRotation = Quaternion.LookRotation(-tangent); // Negative because POTCO ships face backwards
+                    transform.rotation = Quaternion.RotateTowards(
+                        transform.rotation,
+                        broadsideRotation,
+                        rotateSpeed * Time.deltaTime
+                    );
+                }
+
+                // Continue moving along the orbit
+                currentSpeed = Mathf.MoveTowards(currentSpeed, moveSpeed * 0.7f, acceleration * Time.deltaTime);
+            }
+            else
+            {
+                // Normal navigation to orbit position
+                NavigateToPoint(orbitPosition, moveSpeed * 0.7f, true);
+            }
         }
 
         /// <summary>
@@ -447,12 +369,13 @@ namespace POTCO
             if (distanceToPlayer < sniperMinDistance || distanceToPlayer > sniperMaxDistance * 1.2f)
             {
                 isSniperAiming = false;
-                ChangeState(AIState.Chase);
+                ChangeState(AIState.Circle);
                 return;
             }
 
             // Check if we have a good broadside angle
-            if (!HasGoodBroadsideAngle())
+            bool fireLeftSide;
+            if (!CanFireBroadsides(out fireLeftSide))
             {
                 // Turn to get broadside angle
                 Vector3 broadsidePosition = CalculateBroadsidePosition(distanceToPlayer);
@@ -495,51 +418,20 @@ namespace POTCO
             if (!ShouldRam() || distanceToPlayer > flankMaxDistance)
             {
                 Debug.Log($"[{gameObject.name}] Ram cancelled");
-                ChangeState(AIState.Chase);
+                ChangeState(AIState.Circle);
                 return;
             }
 
             // Timeout after 5 seconds
             if (stateTimer > 5f)
             {
-                ChangeState(AIState.FlankBroadside);
+                ChangeState(AIState.Circle);
                 return;
             }
 
             // Calculate collision intercept
             Vector3 ramPoint = CalculateRamIntercept();
             NavigateToPoint(ramPoint, moveSpeed * ramSpeedMultiplier, false);
-        }
-
-        /// <summary>
-        /// Feint: Fake flee then quickly turn to flank
-        /// </summary>
-        private void UpdateFeint()
-        {
-            // First 3 seconds: fake flee
-            if (stateTimer < 3f)
-            {
-                // Flee away from player
-                Vector3 fleeDirection = (transform.position - playerTransform.position).normalized;
-                Vector3 fleePoint = transform.position + fleeDirection * 50f;
-                NavigateToPoint(fleePoint, moveSpeed * 1.2f, true);
-            }
-            else if (stateTimer < 6f)
-            {
-                // Next 3 seconds: turn sharply to flank
-                float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
-                Vector3 flankPosition = CalculateFlankPosition(distanceToPlayer);
-                NavigateToPoint(flankPosition, moveSpeed * 0.8f, true);
-            }
-            else
-            {
-                // After 6 seconds, switch to flank or circle
-                float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
-                if (distanceToPlayer >= flankMinDistance && distanceToPlayer <= flankMaxDistance)
-                    ChangeState(AIState.FlankBroadside);
-                else
-                    ChangeState(AIState.Circle);
-            }
         }
 
         /// <summary>
@@ -570,12 +462,18 @@ namespace POTCO
         #region Combat Helpers
 
         /// <summary>
-        /// Opportunistic firing - fire ANY time broadsides are lined up
+        /// Opportunistic firing - fire when in combat and broadsides are lined up
         /// </summary>
         private void TryOpportunisticFire()
         {
             if (aiBroadside == null || !aiBroadside.CanFire()) return;
             if (playerTransform == null) return;
+
+            // Don't fire during patrol - only fire when player is within aggro range
+            if (currentState == AIState.Patrol) return;
+
+            float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
+            if (distanceToPlayer > detectionRange) return;
 
             bool fireLeftSide;
             if (CanFireBroadsides(out fireLeftSide))
@@ -600,10 +498,15 @@ namespace POTCO
 
             // Angle check - must be perpendicular (broadside angle)
             Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
-            float forwardDot = Vector3.Dot(-transform.forward, toPlayer);
 
-            // Player must be perpendicular (not in front or behind)
-            if (Mathf.Abs(forwardDot) > Mathf.Cos(maxFiringAngle * Mathf.Deg2Rad))
+            // Calculate angle from ship's bow to player
+            float angleFromForward = Vector3.Angle(-transform.forward, toPlayer);
+
+            // Calculate how far from perpendicular (90 degrees) we are
+            float angleFromPerpendicular = Mathf.Abs(angleFromForward - 90f);
+
+            // Player must be within maxFiringAngle degrees of perpendicular
+            if (angleFromPerpendicular > maxFiringAngle)
                 return false;
 
             // Determine side (POTCO ships face backwards)
@@ -614,29 +517,15 @@ namespace POTCO
         }
 
         /// <summary>
-        /// Check if we have a good broadside angle (perpendicular to target)
-        /// </summary>
-        private bool HasGoodBroadsideAngle()
-        {
-            if (playerTransform == null) return false;
-
-            Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
-            float forwardDot = Vector3.Dot(-transform.forward, toPlayer);
-
-            // Good broadside is close to 90 degrees (perpendicular)
-            return Mathf.Abs(forwardDot) < 0.3f;
-        }
-
-        /// <summary>
-        /// Calculate flank position (60-120° from target heading)
+        /// Calculate flank position (75-105° from target heading for firing-ready angle)
         /// </summary>
         private Vector3 CalculateFlankPosition(float distance)
         {
             // Get target heading
             Vector3 targetForward = playerTransform.forward;
 
-            // Choose flank angle (60-120 degrees)
-            float flankAngle = Random.Range(60f, 120f);
+            // Choose tactical flank angle (75-105 degrees - closer to broadside for quick firing)
+            float flankAngle = Random.Range(75f, 105f);
             if (Random.value > 0.5f) flankAngle = -flankAngle;
 
             // Calculate position at flank angle
@@ -660,6 +549,43 @@ namespace POTCO
             float side = currentSide > 0 ? 1f : -1f;
 
             return playerTransform.position + perpendicular * side * distance;
+        }
+
+        /// <summary>
+        /// Calculate tactical approach position (75-80° angle for quick broadside readiness)
+        /// This positions the ship so it can quickly turn into firing position
+        /// </summary>
+        private Vector3 CalculateTacticalApproach(float distance)
+        {
+            if (playerTransform == null) return transform.position;
+
+            // Predict where player will be
+            Vector3 predictedPosition = playerTransform.position;
+            if (playerRb != null)
+            {
+                predictedPosition += playerRb.linearVelocity * 2f;
+            }
+
+            // Get vector from predicted position to current position
+            Vector3 toShip = (transform.position - predictedPosition).normalized;
+
+            // Choose tactical angle (75-80 degrees from player's heading)
+            // This puts us almost at broadside angle, just need small turn to fire
+            float tacticalAngle = Random.Range(75f, 85f);
+
+            // Randomly choose left or right approach
+            if (Random.value > 0.5f) tacticalAngle = -tacticalAngle;
+
+            // Calculate approach direction at tactical angle
+            Quaternion angleOffset = Quaternion.Euler(0, tacticalAngle, 0);
+            Vector3 playerForward = playerTransform.forward;
+            Vector3 approachDirection = angleOffset * playerForward;
+
+            // Position at tactical angle and desired distance
+            Vector3 tacticalPosition = predictedPosition - approachDirection * distance;
+            tacticalPosition.y = predictedPosition.y;
+
+            return tacticalPosition;
         }
 
         /// <summary>
@@ -895,8 +821,23 @@ namespace POTCO
                 // Reset state-specific variables
                 if (newState == AIState.Circle)
                 {
+                    // Alternate which side we use for broadsides
+                    circleClockwise = !circleClockwise;
                     circleTargetDistance = Random.Range(circleMinDistance, circleMaxDistance);
-                    circleAngleOffset = Random.Range(0f, 360f);
+
+                    // Calculate starting angle based on current position relative to player
+                    if (playerTransform != null)
+                    {
+                        Vector3 toShip = transform.position - playerTransform.position;
+                        toShip.y = 0;
+                        circleAngleOffset = Mathf.Atan2(toShip.z, toShip.x) * Mathf.Rad2Deg;
+                    }
+                    else
+                    {
+                        circleAngleOffset = Random.Range(0f, 360f);
+                    }
+
+                    Debug.Log($"[{gameObject.name}] Circle: {(circleClockwise ? "Clockwise (right broadside)" : "Counter-clockwise (left broadside)")}");
                 }
             }
         }
@@ -1029,12 +970,9 @@ namespace POTCO
             switch (currentState)
             {
                 case AIState.Patrol: return Color.green;
-                case AIState.Chase: return Color.yellow;
-                case AIState.FlankBroadside: return Color.red;
                 case AIState.Circle: return Color.blue;
                 case AIState.Sniper: return Color.magenta;
                 case AIState.Ram: return new Color(1f, 0.5f, 0f); // Orange
-                case AIState.Feint: return Color.cyan;
                 case AIState.Panic: return Color.white;
                 default: return Color.gray;
             }
