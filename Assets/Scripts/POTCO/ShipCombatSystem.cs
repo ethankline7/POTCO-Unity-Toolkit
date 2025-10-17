@@ -1,0 +1,879 @@
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace POTCO
+{
+    /// <summary>
+    /// Unified ship combat system for both player and AI ships
+    /// Handles mast animations, cannon detection, and broadside firing
+    /// Uses delegates to allow different cannonball behaviors for player vs AI
+    /// </summary>
+    public class ShipCombatSystem : MonoBehaviour
+    {
+        #region Public Delegates
+
+        /// <summary>
+        /// Delegate for spawning cannonballs - allows player and AI to have different projectile behavior
+        /// </summary>
+        /// <param name="muzzle">The muzzle transform to spawn from</param>
+        /// <param name="isPlayerControlled">True if this is a player-controlled ship</param>
+        public delegate void CannonballSpawnDelegate(Transform muzzle, bool isPlayerControlled);
+        public CannonballSpawnDelegate OnSpawnCannonball;
+
+        /// <summary>
+        /// Delegate for checking if firing should continue (AI can cancel if target moves out of arc)
+        /// </summary>
+        /// <param name="isLeftSide">Which side is currently firing</param>
+        /// <returns>True if should continue firing, false to cancel</returns>
+        public delegate bool ShouldContinueFiringDelegate(bool isLeftSide);
+        public ShouldContinueFiringDelegate OnShouldContinueFiring;
+
+        #endregion
+
+        #region Inspector Settings
+
+        [Header("Animation Settings")]
+        public string tiedUpMastAnimation = "tiedup";
+        public string rollUpMastAnimation = "rollup";
+        public string rollDownMastAnimation = "rolldown";
+        public string idleMastAnimation = "idle";
+
+        [Header("Broadside Settings")]
+        [Tooltip("Minimum delay between firing each cannon")]
+        public float minCannonDelay = 0.1f;
+        [Tooltip("Maximum delay between firing each cannon")]
+        public float maxCannonDelay = 0.4f;
+        [Tooltip("Cooldown between volleys")]
+        public float volleyCooldown = 8f;
+        [Tooltip("Maximum angle deviation before stopping volley (degrees)")]
+        public float maxAngleDeviation = 45f;
+
+        [Header("Read-Only Status")]
+        [SerializeField] private bool sailsDown = false;
+        [SerializeField] private bool isFiring = false;
+
+        #endregion
+
+        #region Private Variables
+
+        // Mast animation data
+        private class MastAnimationData
+        {
+            public Animation animation;
+            public string mastType; // e.g., "main_tri", "fore_multi", "aft_tri"
+            public AnimationClip tiedUpClip;
+            public AnimationClip rollUpClip;
+            public AnimationClip rollDownClip;
+            public AnimationClip idleClip;
+        }
+
+        // Rope ladder data
+        private class RopeLadderData
+        {
+            public Transform ladderTransform;
+            public Vector3 targetLocalPosition;
+            public Quaternion targetLocalRotation;
+        }
+
+        // Component storage
+        private List<MastAnimationData> mastAnimations = new List<MastAnimationData>();
+        private List<GameObject> leftBroadsideCannons = new List<GameObject>();
+        private List<GameObject> rightBroadsideCannons = new List<GameObject>();
+        private List<RopeLadderData> ropeLadders = new List<RopeLadderData>();
+
+        // Animation clips
+        private AnimationClip cannonOpenClip;
+        private AnimationClip cannonFireClip;
+        private AnimationClip cannonCloseClip;
+
+        // State tracking
+        private bool isRollingDown = false;
+        private float lastFireTime = -999f;
+        private bool currentFiringSide = false; // true = left, false = right
+
+        #endregion
+
+        #region Initialization
+
+        private void Start()
+        {
+            FindShipComponents();
+            LoadAnimationClips();
+
+            // Start with sails tied up
+            PlayMastAnimation("tiedup", WrapMode.Loop);
+
+            Debug.Log($"[ShipCombatSystem] {gameObject.name} initialized - {mastAnimations.Count} masts, {leftBroadsideCannons.Count} left cannons, {rightBroadsideCannons.Count} right cannons");
+        }
+
+        private void LateUpdate()
+        {
+            // Force rope ladder positions after animations have updated
+            foreach (var ladderData in ropeLadders)
+            {
+                if (ladderData.ladderTransform != null)
+                {
+                    ladderData.ladderTransform.localPosition = ladderData.targetLocalPosition;
+                    ladderData.ladderTransform.localRotation = ladderData.targetLocalRotation;
+                }
+            }
+        }
+
+        #endregion
+
+        #region Component Detection
+
+        /// <summary>
+        /// Find all ship components (masts, cannons, rope ladders)
+        /// Copied exactly from ShipController.cs:200-316
+        /// </summary>
+        private void FindShipComponents()
+        {
+            // Find all masts
+            Transform mastsParent = transform.Find("Masts");
+            if (mastsParent != null)
+            {
+                Debug.Log($"[MAST DEBUG] Found Masts parent with {mastsParent.childCount} children");
+                foreach (Transform mastLocator in mastsParent)
+                {
+                    Debug.Log($"[MAST DEBUG] Processing mast locator: {mastLocator.name}");
+
+                    // Find the actual mast model (first child with a SkinnedMeshRenderer or MeshFilter)
+                    Transform actualMast = FindMastModel(mastLocator);
+                    if (actualMast != null)
+                    {
+                        Debug.Log($"[MAST DEBUG] Found mast model: {actualMast.name} at path: {GetGameObjectPath(actualMast)}");
+
+                        // Get mast type from MastTypeInfo component
+                        string mastType = GetMastType(actualMast);
+                        Debug.Log($"[MAST DEBUG] Extracted mast type: {mastType}");
+
+                        // Check what components it has
+                        var skinnedMesh = actualMast.GetComponent<SkinnedMeshRenderer>();
+                        var meshFilter = actualMast.GetComponent<MeshFilter>();
+                        Debug.Log($"[MAST DEBUG] Has SkinnedMeshRenderer: {skinnedMesh != null}, Has MeshFilter: {meshFilter != null}");
+
+                        Animation anim = actualMast.GetComponent<Animation>();
+                        if (anim == null)
+                        {
+                            anim = actualMast.gameObject.AddComponent<Animation>();
+                            Debug.Log($"[MAST DEBUG] Added Animation component to {actualMast.name}");
+                        }
+                        else
+                        {
+                            Debug.Log($"[MAST DEBUG] Animation component already exists on {actualMast.name}");
+                        }
+
+                        // Create mast animation data
+                        MastAnimationData mastData = new MastAnimationData
+                        {
+                            animation = anim,
+                            mastType = mastType
+                        };
+
+                        mastAnimations.Add(mastData);
+                        Debug.Log($"[MAST DEBUG] Added to mastAnimations list (total: {mastAnimations.Count})");
+
+                        // Find and store rope ladder positions
+                        Transform leftLadder = FindChildRecursive(actualMast, "def_ladder_0_left");
+                        Transform rightLadder = FindChildRecursive(actualMast, "def_ladder_0_right");
+
+                        if (leftLadder != null)
+                        {
+                            ropeLadders.Add(new RopeLadderData
+                            {
+                                ladderTransform = leftLadder,
+                                targetLocalPosition = leftLadder.localPosition,
+                                targetLocalRotation = leftLadder.localRotation
+                            });
+                            Debug.Log($"Stored left rope ladder position for {actualMast.name}");
+                        }
+
+                        if (rightLadder != null)
+                        {
+                            ropeLadders.Add(new RopeLadderData
+                            {
+                                ladderTransform = rightLadder,
+                                targetLocalPosition = rightLadder.localPosition,
+                                targetLocalRotation = rightLadder.localRotation
+                            });
+                            Debug.Log($"Stored right rope ladder position for {actualMast.name}");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[MAST DEBUG] Could not find mast model in: {mastLocator.name}");
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[MAST DEBUG] Could not find Masts parent!");
+            }
+
+            // Find left broadside cannons
+            Transform leftCannonsParent = transform.Find("Cannons_Broadside_Left");
+            if (leftCannonsParent != null)
+            {
+                foreach (Transform cannon in leftCannonsParent)
+                {
+                    leftBroadsideCannons.Add(cannon.gameObject);
+                }
+            }
+
+            // Find right broadside cannons
+            Transform rightCannonsParent = transform.Find("Cannons_Broadside_Right");
+            if (rightCannonsParent != null)
+            {
+                foreach (Transform cannon in rightCannonsParent)
+                {
+                    rightBroadsideCannons.Add(cannon.gameObject);
+                }
+            }
+        }
+
+        private Transform FindMastModel(Transform mastLocator)
+        {
+            // The mastLocator IS the mast model (it was renamed by ShipAssembler)
+            // We just need to verify it has the skeletal structure inside
+
+            // Look for a SkinnedMeshRenderer inside to confirm this is a mast
+            SkinnedMeshRenderer skinnedMesh = mastLocator.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (skinnedMesh != null)
+            {
+                Debug.Log($"[FindMastModel] Found mast root at {mastLocator.name} (has SkinnedMeshRenderer: {skinnedMesh.name})");
+                return mastLocator; // Return the locator itself as it IS the mast root
+            }
+
+            Debug.LogWarning($"[FindMastModel] No SkinnedMeshRenderer found in {mastLocator.name} - not a valid mast");
+            return null;
+        }
+
+        private string GetMastType(Transform mastRoot)
+        {
+            // Check for MastTypeInfo component (added by ShipAssembler)
+            MastTypeInfo typeInfo = mastRoot.GetComponent<MastTypeInfo>();
+            if (typeInfo != null && !string.IsNullOrEmpty(typeInfo.mastType))
+            {
+                Debug.Log($"[GetMastType] Found MastTypeInfo: {typeInfo.mastType}");
+                return typeInfo.mastType;
+            }
+
+            // Fallback: try to extract from locator name
+            string locatorName = mastRoot.name.ToLower();
+            Debug.Log($"[GetMastType] No MastTypeInfo, falling back to locator name: {mastRoot.name}");
+
+            if (locatorName.Contains("mainmast"))
+                return "main_tri";
+            else if (locatorName.Contains("foremast"))
+                return "fore_tri";
+            else if (locatorName.Contains("aftmast"))
+                return "aft_tri";
+
+            Debug.LogWarning($"[GetMastType] Could not determine mast type, using default: main_tri");
+            return "main_tri";
+        }
+
+        private Transform FindChildRecursive(Transform parent, string childName)
+        {
+            foreach (Transform child in parent)
+            {
+                if (child.name == childName)
+                    return child;
+
+                Transform found = FindChildRecursive(child, childName);
+                if (found != null)
+                    return found;
+            }
+            return null;
+        }
+
+        private string GetGameObjectPath(Transform transform)
+        {
+            string path = transform.name;
+            Transform parent = transform.parent;
+
+            while (parent != null)
+            {
+                path = parent.name + "/" + path;
+                parent = parent.parent;
+            }
+
+            return path;
+        }
+
+        #endregion
+
+        #region Animation Loading
+
+        /// <summary>
+        /// Load animation clips from Resources
+        /// Copied exactly from ShipController.cs:318-433
+        /// </summary>
+        private void LoadAnimationClips()
+        {
+            Debug.Log("[ANIM LOAD] Starting to load animation clips...");
+
+            // Load animations for each mast based on its type
+            foreach (MastAnimationData mastData in mastAnimations)
+            {
+                Debug.Log($"[ANIM LOAD] ===== Loading animations for mast type: {mastData.mastType} =====");
+
+                // Construct the paths
+                string tiedUpPath = $"phase_3/models/char/pir_a_shp_mst_{mastData.mastType}_{tiedUpMastAnimation}";
+                string rollUpPath = $"phase_3/models/char/pir_a_shp_mst_{mastData.mastType}_{rollUpMastAnimation}";
+                string rollDownPath = $"phase_3/models/char/pir_a_shp_mst_{mastData.mastType}_{rollDownMastAnimation}";
+                string idlePath = $"phase_3/models/char/pir_a_shp_mst_{mastData.mastType}_{idleMastAnimation}";
+
+                Debug.Log($"[ANIM LOAD] Will try to load:");
+                Debug.Log($"[ANIM LOAD]   TiedUp: {tiedUpPath}");
+                Debug.Log($"[ANIM LOAD]   RollUp: {rollUpPath}");
+                Debug.Log($"[ANIM LOAD]   RollDown: {rollDownPath}");
+                Debug.Log($"[ANIM LOAD]   Idle: {idlePath}");
+
+                // Load clips specific to this mast type
+                mastData.tiedUpClip = LoadAnimationFromResources(tiedUpPath);
+                mastData.rollUpClip = LoadAnimationFromResources(rollUpPath);
+                mastData.rollDownClip = LoadAnimationFromResources(rollDownPath);
+                mastData.idleClip = LoadAnimationFromResources(idlePath);
+
+                Debug.Log($"[ANIM LOAD] Results for {mastData.mastType}:");
+                Debug.Log($"[ANIM LOAD]   TiedUp: {mastData.tiedUpClip != null} {(mastData.tiedUpClip != null ? $"({mastData.tiedUpClip.name})" : "")}");
+                Debug.Log($"[ANIM LOAD]   RollUp: {mastData.rollUpClip != null} {(mastData.rollUpClip != null ? $"({mastData.rollUpClip.name})" : "")}");
+                Debug.Log($"[ANIM LOAD]   RollDown: {mastData.rollDownClip != null} {(mastData.rollDownClip != null ? $"({mastData.rollDownClip.name})" : "")}");
+                Debug.Log($"[ANIM LOAD]   Idle: {mastData.idleClip != null} {(mastData.idleClip != null ? $"({mastData.idleClip.name})" : "")}");
+            }
+
+            // Load cannon animations
+            Debug.Log("[ANIM LOAD] Loading cannon animations...");
+            cannonOpenClip = LoadAnimationFromResources("phase_3/models/shipparts/pir_a_shp_can_broadside_open");
+            cannonFireClip = LoadAnimationFromResources("phase_3/models/shipparts/pir_a_shp_can_broadside_fire");
+            cannonCloseClip = LoadAnimationFromResources("phase_3/models/shipparts/pir_a_shp_can_broadside_close");
+
+            Debug.Log($"[ANIM LOAD] === FINAL RESULTS ===");
+            Debug.Log($"[ANIM LOAD] Loaded animations for {mastAnimations.Count} masts");
+            Debug.Log($"[ANIM LOAD] Cannon animations - Open: {cannonOpenClip != null}, Fire: {cannonFireClip != null}, Close: {cannonCloseClip != null}");
+        }
+
+        private AnimationClip LoadAnimationFromResources(string path)
+        {
+            Debug.Log($"[ANIM LOAD]   Attempting to load: {path}");
+
+            // If path doesn't start with phase_, search all phases
+            if (!path.StartsWith("phase_"))
+            {
+                string[] phases = { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
+                foreach (string phase in phases)
+                {
+                    string fullPath = $"{phase}/{path}";
+                    AnimationClip foundClip = LoadAnimationFromResourcesDirect(fullPath);
+                    if (foundClip != null)
+                    {
+                        Debug.Log($"[ANIM LOAD]   ✓ Found in {phase}");
+                        return foundClip;
+                    }
+                }
+                Debug.Log($"[ANIM LOAD]   ✗ Not found in any phase directory");
+                return null;
+            }
+            else
+            {
+                return LoadAnimationFromResourcesDirect(path);
+            }
+        }
+
+        private AnimationClip LoadAnimationFromResourcesDirect(string path)
+        {
+            // Try loading as prefab first
+            GameObject animObj = Resources.Load<GameObject>(path);
+            if (animObj != null)
+            {
+                Debug.Log($"[ANIM LOAD]   Loaded GameObject from Resources");
+
+                // Check if it has an Animation component
+                Animation anim = animObj.GetComponent<Animation>();
+                if (anim != null && anim.clip != null)
+                {
+                    Debug.Log($"[ANIM LOAD]   ✓ Found Animation component with clip: {anim.clip.name}");
+                    return anim.clip;
+                }
+
+                // Check all clips in the Animation component
+                if (anim != null)
+                {
+                    Debug.Log($"[ANIM LOAD]   Animation component exists, checking all clips...");
+                    foreach (AnimationState state in anim)
+                    {
+                        Debug.Log($"[ANIM LOAD]   ✓ Found animation clip: {state.clip.name}");
+                        return state.clip;
+                    }
+                    Debug.Log($"[ANIM LOAD]   Animation component has no clips");
+                }
+                else
+                {
+                    Debug.Log($"[ANIM LOAD]   GameObject has no Animation component");
+                }
+            }
+
+            // Try loading as AnimationClip directly
+            AnimationClip clip = Resources.Load<AnimationClip>(path);
+            if (clip != null)
+            {
+                Debug.Log($"[ANIM LOAD]   ✓ Loaded AnimationClip directly: {clip.name}");
+                return clip;
+            }
+
+            Debug.Log($"[ANIM LOAD]   ✗ Failed to load from: {path}");
+            return null;
+        }
+
+        #endregion
+
+        #region Mast Animation Control
+
+        /// <summary>
+        /// Roll down sails (start moving)
+        /// </summary>
+        public void RollDownSails()
+        {
+            if (!sailsDown)
+            {
+                sailsDown = true;
+                isRollingDown = true;
+                PlayMastAnimation("rolldown", WrapMode.Once);
+                StartCoroutine(SwitchToIdleAfterRollDown());
+                Debug.Log("Rolling down sails - ship will start moving forward");
+            }
+        }
+
+        /// <summary>
+        /// Roll up sails (stop moving)
+        /// </summary>
+        public void RollUpSails()
+        {
+            if (sailsDown)
+            {
+                sailsDown = false;
+                isRollingDown = false;
+                StopAllCoroutines(); // Stop the idle switch coroutine
+                PlayMastAnimation("rollup", WrapMode.Once);
+                StartCoroutine(SwitchToTiedUpAfterRollUp());
+                Debug.Log("Rolling up sails - ship will stop");
+            }
+        }
+
+        /// <summary>
+        /// Get current sail state
+        /// </summary>
+        public bool AreSailsDown()
+        {
+            return sailsDown;
+        }
+
+        private void PlayMastAnimation(string animType, WrapMode wrapMode)
+        {
+            Debug.Log($"[MAST ANIM] Playing '{animType}' animation on all masts with wrapMode: {wrapMode}");
+            Debug.Log($"[MAST ANIM] Number of masts: {mastAnimations.Count}");
+
+            int played = 0;
+            foreach (MastAnimationData mastData in mastAnimations)
+            {
+                if (mastData.animation == null)
+                {
+                    Debug.LogWarning($"[MAST ANIM] Animation component is null for mast type: {mastData.mastType}");
+                    continue;
+                }
+
+                // Get the appropriate clip for this animation type
+                AnimationClip clip = null;
+                string clipName = animType;
+
+                switch (animType.ToLower())
+                {
+                    case "tiedup":
+                        clip = mastData.tiedUpClip;
+                        break;
+                    case "rollup":
+                        clip = mastData.rollUpClip;
+                        break;
+                    case "rolldown":
+                        clip = mastData.rollDownClip;
+                        break;
+                    case "idle":
+                        clip = mastData.idleClip;
+                        break;
+                }
+
+                if (clip == null)
+                {
+                    Debug.LogWarning($"[MAST ANIM] No '{animType}' clip found for mast type: {mastData.mastType}");
+                    continue;
+                }
+
+                Debug.Log($"[MAST ANIM] Playing on {mastData.animation.gameObject.name} (type: {mastData.mastType})");
+                Debug.Log($"[MAST ANIM]   Clip: {clip.name}, length: {clip.length}s");
+
+                // Stop all animations first
+                mastData.animation.Stop();
+
+                // Clear existing clips
+                mastData.animation.clip = clip;
+
+                // Remove old clip if exists
+                if (mastData.animation.GetClip(clipName) != null)
+                {
+                    mastData.animation.RemoveClip(clipName);
+                }
+
+                // Add and play new clip
+                mastData.animation.AddClip(clip, clipName);
+                mastData.animation[clipName].wrapMode = wrapMode;
+                mastData.animation[clipName].speed = 1.0f;
+                mastData.animation.Play(clipName);
+
+                // Verify it's actually playing
+                bool isPlaying = mastData.animation.isPlaying;
+                Debug.Log($"[MAST ANIM]   Animation.isPlaying: {isPlaying}");
+
+                if (mastData.animation[clipName] != null)
+                {
+                    Debug.Log($"[MAST ANIM]   AnimationState - enabled: {mastData.animation[clipName].enabled}, weight: {mastData.animation[clipName].weight}");
+                }
+
+                played++;
+            }
+
+            Debug.Log($"[MAST ANIM] Completed: played on {played}/{mastAnimations.Count} masts");
+        }
+
+        private IEnumerator SwitchToIdleAfterRollDown()
+        {
+            // Wait for rolldown animation to finish - use the longest animation length
+            float maxLength = 0f;
+            foreach (MastAnimationData mastData in mastAnimations)
+            {
+                if (mastData.rollDownClip != null && mastData.rollDownClip.length > maxLength)
+                {
+                    maxLength = mastData.rollDownClip.length;
+                }
+            }
+
+            if (maxLength > 0f)
+            {
+                yield return new WaitForSeconds(maxLength);
+            }
+            else
+            {
+                yield return new WaitForSeconds(1f);
+            }
+
+            // Switch to idle loop
+            isRollingDown = false;
+            PlayMastAnimation("idle", WrapMode.Loop);
+            Debug.Log("Sails now in idle state");
+        }
+
+        private IEnumerator SwitchToTiedUpAfterRollUp()
+        {
+            // Wait for rollup animation to finish - use the longest animation length
+            float maxLength = 0f;
+            foreach (MastAnimationData mastData in mastAnimations)
+            {
+                if (mastData.rollUpClip != null && mastData.rollUpClip.length > maxLength)
+                {
+                    maxLength = mastData.rollUpClip.length;
+                }
+            }
+
+            if (maxLength > 0f)
+            {
+                yield return new WaitForSeconds(maxLength);
+            }
+            else
+            {
+                yield return new WaitForSeconds(1f);
+            }
+
+            // Switch to tied up loop
+            PlayMastAnimation("tiedup", WrapMode.Loop);
+            Debug.Log("Sails now tied up");
+        }
+
+        #endregion
+
+        #region Broadside Firing
+
+        /// <summary>
+        /// Check if ready to fire (cooldown elapsed)
+        /// </summary>
+        public bool CanFire()
+        {
+            return !isFiring && Time.time >= lastFireTime + volleyCooldown;
+        }
+
+        /// <summary>
+        /// Check if currently firing a volley
+        /// </summary>
+        public bool IsFiring()
+        {
+            return isFiring;
+        }
+
+        /// <summary>
+        /// Fire broadside cannons
+        /// Uses AIBroadside's better animation sequencing
+        /// </summary>
+        public void FireBroadside(bool isLeftSide, bool isPlayerControlled = false)
+        {
+            Debug.Log($"[ShipCombatSystem] FireBroadside called for {gameObject.name}, side: {(isLeftSide ? "left" : "right")}");
+
+            if (!CanFire())
+            {
+                Debug.Log($"[ShipCombatSystem] {gameObject.name} on cooldown, cannot fire yet");
+                return;
+            }
+
+            List<GameObject> cannonsToFire = isLeftSide ? leftBroadsideCannons : rightBroadsideCannons;
+
+            if (cannonsToFire.Count == 0)
+            {
+                Debug.LogWarning($"[ShipCombatSystem] No cannons found on {(isLeftSide ? "left" : "right")} side of {gameObject.name}");
+                return;
+            }
+
+            // Store which side we're firing for validation
+            currentFiringSide = isLeftSide;
+
+            Debug.Log($"[ShipCombatSystem] {gameObject.name} firing {(isLeftSide ? "left" : "right")} broadside with {cannonsToFire.Count} cannons");
+            StartCoroutine(FireBroadsideCannons(cannonsToFire, isPlayerControlled));
+        }
+
+        /// <summary>
+        /// Fire all cannons in random order
+        /// Copied from AIBroadside.cs:141-166 (better implementation)
+        /// </summary>
+        private IEnumerator FireBroadsideCannons(List<GameObject> cannons, bool isPlayerControlled)
+        {
+            isFiring = true;
+            lastFireTime = Time.time;
+
+            // Shuffle cannons to fire in random order
+            List<GameObject> shuffledCannons = new List<GameObject>(cannons);
+            for (int i = shuffledCannons.Count - 1; i > 0; i--)
+            {
+                int j = Random.Range(0, i + 1);
+                GameObject temp = shuffledCannons[i];
+                shuffledCannons[i] = shuffledCannons[j];
+                shuffledCannons[j] = temp;
+            }
+
+            int cannonsFired = 0;
+            foreach (GameObject cannon in shuffledCannons)
+            {
+                // Check if we should continue firing (AI can cancel if target moves out of arc)
+                if (OnShouldContinueFiring != null && !OnShouldContinueFiring(currentFiringSide))
+                {
+                    Debug.Log($"[ShipCombatSystem] {gameObject.name} volley cancelled - target out of arc. Fired {cannonsFired}/{shuffledCannons.Count} cannons.");
+                    isFiring = false;
+                    yield break;
+                }
+
+                if (cannon != null)
+                {
+                    StartCoroutine(PlayCannonSequence(cannon, isPlayerControlled));
+                    cannonsFired++;
+                    yield return new WaitForSeconds(Random.Range(minCannonDelay, maxCannonDelay));
+                }
+            }
+
+            Debug.Log($"[ShipCombatSystem] {gameObject.name} volley complete. Fired {cannonsFired}/{shuffledCannons.Count} cannons.");
+            isFiring = false;
+        }
+
+        /// <summary>
+        /// Play cannon animation sequence and spawn projectile
+        /// Copied from AIBroadside.cs:171-242 (better implementation with proper sequencing)
+        /// </summary>
+        private IEnumerator PlayCannonSequence(GameObject cannon, bool isPlayerControlled)
+        {
+            // Find muzzle point
+            Transform muzzle = FindMuzzlePoint(cannon.transform);
+            if (muzzle == null)
+            {
+                Debug.LogWarning($"[ShipCombatSystem] No muzzle point found for {cannon.name}");
+                yield break;
+            }
+
+            // Get or add Animation component
+            Animation anim = cannon.GetComponent<Animation>();
+            if (anim == null)
+            {
+                Debug.Log($"[ShipCombatSystem] Adding Animation component to {cannon.name}");
+                anim = cannon.AddComponent<Animation>();
+            }
+
+            // Disable auto-play to prevent looping
+            anim.playAutomatically = false;
+
+            // Try to play animations if clips are available
+            bool hasAnimations = cannonOpenClip != null && cannonFireClip != null && cannonCloseClip != null;
+
+            if (hasAnimations)
+            {
+                // Add clips to animation component with WrapMode.Once (no looping)
+                if (!anim.GetClip("open"))
+                {
+                    anim.AddClip(cannonOpenClip, "open");
+                    anim["open"].wrapMode = WrapMode.Once;
+                }
+                if (!anim.GetClip("fire"))
+                {
+                    anim.AddClip(cannonFireClip, "fire");
+                    anim["fire"].wrapMode = WrapMode.Once;
+                }
+                if (!anim.GetClip("close"))
+                {
+                    anim.AddClip(cannonCloseClip, "close");
+                    anim["close"].wrapMode = WrapMode.Once;
+                }
+
+                // Stop any playing animations first
+                anim.Stop();
+
+                // Open cannons
+                anim.Play("open");
+                yield return new WaitForSeconds(cannonOpenClip.length);
+
+                // Fire animation and spawn cannonball immediately
+                anim.Play("fire");
+
+                // Spawn cannonball as soon as fire animation starts
+                if (OnSpawnCannonball != null)
+                {
+                    OnSpawnCannonball(muzzle, isPlayerControlled);
+                }
+
+                yield return new WaitForSeconds(cannonFireClip.length);
+
+                // Close cannons
+                anim.Play("close");
+                yield return new WaitForSeconds(cannonCloseClip.length);
+
+                // Stop animation completely when done
+                anim.Stop();
+            }
+            else
+            {
+                // No animations available - just spawn projectile after short delay
+                Debug.Log($"[ShipCombatSystem] No animations available, firing {cannon.name} without animation");
+                yield return new WaitForSeconds(0.2f);
+
+                // Spawn cannonball via delegate
+                if (OnSpawnCannonball != null)
+                {
+                    OnSpawnCannonball(muzzle, isPlayerControlled);
+                }
+
+                yield return new WaitForSeconds(0.3f);
+            }
+        }
+
+        /// <summary>
+        /// Find the muzzle/exit point of a cannon
+        /// Copied from AIBroadside.cs:247-262
+        /// </summary>
+        private Transform FindMuzzlePoint(Transform cannon)
+        {
+            // Try common muzzle point names
+            Transform muzzle = FindChildRecursive(cannon, "muzzle");
+            if (muzzle == null) muzzle = FindChildRecursive(cannon, "def_muzzle");
+            if (muzzle == null) muzzle = FindChildRecursive(cannon, "cannon_exit");
+            if (muzzle == null) muzzle = FindChildRecursive(cannon, "cannonExitPoint");
+
+            // If still not found, look for def_cannon_updown (pitch bone) as fallback
+            if (muzzle == null) muzzle = FindChildRecursive(cannon, "def_cannon_updown");
+
+            // Last resort: use the cannon transform itself
+            if (muzzle == null) muzzle = cannon;
+
+            return muzzle;
+        }
+
+        #endregion
+
+        #region Public Accessors
+
+        /// <summary>
+        /// Get total number of cannons
+        /// </summary>
+        public int GetTotalCannons()
+        {
+            return leftBroadsideCannons.Count + rightBroadsideCannons.Count;
+        }
+
+        /// <summary>
+        /// Get left broadside cannons (for external use)
+        /// </summary>
+        public List<GameObject> GetLeftBroadsideCannons()
+        {
+            return leftBroadsideCannons;
+        }
+
+        /// <summary>
+        /// Get right broadside cannons (for external use)
+        /// </summary>
+        public List<GameObject> GetRightBroadsideCannons()
+        {
+            return rightBroadsideCannons;
+        }
+
+        #endregion
+
+        #region Runtime Customization (for Skills System)
+
+        /// <summary>
+        /// Set volley cooldown (for skills/buffs)
+        /// </summary>
+        public void SetVolleyCooldown(float newCooldown)
+        {
+            volleyCooldown = newCooldown;
+        }
+
+        /// <summary>
+        /// Set cannon firing delay range (for rapid fire skills)
+        /// </summary>
+        public void SetCannonDelay(float minDelay, float maxDelay)
+        {
+            minCannonDelay = minDelay;
+            maxCannonDelay = maxDelay;
+        }
+
+        /// <summary>
+        /// Get current volley cooldown
+        /// </summary>
+        public float GetVolleyCooldown()
+        {
+            return volleyCooldown;
+        }
+
+        /// <summary>
+        /// Get time remaining until can fire again
+        /// </summary>
+        public float GetCooldownRemaining()
+        {
+            float remaining = (lastFireTime + volleyCooldown) - Time.time;
+            return Mathf.Max(0f, remaining);
+        }
+
+        /// <summary>
+        /// Reset cooldown immediately (for skill activation)
+        /// </summary>
+        public void ResetCooldown()
+        {
+            lastFireTime = -999f;
+        }
+
+        #endregion
+    }
+}

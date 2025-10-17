@@ -177,31 +177,9 @@ namespace POTCO.ShipBuilder
                 aiController.ramDamage = config.aiRamDamage;
                 Debug.Log($"Added ShipAIController component (Speed: {config.aiMoveSpeed}, Detection: {config.aiAggroRange})");
 
-                // Add AIBroadside component and populate cannon lists
-                var aiBroadside = shipRoot.AddComponent<POTCO.AIBroadside>();
-
-                // Find cannon parent objects and collect all cannons
-                Transform leftCannonsParent = shipRoot.transform.Find("Cannons_Broadside_Left");
-                if (leftCannonsParent != null)
-                {
-                    foreach (Transform cannon in leftCannonsParent)
-                    {
-                        aiBroadside.leftBroadsideCannons.Add(cannon.gameObject);
-                    }
-                    Debug.Log($"Added {aiBroadside.leftBroadsideCannons.Count} left broadside cannons to AIBroadside");
-                }
-
-                Transform rightCannonsParent = shipRoot.transform.Find("Cannons_Broadside_Right");
-                if (rightCannonsParent != null)
-                {
-                    foreach (Transform cannon in rightCannonsParent)
-                    {
-                        aiBroadside.rightBroadsideCannons.Add(cannon.gameObject);
-                    }
-                    Debug.Log($"Added {aiBroadside.rightBroadsideCannons.Count} right broadside cannons to AIBroadside");
-                }
-
-                Debug.Log($"Added AIBroadside component with {aiBroadside.GetTotalCannons()} total cannons");
+                // Note: ShipCombatSystem is automatically added by ShipAIController's [RequireComponent] attribute
+                // Cannons are automatically detected by ShipCombatSystem.Start() from Cannons_Broadside_Left/Right
+                Debug.Log("ShipCombatSystem will be automatically added and will detect cannons on Start()");
             }
 
             Debug.Log($"Ship assembled successfully: {shipName}");

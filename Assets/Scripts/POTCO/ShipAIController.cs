@@ -9,6 +9,7 @@ namespace POTCO
     /// All states fire opportunistically when broadsides are aligned
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
+    [RequireComponent(typeof(ShipCombatSystem))]
     public class ShipAIController : MonoBehaviour
     {
         #region Inspector Settings
@@ -28,9 +29,6 @@ namespace POTCO
         public float acceleration = 10f;
 
         [Header("Combat Distances")]
-        [Tooltip("Flank-and-Broadside range (150-300m)")]
-        public float flankMinDistance = 300f;
-        public float flankMaxDistance = 500f;
         [Tooltip("Sniper range (500-1200m)")]
         public float sniperMinDistance = 700f;
         public float sniperMaxDistance = 1300f;
@@ -39,10 +37,13 @@ namespace POTCO
         public float circleMaxDistance = 700f;
 
         [Header("Broadside Settings")]
-        [Tooltip("Maximum angle from perpendicular to fire (degrees)")]
-        public float maxFiringAngle = 15f;
+        [Tooltip("Angular range from broadside (90°) where cannons can fire. Example: 30° = fires between 60°-120° from bow")]
+        [Range(0f, 90f)]
+        public float broadsideFiringArc = 30f;
         [Tooltip("Time to aim and charge sniper shot")]
         public float sniperAimTime = 2f;
+        [Tooltip("Cooldown time before AI can use sniper mode again")]
+        public float sniperCooldown = 10f;
 
         [Header("Ram Settings")]
         public float ramDamage = 100f;
@@ -67,7 +68,7 @@ namespace POTCO
         private Rigidbody rb;
         private Rigidbody playerRb;
         private ShipHealth shipHealth;
-        private AIBroadside aiBroadside;
+        private ShipCombatSystem combatSystem;
 
         // State tracking
         private Vector3 spawnPosition;
@@ -84,6 +85,7 @@ namespace POTCO
         // Sniper variables
         private bool isSniperAiming = false;
         private float sniperAimStartTime = 0f;
+        private float lastSniperEndTime = -999f;
 
         // Obstacle avoidance (kept from original)
         private Vector3 avoidanceDirection = Vector3.zero;
@@ -112,17 +114,26 @@ namespace POTCO
         {
             rb = GetComponent<Rigidbody>();
             shipHealth = GetComponent<ShipHealth>();
-            aiBroadside = GetComponent<AIBroadside>();
+            combatSystem = GetComponent<ShipCombatSystem>();
             spawnPosition = transform.position;
+
+            // Set up AI cannonball spawning delegate (uses predictive targeting)
+            if (combatSystem != null)
+            {
+                combatSystem.OnSpawnCannonball = SpawnAICannonball;
+                combatSystem.OnShouldContinueFiring = ShouldContinueFiring;
+                // Roll down sails for AI ships (they're always moving)
+                combatSystem.RollDownSails();
+            }
 
             // Configure rigidbody
             if (rb != null)
             {
                 rb.useGravity = false;
-                rb.isKinematic = true;
+                rb.isKinematic = false; // Use dynamic rigidbody for physics interactions
                 rb.linearDamping = 1f;
                 rb.angularDamping = 2f;
-                rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+                rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ | RigidbodyConstraints.FreezePositionY;
             }
 
             AddShipHullCollider();
@@ -246,11 +257,11 @@ namespace POTCO
                 Debug.Log($"[{gameObject.name}] Player detected! Engaging...");
 
                 // Choose combat state based on distance
-                if (distanceToPlayer >= sniperMinDistance && distanceToPlayer <= sniperMaxDistance)
+                if (distanceToPlayer >= sniperMinDistance && distanceToPlayer <= sniperMaxDistance && CanUseSniper())
                 {
                     ChangeState(AIState.Sniper);
                 }
-                else if (ShouldRam() && distanceToPlayer < flankMinDistance)
+                else if (ShouldRam())
                 {
                     ChangeState(AIState.Ram);
                 }
@@ -292,7 +303,7 @@ namespace POTCO
             {
                 // Choose next state randomly
                 float roll = Random.value;
-                if (roll < 0.5f && distanceToPlayer >= sniperMinDistance)
+                if (roll < 0.5f && distanceToPlayer >= sniperMinDistance && CanUseSniper())
                     ChangeState(AIState.Sniper);
                 else if (ShouldRam())
                     ChangeState(AIState.Ram);
@@ -323,7 +334,7 @@ namespace POTCO
             orbitPosition.y = transform.position.y; // Keep same height
 
             // Check if we're currently firing
-            bool isFiring = aiBroadside != null && aiBroadside.IsFiring();
+            bool isFiring = combatSystem != null && combatSystem.IsFiring();
 
             if (isFiring)
             {
@@ -369,6 +380,7 @@ namespace POTCO
             if (distanceToPlayer < sniperMinDistance || distanceToPlayer > sniperMaxDistance * 1.2f)
             {
                 isSniperAiming = false;
+                lastSniperEndTime = Time.time;
                 ChangeState(AIState.Circle);
                 return;
             }
@@ -402,6 +414,7 @@ namespace POTCO
 
                     // Reposition after shot
                     isSniperAiming = false;
+                    lastSniperEndTime = Time.time;
                     ChangeState(AIState.Circle);
                 }
             }
@@ -415,7 +428,7 @@ namespace POTCO
             float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
 
             // Exit if target is too fast now or too far
-            if (!ShouldRam() || distanceToPlayer > flankMaxDistance)
+            if (!ShouldRam() || distanceToPlayer > circleMaxDistance)
             {
                 Debug.Log($"[{gameObject.name}] Ram cancelled");
                 ChangeState(AIState.Circle);
@@ -466,7 +479,7 @@ namespace POTCO
         /// </summary>
         private void TryOpportunisticFire()
         {
-            if (aiBroadside == null || !aiBroadside.CanFire()) return;
+            if (combatSystem == null || !combatSystem.CanFire()) return;
             if (playerTransform == null) return;
 
             // Don't fire during patrol - only fire when player is within aggro range
@@ -478,13 +491,13 @@ namespace POTCO
             bool fireLeftSide;
             if (CanFireBroadsides(out fireLeftSide))
             {
-                aiBroadside.FireBroadside(fireLeftSide);
+                combatSystem.FireBroadside(fireLeftSide, false); // false = AI controlled
                 Debug.Log($"[{gameObject.name}] Opportunistic fire - {(fireLeftSide ? "LEFT" : "RIGHT")} broadside!");
             }
         }
 
         /// <summary>
-        /// Check if we can fire broadsides
+        /// Check if we can fire broadsides - Single arc check
         /// </summary>
         private bool CanFireBroadsides(out bool fireLeftSide)
         {
@@ -496,44 +509,24 @@ namespace POTCO
             // Must be in reasonable range (not too close)
             if (distanceToPlayer < 50f) return false;
 
-            // Angle check - must be perpendicular (broadside angle)
+            // Calculate angle from ship's bow to player (POTCO ships face backwards)
             Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
+            float angleFromBow = Vector3.Angle(-transform.forward, toPlayer);
 
-            // Calculate angle from ship's bow to player
-            float angleFromForward = Vector3.Angle(-transform.forward, toPlayer);
+            // Broadside is at 90° from bow
+            // Check if player is within the firing arc around the broadside position
+            float minAngle = 90f - broadsideFiringArc;
+            float maxAngle = 90f + broadsideFiringArc;
 
-            // Calculate how far from perpendicular (90 degrees) we are
-            float angleFromPerpendicular = Mathf.Abs(angleFromForward - 90f);
-
-            // Player must be within maxFiringAngle degrees of perpendicular
-            if (angleFromPerpendicular > maxFiringAngle)
+            // Player must be within the broadside firing arc
+            if (angleFromBow < minAngle || angleFromBow > maxAngle)
                 return false;
 
-            // Determine side (POTCO ships face backwards)
+            // Determine which side (POTCO ships face backwards)
             float side = Vector3.Dot(toPlayer, transform.right);
             fireLeftSide = side > 0;
 
             return true;
-        }
-
-        /// <summary>
-        /// Calculate flank position (75-105° from target heading for firing-ready angle)
-        /// </summary>
-        private Vector3 CalculateFlankPosition(float distance)
-        {
-            // Get target heading
-            Vector3 targetForward = playerTransform.forward;
-
-            // Choose tactical flank angle (75-105 degrees - closer to broadside for quick firing)
-            float flankAngle = Random.Range(75f, 105f);
-            if (Random.value > 0.5f) flankAngle = -flankAngle;
-
-            // Calculate position at flank angle
-            Quaternion flankRotation = Quaternion.Euler(0, flankAngle, 0);
-            Vector3 flankDirection = flankRotation * targetForward;
-
-            float targetDistance = Mathf.Clamp(distance, flankMinDistance, flankMaxDistance);
-            return playerTransform.position - flankDirection * targetDistance;
         }
 
         /// <summary>
@@ -552,56 +545,6 @@ namespace POTCO
         }
 
         /// <summary>
-        /// Calculate tactical approach position (75-80° angle for quick broadside readiness)
-        /// This positions the ship so it can quickly turn into firing position
-        /// </summary>
-        private Vector3 CalculateTacticalApproach(float distance)
-        {
-            if (playerTransform == null) return transform.position;
-
-            // Predict where player will be
-            Vector3 predictedPosition = playerTransform.position;
-            if (playerRb != null)
-            {
-                predictedPosition += playerRb.linearVelocity * 2f;
-            }
-
-            // Get vector from predicted position to current position
-            Vector3 toShip = (transform.position - predictedPosition).normalized;
-
-            // Choose tactical angle (75-80 degrees from player's heading)
-            // This puts us almost at broadside angle, just need small turn to fire
-            float tacticalAngle = Random.Range(75f, 85f);
-
-            // Randomly choose left or right approach
-            if (Random.value > 0.5f) tacticalAngle = -tacticalAngle;
-
-            // Calculate approach direction at tactical angle
-            Quaternion angleOffset = Quaternion.Euler(0, tacticalAngle, 0);
-            Vector3 playerForward = playerTransform.forward;
-            Vector3 approachDirection = angleOffset * playerForward;
-
-            // Position at tactical angle and desired distance
-            Vector3 tacticalPosition = predictedPosition - approachDirection * distance;
-            tacticalPosition.y = predictedPosition.y;
-
-            return tacticalPosition;
-        }
-
-        /// <summary>
-        /// Predict intercept point for chase
-        /// </summary>
-        private Vector3 PredictInterceptPoint()
-        {
-            if (playerRb == null) return playerTransform.position;
-
-            float predictionTime = 3f;
-            Vector3 predicted = playerTransform.position + playerRb.linearVelocity * predictionTime;
-            predicted.y = playerTransform.position.y;
-            return predicted;
-        }
-
-        /// <summary>
         /// Calculate ram intercept point
         /// </summary>
         private Vector3 CalculateRamIntercept()
@@ -617,23 +560,6 @@ namespace POTCO
         }
 
         /// <summary>
-        /// Check if player is fleeing (moving away from us)
-        /// </summary>
-        private bool IsPlayerFleeing()
-        {
-            if (playerRb == null) return false;
-
-            float speed = playerRb.linearVelocity.magnitude;
-            if (speed < 5f) return false;
-
-            Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
-            Vector3 playerDirection = playerRb.linearVelocity.normalized;
-
-            float fleeingAlignment = Vector3.Dot(playerDirection, toPlayer);
-            return fleeingAlignment > 0.7f;
-        }
-
-        /// <summary>
         /// Should we attempt a ram?
         /// </summary>
         private bool ShouldRam()
@@ -644,7 +570,7 @@ namespace POTCO
             if (playerSpeed > ramMinTargetSpeed) return false;
 
             float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
-            if (distanceToPlayer < 30f || distanceToPlayer > flankMinDistance) return false;
+            if (distanceToPlayer < 30f || distanceToPlayer > circleMinDistance) return false;
 
             // Check alignment
             Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
@@ -660,6 +586,27 @@ namespace POTCO
         {
             if (shipHealth == null) return false;
             return shipHealth.GetHealthPercent() <= panicHealthThreshold;
+        }
+
+        /// <summary>
+        /// Can we use sniper mode (cooldown check)?
+        /// </summary>
+        private bool CanUseSniper()
+        {
+            return Time.time >= lastSniperEndTime + sniperCooldown;
+        }
+
+        /// <summary>
+        /// Check if firing should continue (callback for ShipCombatSystem)
+        /// </summary>
+        private bool ShouldContinueFiring(bool isLeftSide)
+        {
+            // Check if player is still in broadside arc
+            bool fireLeftSide;
+            bool canFire = CanFireBroadsides(out fireLeftSide);
+
+            // Must be able to fire AND on the same side we started with
+            return canFire && fireLeftSide == isLeftSide;
         }
 
         #endregion
@@ -935,6 +882,183 @@ namespace POTCO
 
         #endregion
 
+        #region AI Cannonball Spawning
+
+        /// <summary>
+        /// Spawn AI cannonball with predictive targeting
+        /// Extracted from AIBroadside.cs for unified combat system
+        /// </summary>
+        private void SpawnAICannonball(Transform muzzle, bool isPlayerControlled)
+        {
+            // Only handle AI shots
+            if (isPlayerControlled) return;
+
+            // Load cannonball prefab
+            GameObject cannonballPrefab = Resources.Load<GameObject>("phase_3/models/ammunition/cannonball");
+            if (cannonballPrefab == null)
+            {
+                Debug.LogWarning($"[AIBroadside] Cannot spawn cannonball - prefab not loaded");
+                return;
+            }
+
+            // Spawn cannonball at muzzle position
+            GameObject cannonball = Instantiate(cannonballPrefab, muzzle.position, muzzle.rotation);
+
+            // Make cannonball more visible
+            cannonball.transform.localScale = Vector3.one * 2.5f;
+
+            // Calculate exact velocity to hit target with predictive physics
+            Vector3 launchVelocity = CalculateLaunchVelocity(muzzle.position);
+
+            // Add or get Rigidbody
+            Rigidbody rb = cannonball.GetComponent<Rigidbody>();
+            if (rb == null)
+            {
+                rb = cannonball.AddComponent<Rigidbody>();
+                rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+            }
+
+            // Ensure cannonball has a collider
+            Collider cannonballCollider = cannonball.GetComponent<Collider>();
+            if (cannonballCollider == null)
+            {
+                SphereCollider sphere = cannonball.AddComponent<SphereCollider>();
+                sphere.radius = 0.15f;
+                cannonballCollider = sphere;
+            }
+
+            // Launch projectile with calculated velocity
+            rb.linearVelocity = launchVelocity;
+            rb.useGravity = true;
+
+            // Add CannonProjectile component for collision handling
+            CannonProjectile projectile = cannonball.GetComponent<CannonProjectile>();
+            if (projectile == null)
+            {
+                projectile = cannonball.AddComponent<CannonProjectile>();
+            }
+
+            // Add bright trail renderer for visibility
+            TrailRenderer trail = cannonball.GetComponent<TrailRenderer>();
+            if (trail == null)
+            {
+                trail = cannonball.AddComponent<TrailRenderer>();
+                trail.time = 1.5f;
+                trail.startWidth = 0.8f;
+                trail.endWidth = 0.2f;
+                trail.material = new Material(Shader.Find("Sprites/Default"));
+                trail.startColor = new Color(0.5f, 0.7f, 1f, 1f); // Start more blue
+                trail.endColor = new Color(0.9f, 0.95f, 1f, 0f); // Fade to whiter transparent
+                trail.numCornerVertices = 5;
+                trail.numCapVertices = 5;
+                projectile.trail = trail;
+            }
+
+            // Add glowing light for visibility
+            Light pointLight = cannonball.AddComponent<Light>();
+            pointLight.type = LightType.Point;
+            pointLight.color = new Color(1f, 0.6f, 0.2f); // Orange/yellow explosion flash
+            pointLight.intensity = 3f;
+            pointLight.range = 15f;
+            pointLight.shadows = LightShadows.None;
+
+            // Make material emissive if possible
+            Renderer renderer = cannonball.GetComponent<Renderer>();
+            if (renderer != null && renderer.material != null)
+            {
+                renderer.material.EnableKeyword("_EMISSION");
+                renderer.material.SetColor("_EmissionColor", new Color(1f, 0.6f, 0.3f) * 2f); // Orange/yellow explosion emission
+            }
+
+            // Ignore collisions with ALL colliders on this ship
+            Transform shipRoot = transform.root;
+            Collider[] shipColliders = shipRoot.GetComponentsInChildren<Collider>(true);
+
+            foreach (Collider shipCollider in shipColliders)
+            {
+                if (shipCollider != null && cannonballCollider != null)
+                {
+                    Physics.IgnoreCollision(cannonballCollider, shipCollider);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Calculate exact launch velocity to hit the player's ship using predictive physics
+        /// Uses projectile motion: position = start + velocity*time - 0.5*gravity*time^2
+        /// Extracted from AIBroadside.cs
+        /// </summary>
+        private Vector3 CalculateLaunchVelocity(Vector3 firePosition)
+        {
+            float flightTime = 2.5f; // Default flight time
+            float randomOffset = 5f; // Random spread for dodgeability
+
+            // First, look for player ship (always target the ship if it exists)
+            Transform targetTransform = null;
+            Rigidbody targetRb = null;
+
+            ShipController playerShip = FindAnyObjectByType<ShipController>();
+            if (playerShip != null)
+            {
+                // Target the player's ship
+                targetTransform = playerShip.transform;
+                targetRb = playerShip.GetComponent<Rigidbody>();
+            }
+            else
+            {
+                // No ship found, fall back to player character
+                GameObject player = GameObject.FindGameObjectWithTag("Player");
+                if (player == null)
+                {
+                    Debug.LogWarning($"[AIBroadside] No player ship or player character found");
+                    return Vector3.forward * 50f; // Default velocity
+                }
+                targetTransform = player.transform;
+                targetRb = player.GetComponent<Rigidbody>();
+            }
+
+            // Get target position and velocity
+            Vector3 playerPosition = targetTransform.position;
+
+            // Predict where player will be when cannonball arrives
+            Vector3 targetPosition = playerPosition;
+            if (targetRb != null)
+            {
+                // Add player's movement during flight time
+                targetPosition += targetRb.linearVelocity * flightTime;
+            }
+
+            // Add random offset for dodgeability
+            Vector3 randomSpread = new Vector3(
+                Random.Range(-randomOffset, randomOffset),
+                0f,
+                Random.Range(-randomOffset, randomOffset)
+            );
+            targetPosition += randomSpread;
+
+            // Calculate displacement
+            Vector3 displacement = targetPosition - firePosition;
+
+            // Calculate velocity components using projectile motion
+            // Horizontal velocity: vx = displacement.x / time
+            float vx = displacement.x / flightTime;
+            float vz = displacement.z / flightTime;
+
+            // Vertical velocity: vy = (displacement.y / time) + (0.5 * gravity * time)
+            float gravity = Mathf.Abs(Physics.gravity.y);
+            float vy = (displacement.y / flightTime) + (0.5f * gravity * flightTime);
+
+            Vector3 launchVelocity = new Vector3(vx, vy, vz);
+
+            // Debug visualization
+            Debug.DrawRay(firePosition, launchVelocity.normalized * 30f, Color.red, 2f);
+            Debug.DrawLine(firePosition, targetPosition, Color.green, 2f);
+
+            return launchVelocity;
+        }
+
+        #endregion
+
         #region Gizmos
 
         private void OnDrawGizmosSelected()
@@ -949,10 +1073,10 @@ namespace POTCO
             Gizmos.color = Color.yellow;
             DrawCircle(transform.position, detectionRange, 32);
 
-            // Flank range
-            Gizmos.color = Color.red;
-            DrawCircle(transform.position, flankMinDistance, 32);
-            DrawCircle(transform.position, flankMaxDistance, 32);
+            // Circle range
+            Gizmos.color = Color.blue;
+            DrawCircle(transform.position, circleMinDistance, 32);
+            DrawCircle(transform.position, circleMaxDistance, 32);
 
             // State indicator
             Gizmos.color = GetStateColor();
