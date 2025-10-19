@@ -1428,8 +1428,77 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             if (args.Get<PyNumber>(0) is PyNumber value)
             {
-                dna.headMorphs[morphName] = value.AsFloat();
+                float rawValue = value.AsFloat();
+
+                // Clamp to Custom NPC Creator's slider ranges
+                GetMorphSliderRange(morphName, out float min, out float max);
+                float clampedValue = Mathf.Clamp(rawValue, min, max);
+
+                dna.headMorphs[morphName] = clampedValue;
+
+                // Log if clamping occurred
+                if (!Mathf.Approximately(rawValue, clampedValue))
+                {
+                    Debug.Log($"[NPC Facial Morph] Clamped {morphName}: {rawValue} → {clampedValue} (range: {min} to {max})");
+                }
             }
+        }
+
+        /// <summary>Get Custom NPC Creator's slider range for a morph (matches CustomNPCCreatorWindow)</summary>
+        private void GetMorphSliderRange(string morphName, out float min, out float max)
+        {
+            // Custom ranges per morph (matching CustomNPCCreatorWindow.cs lines 714-760)
+            switch (morphName)
+            {
+                case "jawWidth":
+                    min = -0.2f; max = 0.2f; return;
+                case "browProtruding":
+                    min = -1.0f; max = 1.0f; return;
+                case "headRoundness":
+                    min = -0.05f; max = 0.05f; return;
+                case "cheekFat":
+                    min = -0.2f; max = 0.2f; return;
+                case "earPosition":
+                    min = -0.1f; max = 0.1f; return;
+                case "earScale":
+                    min = -0.2f; max = 0.2f; return;
+                case "earFlap":
+                    min = -0.2f; max = 0.2f; return;
+                case "eyeOpeningSize":
+                    min = -0.2f; max = 0.2f; return;
+                case "eyeSpacing":
+                    min = -1.0f; max = 1.0f; return;
+                case "headHeight":
+                    min = -0.05f; max = 0.05f; return;
+                case "headWidth":
+                    min = -0.1f; max = 0.1f; return;
+                case "jawChinAngle":
+                    min = -0.1f; max = 0.1f; return;
+                case "jawChinSize":
+                    min = -0.1f; max = 0.1f; return;
+                case "jawLength":
+                    min = -0.1f; max = 0.1f; return;
+                case "mouthLipThickness":
+                    min = -0.1f; max = 0.1f; return;
+                case "mouthWidth":
+                    min = -0.1f; max = 0.1f; return;
+                case "noseBump":
+                    min = -0.1f; max = 0.1f; return;
+                case "noseLength":
+                    min = -0.1f; max = 0.1f; return;
+                case "noseNostrilAngle":
+                    min = -1.0f; max = 1.0f; return;
+                case "noseNostrilWidth":
+                    min = -0.2f; max = 0.2f; return;
+                case "noseBridgeWidth":
+                    min = -0.2f; max = 0.2f; return;
+                case "noseNostrilHeight":
+                    min = -0.2f; max = 0.2f; return;
+            }
+
+            // Default fallback ranges
+            min = -0.5f;
+            max = 0.5f;
         }
 
         private void ParseTattoo(PirateDNA dna, string funcName, PyTuple args)

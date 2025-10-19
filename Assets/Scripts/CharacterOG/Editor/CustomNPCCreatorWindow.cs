@@ -756,6 +756,8 @@ namespace CharacterOG.Editor
                     min = -0.2f; max = 0.2f; return;
                 case "noseBridgeWidth":
                     min = -0.2f; max = 0.2f; return;
+                case "noseNostrilHeight":
+                    min = -0.2f; max = 0.2f; return;
             }
 
             // Default fallback ranges
