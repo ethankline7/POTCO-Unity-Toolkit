@@ -396,41 +396,53 @@ namespace Player
             string[] phases = { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
             string[] searchPaths = { "char", "models/char" };
 
-            // Load each animation type
-            idleClip = FindAndLoadClip("idle", phases, searchPaths);
-            walkClip = FindAndLoadClip("walk", phases, searchPaths);
-            runClip = FindAndLoadClip("run", phases, searchPaths);
+            // Only auto-load if not manually assigned in Inspector
+            if (idleClip == null) idleClip = FindAndLoadClip("idle", phases, searchPaths);
+            if (walkClip == null) walkClip = FindAndLoadClip("walk", phases, searchPaths);
+            if (runClip == null) runClip = FindAndLoadClip("run", phases, searchPaths);
 
             // Load directional animations (try multiple naming conventions)
-            walkBackClip = FindAndLoadClip("walk_back", phases, searchPaths);
-            if (walkBackClip == null) walkBackClip = FindAndLoadClip("walk_backward", phases, searchPaths);
-            if (walkBackClip == null) walkBackClip = FindAndLoadClip("walkback", phases, searchPaths);
+            if (walkBackClip == null)
+            {
+                walkBackClip = FindAndLoadClip("walk_back", phases, searchPaths);
+                if (walkBackClip == null) walkBackClip = FindAndLoadClip("walk_backward", phases, searchPaths);
+                if (walkBackClip == null) walkBackClip = FindAndLoadClip("walkback", phases, searchPaths);
+            }
 
-            runBackClip = FindAndLoadClip("run_back", phases, searchPaths);
-            if (runBackClip == null) runBackClip = FindAndLoadClip("run_backward", phases, searchPaths);
-            if (runBackClip == null) runBackClip = FindAndLoadClip("runback", phases, searchPaths);
+            if (runBackClip == null)
+            {
+                runBackClip = FindAndLoadClip("run_back", phases, searchPaths);
+                if (runBackClip == null) runBackClip = FindAndLoadClip("run_backward", phases, searchPaths);
+                if (runBackClip == null) runBackClip = FindAndLoadClip("runback", phases, searchPaths);
+            }
 
-            strafeLeftClip = FindAndLoadClip("strafe_left", phases, searchPaths);
-            if (strafeLeftClip == null) strafeLeftClip = FindAndLoadClip("walk_left", phases, searchPaths);
-            if (strafeLeftClip == null) strafeLeftClip = FindAndLoadClip("strafeleft", phases, searchPaths);
+            if (strafeLeftClip == null)
+            {
+                strafeLeftClip = FindAndLoadClip("strafe_left", phases, searchPaths);
+                if (strafeLeftClip == null) strafeLeftClip = FindAndLoadClip("walk_left", phases, searchPaths);
+                if (strafeLeftClip == null) strafeLeftClip = FindAndLoadClip("strafeleft", phases, searchPaths);
+            }
 
-            strafeRightClip = FindAndLoadClip("strafe_right", phases, searchPaths);
-            if (strafeRightClip == null) strafeRightClip = FindAndLoadClip("walk_right", phases, searchPaths);
-            if (strafeRightClip == null) strafeRightClip = FindAndLoadClip("straferight", phases, searchPaths);
+            if (strafeRightClip == null)
+            {
+                strafeRightClip = FindAndLoadClip("strafe_right", phases, searchPaths);
+                if (strafeRightClip == null) strafeRightClip = FindAndLoadClip("walk_right", phases, searchPaths);
+                if (strafeRightClip == null) strafeRightClip = FindAndLoadClip("straferight", phases, searchPaths);
+            }
 
-            runDiagonalLeftClip = FindAndLoadClip("run_diagonal_left", phases, searchPaths);
-            runDiagonalRightClip = FindAndLoadClip("run_diagonal_right", phases, searchPaths);
-            walkBackDiagonalLeftClip = FindAndLoadClip("walk_back_diagonal_left", phases, searchPaths);
-            walkBackDiagonalRightClip = FindAndLoadClip("walk_back_diagonal_right", phases, searchPaths);
+            if (runDiagonalLeftClip == null) runDiagonalLeftClip = FindAndLoadClip("run_diagonal_left", phases, searchPaths);
+            if (runDiagonalRightClip == null) runDiagonalRightClip = FindAndLoadClip("run_diagonal_right", phases, searchPaths);
+            if (walkBackDiagonalLeftClip == null) walkBackDiagonalLeftClip = FindAndLoadClip("walk_back_diagonal_left", phases, searchPaths);
+            if (walkBackDiagonalRightClip == null) walkBackDiagonalRightClip = FindAndLoadClip("walk_back_diagonal_right", phases, searchPaths);
 
-            turnLeftClip = FindAndLoadClip("turn_left", phases, searchPaths);
-            turnRightClip = FindAndLoadClip("turn_right", phases, searchPaths);
+            if (turnLeftClip == null) turnLeftClip = FindAndLoadClip("turn_left", phases, searchPaths);
+            if (turnRightClip == null) turnRightClip = FindAndLoadClip("turn_right", phases, searchPaths);
 
-            spinLeftClip = FindAndLoadClip("spin_left", phases, searchPaths);
-            spinRightClip = FindAndLoadClip("spin_right", phases, searchPaths);
+            if (spinLeftClip == null) spinLeftClip = FindAndLoadClip("spin_left", phases, searchPaths);
+            if (spinRightClip == null) spinRightClip = FindAndLoadClip("spin_right", phases, searchPaths);
 
-            jumpClip = FindAndLoadClip("jump", phases, searchPaths);
-            swimClip = FindAndLoadClip("swim", phases, searchPaths);
+            if (jumpClip == null) jumpClip = FindAndLoadClip("jump", phases, searchPaths);
+            if (swimClip == null) swimClip = FindAndLoadClip("swim", phases, searchPaths);
 
             // Add clips to Animation component and set them to loop
             if (idleClip != null)

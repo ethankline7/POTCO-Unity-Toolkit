@@ -423,6 +423,13 @@ namespace POTCO.ShipBuilder
                                 CannonIDConstants[name] = value;
                                 Debug.Log($"[ParseCannonConstants] {name} = {value}");
                             }
+                            else if (valueStr.Contains("InventoryType."))
+                            {
+                                // Can't parse InventoryType reference, assign sequential ID
+                                int fallbackID = CannonIDConstants.Count + 1;
+                                CannonIDConstants[name] = fallbackID;
+                                Debug.Log($"[ParseCannonConstants] {name} = InventoryType (assigned fallback ID {fallbackID})");
+                            }
                         }
                     }
                 }
@@ -499,17 +506,28 @@ namespace POTCO.ShipBuilder
                     string trimmedLine = line.Trim();
                     if (trimmedLine.EndsWith("["))
                     {
-                        // Multi-line array - combine with next line
+                        // Multi-line array - combine all lines until closing bracket
                         string key = trimmedLine.Split(ColonSeparator)[0].Trim();
+                        System.Text.StringBuilder arrayBuilder = new System.Text.StringBuilder();
+                        arrayBuilder.Append("[");
 
-                        // Read next line for the actual value
-                        if (i + 1 < lines.Length)
+                        // Read lines until we find the closing bracket
+                        int j = i + 1;
+                        while (j < lines.Length)
                         {
-                            string nextLine = lines[i + 1].Trim();
-                            // Reconstruct the full line with opening bracket
-                            line = key + ": [" + nextLine;
-                            i++; // Skip next line since we already processed it
+                            string arrayLine = lines[j].Trim();
+                            arrayBuilder.Append(arrayLine);
+
+                            if (arrayLine.Contains("]"))
+                            {
+                                break; // Found closing bracket
+                            }
+                            j++;
                         }
+
+                        // Reconstruct the full line
+                        line = key + ": " + arrayBuilder.ToString();
+                        i = j; // Skip all the lines we just processed
                     }
 
                     ParseConfigProperty(line, currentConfig);
@@ -724,6 +742,7 @@ namespace POTCO.ShipBuilder
         private int ParseCannonArrayLength(string value)
         {
             // Parse arrays like "[Cannons.L1] * 10" -> 10
+            // OR multi-element arrays like "[Cannons.L2, Cannons.L2, 0]" -> count elements
             value = value.Trim().TrimEnd(',');
 
             int multiplyIndex = value.IndexOf('*');
@@ -734,6 +753,17 @@ namespace POTCO.ShipBuilder
                 {
                     return count;
                 }
+            }
+
+            // Try counting comma-separated elements
+            int openBracket = value.IndexOf('[');
+            int closeBracket = value.IndexOf(']');
+            if (openBracket >= 0 && closeBracket > openBracket)
+            {
+                string arrayContent = value.Substring(openBracket + 1, closeBracket - openBracket - 1);
+                // Count commas + 1 to get number of elements
+                var elements = arrayContent.Split(CommaSeparator, StringSplitOptions.RemoveEmptyEntries);
+                return elements.Length;
             }
 
             return 0;
@@ -755,18 +785,24 @@ namespace POTCO.ShipBuilder
 
             string arrayContent = value.Substring(openBracket + 1, closeBracket - openBracket - 1).Trim();
 
-            // Extract cannon name (e.g., "Cannons.L1" -> "L1")
-            if (arrayContent.Contains("Cannons."))
+            // Handle multi-element arrays: split by comma and find first Cannons.* entry
+            var elements = arrayContent.Split(CommaSeparator, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var element in elements)
             {
-                string cannonName = arrayContent.Split('.').Last().Trim();
-                if (CannonIDConstants.TryGetValue(cannonName, out int cannonID))
+                string trimmedElement = element.Trim();
+                if (trimmedElement.Contains("Cannons."))
                 {
-                    Debug.Log($"[ParseCannonType] Found cannon '{cannonName}' -> ID {cannonID}");
-                    return cannonID;
-                }
-                else
-                {
-                    Debug.LogWarning($"[ParseCannonType] Cannon name '{cannonName}' not found in CannonIDConstants (count: {CannonIDConstants.Count})");
+                    // Extract cannon name (e.g., "Cannons.L1" -> "L1")
+                    string cannonName = trimmedElement.Split('.').Last().Trim();
+                    if (CannonIDConstants.TryGetValue(cannonName, out int cannonID))
+                    {
+                        Debug.Log($"[ParseCannonType] Found cannon '{cannonName}' -> ID {cannonID}");
+                        return cannonID;
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[ParseCannonType] Cannon name '{cannonName}' not found in CannonIDConstants (count: {CannonIDConstants.Count})");
+                    }
                 }
             }
 

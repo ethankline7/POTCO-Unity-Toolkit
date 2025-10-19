@@ -32,8 +32,6 @@ namespace Player
         [SerializeField] private LayerMask waterLayer;
 
         [Header("Collision Setup")]
-        [Tooltip("Automatically add mesh colliders to all world props on start")]
-        [SerializeField] private bool autoAddMeshColliders = true;
         [Tooltip("Ground check transform for platform detection")]
         [SerializeField] private Transform groundCheck;
         [SerializeField] private float groundDistance = 0.4f;
@@ -136,12 +134,6 @@ namespace Player
 
             // Setup ground check
             SetupGroundCheck();
-
-            // Auto-add colliders to world props
-            if (autoAddMeshColliders)
-            {
-                AddMeshCollidersToProps();
-            }
         }
 
         private void Update()
@@ -528,46 +520,6 @@ namespace Player
                 lastPlatformPosition = currentPlatform.position;
                 lastPlatformRotation = currentPlatform.rotation;
             }
-        }
-
-        private void AddMeshCollidersToProps()
-        {
-            Debug.Log("🔧 Auto-adding mesh colliders to world props...");
-
-            POTCO.ObjectListInfo[] objectListInfos = FindObjectsByType<POTCO.ObjectListInfo>(FindObjectsSortMode.None);
-            int colliderCount = 0;
-
-            foreach (POTCO.ObjectListInfo objectInfo in objectListInfos)
-            {
-                if (objectInfo.GetComponent<Collider>() == null)
-                {
-                    MeshFilter meshFilter = objectInfo.GetComponent<MeshFilter>();
-                    if (meshFilter != null && meshFilter.sharedMesh != null)
-                    {
-                        MeshCollider meshCollider = objectInfo.gameObject.AddComponent<MeshCollider>();
-                        meshCollider.sharedMesh = meshFilter.sharedMesh;
-                        meshCollider.convex = false;
-                        colliderCount++;
-                    }
-                    else
-                    {
-                        // Try child mesh filters
-                        MeshFilter[] childMeshFilters = objectInfo.GetComponentsInChildren<MeshFilter>();
-                        foreach (MeshFilter childMeshFilter in childMeshFilters)
-                        {
-                            if (childMeshFilter.GetComponent<Collider>() == null && childMeshFilter.sharedMesh != null)
-                            {
-                                MeshCollider meshCollider = childMeshFilter.gameObject.AddComponent<MeshCollider>();
-                                meshCollider.sharedMesh = childMeshFilter.sharedMesh;
-                                meshCollider.convex = false;
-                                colliderCount++;
-                            }
-                        }
-                    }
-                }
-            }
-
-            Debug.Log($"✅ Added {colliderCount} mesh colliders to world props");
         }
 
         // Debug visualization

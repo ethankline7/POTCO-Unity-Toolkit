@@ -633,7 +633,17 @@ public class GeometryProcessor
                 string innerLine = lines[j].Trim();
                 if (innerLine.StartsWith("<TRef>"))
                 {
-                    string texRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
+                    int openBraceIdx = innerLine.IndexOf('{');
+                    int closeBraceIdx = innerLine.LastIndexOf('}');
+
+                    // Validate braces exist and are in correct order
+                    if (openBraceIdx == -1 || closeBraceIdx == -1 || closeBraceIdx <= openBraceIdx)
+                    {
+                        DebugLogger.LogEggImporter($"[ParsePolygon] WARNING: Invalid TRef format on line {j}: {innerLine}");
+                        continue;
+                    }
+
+                    string texRef = innerLine.Substring(openBraceIdx + 1, closeBraceIdx - openBraceIdx - 1).Trim();
                     textureRefs.Add(texRef);
                 }
             }
@@ -659,7 +669,47 @@ public class GeometryProcessor
             string innerLine = lines[j].Trim();
             if (innerLine.StartsWith("<VertexRef>"))
             {
-                string valuesString = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
+                int openBraceIdx = innerLine.IndexOf('{');
+                int closeBraceIdx = innerLine.LastIndexOf('}');
+
+                // Handle multi-line VertexRef (when opening brace exists but no closing brace)
+                if (openBraceIdx != -1 && closeBraceIdx == -1)
+                {
+                    // Combine lines until we find the closing brace
+                    System.Text.StringBuilder multiLineBuilder = new System.Text.StringBuilder();
+                    multiLineBuilder.Append(innerLine);
+
+                    int k = j + 1;
+                    while (k < blockEnd && !lines[k].Trim().Contains("}"))
+                    {
+                        multiLineBuilder.Append(" ");
+                        multiLineBuilder.Append(lines[k].Trim());
+                        k++;
+                    }
+
+                    // Add the closing line
+                    if (k < blockEnd)
+                    {
+                        multiLineBuilder.Append(" ");
+                        multiLineBuilder.Append(lines[k].Trim());
+                    }
+
+                    innerLine = multiLineBuilder.ToString();
+                    j = k; // Skip the lines we just combined
+
+                    // Recalculate brace positions
+                    openBraceIdx = innerLine.IndexOf('{');
+                    closeBraceIdx = innerLine.LastIndexOf('}');
+                }
+
+                // Validate braces exist and are in correct order
+                if (openBraceIdx == -1 || closeBraceIdx == -1 || closeBraceIdx <= openBraceIdx)
+                {
+                    DebugLogger.LogEggImporter($"[ParsePolygon] WARNING: Invalid VertexRef format on line {j}: {innerLine}");
+                    continue;
+                }
+
+                string valuesString = innerLine.Substring(openBraceIdx + 1, closeBraceIdx - openBraceIdx - 1).Trim();
                 
                 // Parse vertex pool reference if present
                 string referencedVertexPool = "";
