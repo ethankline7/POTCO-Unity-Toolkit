@@ -83,7 +83,7 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             SkipWhitespaceAndComments();
 
-            // Expect '='
+            // Expect '=' but not '=='
             if (Peek() != '=')
             {
                 pos = startPos;
@@ -93,6 +93,17 @@ namespace CharacterOG.Data.PureCSharpBackend
             }
 
             Advance(); // consume '='
+
+            // Check if this is '==' (comparison) instead of '=' (assignment)
+            if (Peek() == '=')
+            {
+                // This is a comparison operator, not an assignment
+                pos = startPos;
+                line = startLine;
+                column = startCol;
+                return false;
+            }
+
             SkipWhitespaceAndComments();
 
             // Parse value
@@ -133,14 +144,19 @@ namespace CharacterOG.Data.PureCSharpBackend
             if (c == '(') return ParseTupleOrParen();
             if (c == '\'' || c == '"') return ParseString();
 
-            // Handle unary minus followed by parentheses: -(expr)
+            // Handle unary minus
             if (c == '-')
             {
                 int savedPos = pos;
+                int savedLine = line;
+                int savedCol = column;
+
                 Advance(); // consume '-'
                 SkipWhitespaceAndComments();
 
-                if (Peek() == '(')
+                char next = Peek();
+
+                if (next == '(')
                 {
                     // This is -(expr), parse the expression and negate it
                     var expr = ParseTupleOrParen();
@@ -157,17 +173,31 @@ namespace CharacterOG.Data.PureCSharpBackend
                     }
                     else
                     {
-                        // Can't evaluate, restore position and try as number
-                        pos = savedPos;
-                        line = this.line;
-                        column = this.column;
-                        return ParseNumber();
+                        // Can't evaluate, return null
+                        return PyNull.Instance;
                     }
+                }
+                else if (char.IsDigit(next))
+                {
+                    // Negative number, restore and parse as number
+                    pos = savedPos;
+                    line = savedLine;
+                    column = savedCol;
+                    return ParseNumber();
+                }
+                else if (char.IsLetter(next) || next == '_')
+                {
+                    // This is -variable, which we can't evaluate
+                    // Skip the identifier and return null
+                    TryReadIdentifier(out _);
+                    return PyNull.Instance;
                 }
                 else
                 {
-                    // Not followed by '(', restore and parse as negative number
+                    // Restore and try as number
                     pos = savedPos;
+                    line = savedLine;
+                    column = savedCol;
                     return ParseNumber();
                 }
             }
@@ -397,9 +427,17 @@ namespace CharacterOG.Data.PureCSharpBackend
                 sb.Append(Advance());
             }
 
+            bool hasDigits = false;
             while (char.IsDigit(Peek()) || Peek() == '.')
             {
+                hasDigits = true;
                 sb.Append(Advance());
+            }
+
+            // If we didn't capture any digits, this isn't a valid number
+            if (!hasDigits)
+            {
+                throw Error($"Invalid number: {sb}");
             }
 
             // Handle scientific notation
@@ -413,19 +451,31 @@ namespace CharacterOG.Data.PureCSharpBackend
                     sb.Append(Advance());
             }
 
-            if (double.TryParse(sb.ToString(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out double value))
+            double value;
+            if (!double.TryParse(sb.ToString(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out value))
             {
-                // Check for arithmetic operators (division, multiplication, etc.)
+                // Number is too large or malformed - use max value or 0
+                if (sb.ToString().Contains("-"))
+                    value = double.MinValue;
+                else
+                    value = double.MaxValue;
+
+                UnityEngine.Debug.LogWarning($"[OgPyReader] Number overflow at {filePath}:{line}:{column}, using {value}: {sb}");
+            }
+
+            // Check for arithmetic operators (division, multiplication, etc.)
+            SkipWhitespace();
+            char op = Peek();
+
+            if (op == '/' || op == '*' || op == '+')
+            {
+                Advance(); // consume operator
                 SkipWhitespace();
-                char op = Peek();
 
-                if (op == '/' || op == '*' || op == '+' || op == '-')
+                // Try to parse right side - if it fails, just return the left value
+                try
                 {
-                    Advance(); // consume operator
-                    SkipWhitespace();
-
-                    // Parse right side
                     PyNumber rightSide = ParseNumber();
 
                     // Compute result
@@ -434,17 +484,45 @@ namespace CharacterOG.Data.PureCSharpBackend
                         '/' => value / rightSide.AsFloat(),
                         '*' => value * rightSide.AsFloat(),
                         '+' => value + rightSide.AsFloat(),
-                        '-' => value - rightSide.AsFloat(),
                         _ => value
                     };
 
                     return new PyNumber(result);
                 }
+                catch
+                {
+                    // If right side parsing fails, return left value
+                    return new PyNumber(value);
+                }
+            }
+            else if (op == '-')
+            {
+                // Only treat as binary minus if followed by a digit
+                int savedPos = pos;
+                Advance(); // consume '-'
+                SkipWhitespace();
 
-                return new PyNumber(value);
+                if (char.IsDigit(Peek()))
+                {
+                    // This is binary subtraction
+                    try
+                    {
+                        PyNumber rightSide = ParseNumber();
+                        return new PyNumber(value - rightSide.AsFloat());
+                    }
+                    catch
+                    {
+                        return new PyNumber(value);
+                    }
+                }
+                else
+                {
+                    // Not binary subtraction, restore position
+                    pos = savedPos;
+                }
             }
 
-            throw Error($"Invalid number: {sb}");
+            return new PyNumber(value);
         }
 
         private PyNode ParseIdentifierOrKeyword()
@@ -454,27 +532,168 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             SkipWhitespace();
 
+            PyNode result = null;
+
             // Check for function call (VBase3, VBase4, etc.)
             if (Peek() == '(')
             {
-                return ParseFunctionCall(ident);
+                result = ParseFunctionCall(ident);
             }
-
             // Check for array/dict indexing (e.g., PLocalizer.NPCNames['id'])
-            if (Peek() == '[')
+            else if (Peek() == '[')
             {
-                // For now, treat indexed variables as None since we can't resolve them
                 SkipIndexing();
-                return PyNull.Instance;
+                result = PyNull.Instance;
+            }
+            // Keywords
+            else if (ident == "True")
+            {
+                result = new PyBool(true);
+            }
+            else if (ident == "False")
+            {
+                result = new PyBool(false);
+            }
+            else if (ident == "None")
+            {
+                result = PyNull.Instance;
+            }
+            else
+            {
+                // Variable reference
+                result = new PyVariable(ident);
             }
 
-            // Keywords
-            if (ident == "True") return new PyBool(true);
-            if (ident == "False") return new PyBool(false);
-            if (ident == "None") return PyNull.Instance;
+            // Check for method chaining, operators, or other expression continuations
+            SkipWhitespace();
+            while (true)
+            {
+                char c = Peek();
 
-            // Variable reference
-            return new PyVariable(ident);
+                // Method chaining: obj.method() or obj.property
+                if (c == '.')
+                {
+                    Advance(); // consume '.'
+                    SkipWhitespace();
+
+                    // Read the method/property name
+                    if (!TryReadIdentifier(out string methodName))
+                        throw Error("Expected method or property name after '.'");
+
+                    SkipWhitespace();
+
+                    // Check if it's a method call
+                    if (Peek() == '(')
+                    {
+                        // Parse the method call but return null since we can't evaluate it
+                        ParseFunctionCall(methodName);
+                        result = PyNull.Instance;
+                    }
+                    else if (Peek() == '[')
+                    {
+                        // Handle indexing after method/property
+                        SkipIndexing();
+                        result = PyNull.Instance;
+                    }
+                    else
+                    {
+                        // Just a property access
+                        result = PyNull.Instance;
+                    }
+
+                    SkipWhitespace();
+                }
+                // Comparison operators: >=, <=, ==, !=, <, >
+                else if (c == '>' || c == '<' || c == '=' || c == '!')
+                {
+                    // Skip comparison and the rest of the expression
+                    return HandleComparisonExpression();
+                }
+                // Binary operators: +, - (for concatenation or arithmetic)
+                // Only handle these when we already have a complex expression (result is PyNull)
+                else if ((c == '+' || c == '-') && result == PyNull.Instance)
+                {
+                    // Skip the rest of this complex expression
+                    SkipComplexExpression();
+                    return PyNull.Instance;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return result;
+        }
+
+        private void SkipComplexExpression()
+        {
+            // Skip operators and operands until we reach a delimiter
+            int depth = 0;
+            while (!IsAtEnd())
+            {
+                char c = Peek();
+
+                // Track nested structures
+                if (c == '(' || c == '[' || c == '{')
+                    depth++;
+                else if (c == ')' || c == ']' || c == '}')
+                {
+                    if (depth == 0)
+                        break; // End of expression
+                    depth--;
+                }
+                else if (depth == 0)
+                {
+                    // Check for expression delimiters at top level
+                    if (c == ',' || c == '\n' || c == ':')
+                        break;
+
+                    // Check for 'and', 'or' keywords
+                    if (char.IsLetter(c))
+                    {
+                        int savedPos = pos;
+                        int savedLine = line;
+                        int savedCol = column;
+
+                        if (TryReadIdentifier(out string keyword))
+                        {
+                            if (keyword == "and" || keyword == "or")
+                            {
+                                // Restore position to before the keyword
+                                pos = savedPos;
+                                line = savedLine;
+                                column = savedCol;
+                                break;
+                            }
+                            // Not a keyword, continue from current position
+                        }
+                        // Continue parsing
+                        continue;
+                    }
+                }
+
+                Advance();
+            }
+        }
+
+        private PyNode HandleComparisonExpression()
+        {
+            // Skip comparison operator
+            char c = Peek();
+            if (c == '>' || c == '<' || c == '=' || c == '!')
+            {
+                Advance();
+                if (Peek() == '=')
+                    Advance(); // consume second char of >=, <=, ==, !=
+            }
+
+            SkipWhitespace();
+
+            // Skip the right side of the comparison
+            SkipComplexExpression();
+
+            return PyNull.Instance;
         }
 
         private void SkipIndexing()
@@ -503,7 +722,59 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             while (Peek() != ')')
             {
-                call.args.Add(ParseValue());
+                // Check for keyword argument (name = value)
+                int savedPos = pos;
+                int savedLine = line;
+                int savedCol = column;
+
+                if (TryReadIdentifier(out string potentialKeyword))
+                {
+                    SkipWhitespace();
+                    if (Peek() == '=')
+                    {
+                        // This is a keyword argument, skip it
+                        Advance(); // consume '='
+                        SkipWhitespaceAndComments();
+
+                        // Try to parse the value, but if it fails, skip to next comma or )
+                        try
+                        {
+                            call.args.Add(ParseValue());
+                        }
+                        catch
+                        {
+                            SkipToNextArgumentOrEnd();
+                        }
+
+                        SkipWhitespaceAndComments();
+                        if (Peek() == ',')
+                        {
+                            Advance();
+                            SkipWhitespaceAndComments();
+                        }
+                        continue;
+                    }
+                    else
+                    {
+                        // Not a keyword argument, restore and parse normally
+                        pos = savedPos;
+                        line = savedLine;
+                        column = savedCol;
+                    }
+                }
+
+                // Normal argument - try to parse value
+                try
+                {
+                    call.args.Add(ParseValue());
+                }
+                catch
+                {
+                    // If we can't parse this argument, skip to next comma or end
+                    SkipToNextArgumentOrEnd();
+                    call.args.Add(PyNull.Instance);
+                }
+
                 SkipWhitespaceAndComments();
 
                 if (Peek() == ',')
@@ -515,6 +786,24 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             Expect(')');
             return call;
+        }
+
+        private void SkipToNextArgumentOrEnd()
+        {
+            int depth = 0;
+            while (!IsAtEnd())
+            {
+                char c = Peek();
+                if (c == '(' || c == '[' || c == '{') depth++;
+                else if (c == ')' || c == ']' || c == '}')
+                {
+                    if (depth == 0) return;
+                    depth--;
+                }
+                else if (c == ',' && depth == 0) return;
+
+                Advance();
+            }
         }
 
         private bool TryReadIdentifier(out string ident)
