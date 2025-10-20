@@ -1314,13 +1314,9 @@ namespace CharacterOG.Editor
                     colorPersistence = selectedCharacter.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
                 }
 
-                // Store actual color values from palettes
-                Color skinColor = palettes.GetSkinColor(customDna.skinColorIdx);
-                Color hairColor = palettes.GetHairColor(customDna.hairColorIdx);
-                Color topColor = palettes.GetDyeColor(customDna.topColorIdx);
-                Color botColor = palettes.GetDyeColor(customDna.botColorIdx);
-
-                colorPersistence.StoreColors(skinColor, hairColor, topColor, botColor);
+                // Store applied colors for persistence (from DnaApplier)
+                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot);
 
                 // Add CharacterGenderData component to persist gender information for animation system
                 var genderData = selectedCharacter.GetComponent<CharacterOG.Runtime.CharacterGenderData>();

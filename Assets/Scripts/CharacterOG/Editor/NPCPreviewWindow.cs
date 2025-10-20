@@ -436,6 +436,18 @@ namespace CharacterOG.Editor
                 // Apply DNA
                 dnaApplier.ApplyDNA(dna);
 
+                // Add CharacterColorPersistence for play mode color persistence
+                var colorPersistence = character.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                if (colorPersistence == null)
+                {
+                    colorPersistence = character.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                }
+
+                // Store applied colors for persistence
+                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot);
+                DebugLogger.LogNPCImport($"Added CharacterColorPersistence to '{dna.name}' with colors: skin={skin}, hair={hair}, top={top}, bot={bot}");
+
                 // Select the spawned character
                 Selection.activeGameObject = character;
 
@@ -574,6 +586,17 @@ namespace CharacterOG.Editor
                         // Apply DNA
                         dnaApplier.ApplyDNA(dna);
 
+                        // Add CharacterColorPersistence for play mode color persistence
+                        var colorPersistence = character.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                        if (colorPersistence == null)
+                        {
+                            colorPersistence = character.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                        }
+
+                        // Store applied colors for persistence
+                        var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
+                        colorPersistence.StoreColors(skin, hair, top, bot);
+
                         successCount++;
 
                         // Move to next grid position
@@ -637,6 +660,17 @@ namespace CharacterOG.Editor
 
                 // Apply DNA
                 dnaApplier.ApplyDNA(dna);
+
+                // Add CharacterColorPersistence for play mode color persistence
+                var colorPersistence = selectedCharacter.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                if (colorPersistence == null)
+                {
+                    colorPersistence = selectedCharacter.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                }
+
+                // Store applied colors for persistence
+                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot);
 
                 DebugLogger.LogNPCImport($"Successfully applied NPC '{dna.name}' to {selectedCharacter.name}");
                 EditorUtility.DisplayDialog("Success", $"Applied NPC '{dna.name}' to {selectedCharacter.name}", "OK");
@@ -991,6 +1025,17 @@ namespace CharacterOG.Editor
                     );
 
                     dnaApplier.ApplyDNA(selectedNpcDna);
+
+                    // Add CharacterColorPersistence for play mode color persistence
+                    var colorPersistence = character.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                    if (colorPersistence == null)
+                    {
+                        colorPersistence = character.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                    }
+
+                    // Store applied colors for persistence
+                    var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
+                    colorPersistence.StoreColors(skin, hair, top, bot);
 
                     // Add text label
                     GameObject label = new GameObject("Label");

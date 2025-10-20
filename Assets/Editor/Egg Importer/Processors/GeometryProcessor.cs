@@ -1098,6 +1098,9 @@ public class GeometryProcessor
 
             vertexPoolMappings[poolName] = new Dictionary<int, int>();
 
+            bool loggedNamedUVUsage = false;
+            int namedUVCount = 0;
+
             for (int localIndex = 0; localIndex < poolVertices.Count; localIndex++)
             {
                 var vertex = poolVertices[localIndex];
@@ -1105,19 +1108,43 @@ public class GeometryProcessor
 
                 masterVerticesList.Add(vertex.position);
                 masterNormalsList.Add(vertex.normal);
-                masterUVsList.Add(vertex.uv);
+
+                // Handle primary UV - if vertex has no primary UV but has named UVs, use the first named UV
+                Vector2 primaryUV = vertex.uv;
+                if (primaryUV == Vector2.zero && vertex.namedUVs.Count > 0)
+                {
+                    primaryUV = vertex.namedUVs.First().Value;
+                    namedUVCount++;
+                    if (!loggedNamedUVUsage)
+                    {
+                        DebugLogger.LogEggImporter($"[UV] Pool '{poolName}': Using named UV '{vertex.namedUVs.First().Key}' as primary UV (no primary UV defined in this pool)");
+                        loggedNamedUVUsage = true;
+                    }
+                }
+                masterUVsList.Add(primaryUV);
+
                 masterColorsList.Add(vertex.color);
 
-                // Handle UV2 - use first named UV if available
+                // Handle UV2 - use first named UV if available (and different from primary)
                 Vector2 uv2 = Vector2.zero;
-                if (vertex.namedUVs.Count > 0)
+                if (vertex.namedUVs.Count > 1)
                 {
-                    // Use the first named UV (typically "multi", "overlay", etc.)
+                    // Use the second named UV if we have multiple named UVs
+                    uv2 = vertex.namedUVs.Skip(1).First().Value;
+                }
+                else if (vertex.namedUVs.Count == 1 && vertex.uv != Vector2.zero)
+                {
+                    // If we have a primary UV AND one named UV, put named UV in UV2
                     uv2 = vertex.namedUVs.First().Value;
                 }
                 masterUV2sList.Add(uv2);
 
                 globalIndex++;
+            }
+
+            if (namedUVCount > 0)
+            {
+                DebugLogger.LogEggImporter($"[UV] Pool '{poolName}': {namedUVCount}/{poolVertices.Count} vertices using named UV as primary");
             }
 
             DebugLogger.LogEggImporter($"[VertexPool] Mapped {poolVertices.Count} vertices from pool '{poolName}' to global indices {globalIndex - poolVertices.Count}-{globalIndex - 1}");

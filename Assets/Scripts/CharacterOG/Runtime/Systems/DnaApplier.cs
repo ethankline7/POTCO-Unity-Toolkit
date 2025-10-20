@@ -28,6 +28,11 @@ namespace CharacterOG.Runtime.Systems
         private PirateDNA currentDna;
         private Color? currentHairColor;
 
+        // Track applied colors for persistence
+        private Color currentSkinColor = Color.white;
+        private Color currentTopColor = Color.white;
+        private Color currentBotColor = Color.white;
+
         public DnaApplier(
             GameObject characterRoot,
             Dictionary<string, BodyShapeDef> bodyShapes,
@@ -235,6 +240,12 @@ namespace CharacterOG.Runtime.Systems
         /// <summary>Get facial morph applier for advanced manipulation</summary>
         public FacialMorphApplier GetFacialMorphApplier() => facialMorphApplier;
 
+        /// <summary>Get applied colors for persistence (skin, hair, top, bot)</summary>
+        public (Color skin, Color hair, Color top, Color bot) GetAppliedColors()
+        {
+            return (currentSkinColor, currentHairColor ?? Color.white, currentTopColor, currentBotColor);
+        }
+
         private void HideAllClothing()
         {
             // STEP 1: Explicitly disable ALL clothing, hair, beard, mustache, and jewelry meshes (except eyebrows)
@@ -332,6 +343,16 @@ namespace CharacterOG.Runtime.Systems
             if (colorIdx >= 0)
             {
                 dye = palettes.GetDyeColor(colorIdx);
+
+                // Store colors for persistence
+                if (slot == Slot.Shirt || slot == Slot.Vest || slot == Slot.Coat || slot == Slot.Hat)
+                {
+                    currentTopColor = dye.Value;
+                }
+                else if (slot == Slot.Pant || slot == Slot.Shoe)
+                {
+                    currentBotColor = dye.Value;
+                }
             }
 
             assembler.SetSlotByIndex(slot, ogIndex, textureIdx, dye);
@@ -768,6 +789,7 @@ namespace CharacterOG.Runtime.Systems
         private void ApplySkinColor(int skinColorIdx)
         {
             Color skinColor = palettes.GetSkinColor(skinColorIdx);
+            currentSkinColor = skinColor; // Store for persistence
 
             // Apply to all body part groups using exact names (gender-specific)
             var bodyParts = ClothingCatalog.GetBodyIndexToGroup(currentDna.gender);
