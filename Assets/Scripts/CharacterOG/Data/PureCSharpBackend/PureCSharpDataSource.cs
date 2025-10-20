@@ -20,8 +20,61 @@ namespace CharacterOG.Data.PureCSharpBackend
 
         private Dictionary<string, List<string>> bodyShapeIndexMaps = new Dictionary<string, List<string>>();
 
+        // ========== PHASE 1: GLOBAL DATA CACHING ==========
+        // Static caches shared across all PureCSharpDataSource instances for performance
+        private static Palettes s_cachedPalettes = null;
+        private static Dictionary<string, BodyShapeDef> s_cachedBodyShapes = null;
+        private static Dictionary<string, ClothingCatalog> s_cachedClothingCatalogs = new Dictionary<string, ClothingCatalog>();
+        private static Dictionary<string, JewelryTattooDefs> s_cachedJewelryTattoos = new Dictionary<string, JewelryTattooDefs>();
+        private static Dictionary<string, FacialMorphDatabase> s_cachedFacialMorphs = new Dictionary<string, FacialMorphDatabase>();
+        private static Dictionary<string, PirateDNA> s_cachedNpcDna = null;
+        private static readonly object s_cacheLock = new object();
+
+        /// <summary>Clear all static caches (useful for editor refresh)</summary>
+        public static void ClearCache()
+        {
+            lock (s_cacheLock)
+            {
+                s_cachedPalettes = null;
+                s_cachedBodyShapes = null;
+                s_cachedClothingCatalogs.Clear();
+                s_cachedJewelryTattoos.Clear();
+                s_cachedFacialMorphs.Clear();
+                s_cachedNpcDna = null;
+                Debug.Log("[PureCSharpDataSource] Static caches cleared");
+            }
+        }
+
+        /// <summary>Get cache statistics for debugging</summary>
+        public static string GetCacheStats()
+        {
+            lock (s_cacheLock)
+            {
+                return $"Cache Stats: " +
+                    $"Palettes={s_cachedPalettes != null}, " +
+                    $"BodyShapes={s_cachedBodyShapes != null}, " +
+                    $"ClothingCatalogs={s_cachedClothingCatalogs.Count}, " +
+                    $"JewelryTattoos={s_cachedJewelryTattoos.Count}, " +
+                    $"FacialMorphs={s_cachedFacialMorphs.Count}, " +
+                    $"NpcDna={s_cachedNpcDna != null}";
+            }
+        }
+        // ========== END PHASE 1 CACHING ==========
+
         public Dictionary<string, BodyShapeDef> LoadBodyShapes(string gender = "m")
         {
+            // PHASE 1 OPTIMIZATION: Check static cache first
+            lock (s_cacheLock)
+            {
+                if (s_cachedBodyShapes != null)
+                {
+                    Debug.Log("[LoadBodyShapes] Using cached body shapes");
+                    return s_cachedBodyShapes;
+                }
+            }
+
+            // Cache miss - load from disk
+            Debug.Log("[LoadBodyShapes] Cache miss - loading from disk");
             var reader = new OgPyReader("", OgPaths.BodyDefs);
             var data = reader.ParseFile(OgPaths.BodyDefs);
 
@@ -61,6 +114,13 @@ namespace CharacterOG.Data.PureCSharpBackend
                 }
             }
 
+            // Store in cache
+            lock (s_cacheLock)
+            {
+                s_cachedBodyShapes = shapes;
+                Debug.Log($"[LoadBodyShapes] Cached {shapes.Count} body shapes");
+            }
+
             return shapes;
         }
 
@@ -82,7 +142,18 @@ namespace CharacterOG.Data.PureCSharpBackend
 
         public Palettes LoadPalettesAndDyeRules()
         {
-            Debug.Log($"LoadPalettesAndDyeRules: Loading from {OgPaths.HumanDNA}");
+            // PHASE 1 OPTIMIZATION: Check static cache first
+            lock (s_cacheLock)
+            {
+                if (s_cachedPalettes != null)
+                {
+                    Debug.Log("[LoadPalettesAndDyeRules] Using cached palettes");
+                    return s_cachedPalettes;
+                }
+            }
+
+            // Cache miss - load from disk
+            Debug.Log($"[LoadPalettesAndDyeRules] Cache miss - loading from {OgPaths.HumanDNA}");
 
             var reader = new OgPyReader("", OgPaths.HumanDNA);
             var data = reader.ParseFile(OgPaths.HumanDNA);
@@ -230,11 +301,31 @@ namespace CharacterOG.Data.PureCSharpBackend
                      $"{palettes.hatColors.Count} hat sets, {palettes.crazySkin.Count} crazy skin, {palettes.jewelry.Count} jewelry, " +
                      $"{palettes.clothesTopColors.Count} top sets, {palettes.clothesBotColors.Count} bot sets");
 
+            // Store in cache
+            lock (s_cacheLock)
+            {
+                s_cachedPalettes = palettes;
+                Debug.Log("[LoadPalettesAndDyeRules] Cached palettes");
+            }
+
             return palettes;
         }
 
         public ClothingCatalog LoadClothingCatalog(string gender = "m")
         {
+            // PHASE 1 OPTIMIZATION: Check static cache first
+            string genderKey = gender.ToLower();
+            lock (s_cacheLock)
+            {
+                if (s_cachedClothingCatalogs.TryGetValue(genderKey, out var cachedCatalog))
+                {
+                    Debug.Log($"[LoadClothingCatalog] Using cached clothing catalog for gender '{genderKey}'");
+                    return cachedCatalog;
+                }
+            }
+
+            // Cache miss - load from disk
+            Debug.Log($"[LoadClothingCatalog] Cache miss - loading catalog for gender '{genderKey}'");
             var catalog = new ClothingCatalog();
 
             try
@@ -290,11 +381,31 @@ namespace CharacterOG.Data.PureCSharpBackend
                 Debug.LogError($"Failed to load ClothingCatalog: {ex.Message}\n{ex.StackTrace}");
             }
 
+            // Store in cache
+            lock (s_cacheLock)
+            {
+                s_cachedClothingCatalogs[genderKey] = catalog;
+                Debug.Log($"[LoadClothingCatalog] Cached clothing catalog for gender '{genderKey}'");
+            }
+
             return catalog;
         }
 
         public JewelryTattooDefs LoadJewelryAndTattoos(string gender = "m")
         {
+            // PHASE 1 OPTIMIZATION: Check static cache first
+            string genderKey = gender.ToLower();
+            lock (s_cacheLock)
+            {
+                if (s_cachedJewelryTattoos.TryGetValue(genderKey, out var cachedDefs))
+                {
+                    Debug.Log($"[LoadJewelryAndTattoos] Using cached jewelry/tattoos for gender '{genderKey}'");
+                    return cachedDefs;
+                }
+            }
+
+            // Cache miss - load from disk
+            Debug.Log($"[LoadJewelryAndTattoos] Cache miss - loading for gender '{genderKey}'");
             var defs = new JewelryTattooDefs();
 
             string genderFile = OgPaths.GetPirateGenderFile(gender);
@@ -365,11 +476,31 @@ namespace CharacterOG.Data.PureCSharpBackend
             }
 
             Debug.Log($"Loaded jewelry for {gender}: {string.Join(", ", defs.jewelryGroupsByZone.Keys)}");
+
+            // Store in cache
+            lock (s_cacheLock)
+            {
+                s_cachedJewelryTattoos[genderKey] = defs;
+                Debug.Log($"[LoadJewelryAndTattoos] Cached jewelry/tattoos for gender '{genderKey}'");
+            }
+
             return defs;
         }
 
         public Dictionary<string, PirateDNA> LoadNpcDna()
         {
+            // PHASE 1 OPTIMIZATION: Check static cache first
+            lock (s_cacheLock)
+            {
+                if (s_cachedNpcDna != null)
+                {
+                    Debug.Log("[LoadNpcDna] Using cached NPC DNA database");
+                    return s_cachedNpcDna;
+                }
+            }
+
+            // Cache miss - load from disk
+            Debug.Log("[LoadNpcDna] Cache miss - loading NPC DNA database");
             var npcs = new Dictionary<string, PirateDNA>();
 
             if (!File.Exists(OgPaths.NPCList))
@@ -428,6 +559,14 @@ namespace CharacterOG.Data.PureCSharpBackend
             }
 
             Debug.Log($"Loaded {npcs.Count} NPCs, {npcNames.Count} have display names");
+
+            // Store in cache
+            lock (s_cacheLock)
+            {
+                s_cachedNpcDna = npcs;
+                Debug.Log($"[LoadNpcDna] Cached {npcs.Count} NPC DNA entries");
+            }
+
             return npcs;
         }
 
@@ -1548,8 +1687,30 @@ namespace CharacterOG.Data.PureCSharpBackend
 
         public FacialMorphDatabase LoadFacialMorphs(string gender = "m")
         {
-            string filePath = gender.ToLower() == "f" ? OgPaths.PirateFemale : OgPaths.PirateMale;
-            return FacialMorphParser.ParseFromFile(filePath, gender);
+            // PHASE 1 OPTIMIZATION: Check static cache first
+            string genderKey = gender.ToLower();
+            lock (s_cacheLock)
+            {
+                if (s_cachedFacialMorphs.TryGetValue(genderKey, out var cachedMorphs))
+                {
+                    Debug.Log($"[LoadFacialMorphs] Using cached facial morphs for gender '{genderKey}'");
+                    return cachedMorphs;
+                }
+            }
+
+            // Cache miss - load from disk
+            Debug.Log($"[LoadFacialMorphs] Cache miss - loading for gender '{genderKey}'");
+            string filePath = genderKey == "f" ? OgPaths.PirateFemale : OgPaths.PirateMale;
+            var morphDatabase = FacialMorphParser.ParseFromFile(filePath, gender);
+
+            // Store in cache
+            lock (s_cacheLock)
+            {
+                s_cachedFacialMorphs[genderKey] = morphDatabase;
+                Debug.Log($"[LoadFacialMorphs] Cached facial morphs for gender '{genderKey}'");
+            }
+
+            return morphDatabase;
         }
 
         // ===== BODY HIDE MASK PARSING =====

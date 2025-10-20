@@ -2,6 +2,8 @@
 /// Binds textures and dye colors to character materials using MaterialPropertyBlock.
 /// Avoids runtime material instantiation for performance.
 /// Caches property blocks per renderer.
+/// PHASE 3 OPTIMIZATION: Uses PropertyBlocks exclusively, no material instances created.
+/// Shares texture cache across all instances for maximum performance.
 /// </summary>
 using System.Collections.Generic;
 using UnityEngine;
@@ -11,7 +13,14 @@ namespace CharacterOG.Runtime.Systems
     public class MaterialBinder
     {
         private Dictionary<Renderer, MaterialPropertyBlock> propertyBlocks = new();
-        private Dictionary<string, Texture2D> textureCache = new();
+
+        // PHASE 3 OPTIMIZATION: Static texture cache shared across ALL MaterialBinder instances
+        private static Dictionary<string, Texture2D> s_sharedTextureCache = new Dictionary<string, Texture2D>();
+        private static readonly object s_textureCacheLock = new object();
+
+        // PHASE 3 OPTIMIZATION: Property block pool to reuse blocks
+        private static Queue<MaterialPropertyBlock> s_propertyBlockPool = new Queue<MaterialPropertyBlock>();
+        private static readonly object s_poolLock = new object();
 
         // Shader property names (customize based on your shaders)
         private static readonly int s_mainTexProp = Shader.PropertyToID("_MainTex");
@@ -82,12 +91,10 @@ namespace CharacterOG.Runtime.Systems
                 return;
             }
 
-            // Use material instance instead of MaterialPropertyBlock for stable rendering
-            // This creates a material instance automatically if accessing renderer.material
-            if (renderer.material != null)
-            {
-                renderer.material.SetTexture(s_mainTexProp, tex);
-            }
+            // PHASE 3 OPTIMIZATION: Use PropertyBlock exclusively - NO material instance creation
+            var block = GetOrCreatePropertyBlock(renderer);
+            block.SetTexture(s_mainTexProp, tex);
+            renderer.SetPropertyBlock(block);
         }
 
         /// <summary>Apply two textures (base + overlay/detail) - used for hats with feathers, etc.</summary>
@@ -102,33 +109,38 @@ namespace CharacterOG.Runtime.Systems
                 return;
             }
 
-            if (renderer.material == null)
+            if (renderer.sharedMaterial == null)
                 return;
+
+            // PHASE 3 OPTIMIZATION: Use PropertyBlock exclusively for dual textures
+            var block = GetOrCreatePropertyBlock(renderer);
 
             // Apply base texture to _MainTex
             if (baseTex != null)
             {
-                renderer.material.SetTexture(s_mainTexProp, baseTex);
+                block.SetTexture(s_mainTexProp, baseTex);
             }
 
             // Apply overlay texture to _OverlayTex or _DetailTex
             // Try _OverlayTex first (custom shader), then _DetailTex (standard Unity)
             if (overlayTex != null)
             {
-                if (renderer.material.HasProperty(s_overlayTexProp))
+                if (renderer.sharedMaterial.HasProperty(s_overlayTexProp))
                 {
-                    renderer.material.SetTexture(s_overlayTexProp, overlayTex);
+                    block.SetTexture(s_overlayTexProp, overlayTex);
                 }
-                else if (renderer.material.HasProperty(s_detailTexProp))
+                else if (renderer.sharedMaterial.HasProperty(s_detailTexProp))
                 {
-                    renderer.material.SetTexture(s_detailTexProp, overlayTex);
+                    block.SetTexture(s_detailTexProp, overlayTex);
                 }
                 else
                 {
-                    // Fallback: apply to main tex if no overlay slot available
+                    // Fallback: overlay shader property not available
                     Debug.LogWarning($"MaterialBinder: Material doesn't have _OverlayTex or _DetailTex property, overlay '{overlayTexId}' may not appear correctly");
                 }
             }
+
+            renderer.SetPropertyBlock(block);
         }
 
         /// <summary>Apply dye color to renderer (base channel)</summary>
@@ -228,27 +240,79 @@ namespace CharacterOG.Runtime.Systems
         /// <summary>Register a texture in cache</summary>
         public void RegisterTexture(string textureId, Texture2D texture)
         {
-            textureCache[textureId] = texture;
+            lock (s_textureCacheLock)
+            {
+                s_sharedTextureCache[textureId] = texture;
+            }
         }
 
-        /// <summary>Clear texture cache</summary>
-        public void ClearTextureCache()
+        /// <summary>Clear texture cache (PHASE 3: now clears shared cache)</summary>
+        public static void ClearTextureCache()
         {
-            textureCache.Clear();
+            lock (s_textureCacheLock)
+            {
+                s_sharedTextureCache.Clear();
+                Debug.Log("[MaterialBinder] Shared texture cache cleared");
+            }
+        }
+
+        /// <summary>PHASE 3: Preload common textures to warm up the cache</summary>
+        public static void PreloadCommonTextures(System.Func<string, Texture2D> textureLoader, string[] textureIds)
+        {
+            if (textureLoader == null || textureIds == null || textureIds.Length == 0)
+                return;
+
+            int loadedCount = 0;
+            foreach (var texId in textureIds)
+            {
+                lock (s_textureCacheLock)
+                {
+                    if (!s_sharedTextureCache.ContainsKey(texId))
+                    {
+                        var tex = textureLoader(texId);
+                        if (tex != null)
+                        {
+                            s_sharedTextureCache[texId] = tex;
+                            loadedCount++;
+                        }
+                    }
+                }
+            }
+
+            Debug.Log($"[MaterialBinder] Preloaded {loadedCount} textures into shared cache");
+        }
+
+        /// <summary>Get cache statistics for debugging</summary>
+        public static string GetCacheStats()
+        {
+            lock (s_textureCacheLock)
+            {
+                lock (s_poolLock)
+                {
+                    return $"MaterialBinder Cache: {s_sharedTextureCache.Count} textures cached, {s_propertyBlockPool.Count} blocks pooled";
+                }
+            }
         }
 
         private Texture2D GetTexture(string textureId)
         {
-            // Check cache first
-            if (textureCache.TryGetValue(textureId, out var cached))
-                return cached;
+            // PHASE 3 OPTIMIZATION: Check shared cache first
+            lock (s_textureCacheLock)
+            {
+                if (s_sharedTextureCache.TryGetValue(textureId, out var cached))
+                    return cached;
+            }
 
-            // Try to load
+            // Cache miss - try to load
             var tex = TextureLoader?.Invoke(textureId);
 
             if (tex != null)
             {
-                textureCache[textureId] = tex;
+                // Store in shared cache
+                lock (s_textureCacheLock)
+                {
+                    s_sharedTextureCache[textureId] = tex;
+                }
             }
 
             return tex;
@@ -258,7 +322,19 @@ namespace CharacterOG.Runtime.Systems
         {
             if (!propertyBlocks.TryGetValue(renderer, out var block))
             {
-                block = new MaterialPropertyBlock();
+                // PHASE 3 OPTIMIZATION: Try to get a block from the pool first
+                lock (s_poolLock)
+                {
+                    if (s_propertyBlockPool.Count > 0)
+                    {
+                        block = s_propertyBlockPool.Dequeue();
+                        block.Clear(); // Reset the block
+                    }
+                    else
+                    {
+                        block = new MaterialPropertyBlock();
+                    }
+                }
                 propertyBlocks[renderer] = block;
             }
             else
@@ -270,10 +346,13 @@ namespace CharacterOG.Runtime.Systems
             return block;
         }
 
-        /// <summary>Get diagnostic info</summary>
+        /// <summary>Get diagnostic info (PHASE 3: updated for shared cache)</summary>
         public string GetDiagnosticInfo()
         {
-            return $"MaterialBinder: {propertyBlocks.Count} active property blocks, {textureCache.Count} cached textures";
+            lock (s_textureCacheLock)
+            {
+                return $"MaterialBinder: {propertyBlocks.Count} active property blocks, {s_sharedTextureCache.Count} shared cached textures";
+            }
         }
     }
 }

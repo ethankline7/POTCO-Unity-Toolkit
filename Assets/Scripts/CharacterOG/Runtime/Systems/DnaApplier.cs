@@ -46,10 +46,12 @@ namespace CharacterOG.Runtime.Systems
             this.facialMorphs = facialMorphs;
 
             // Initialize systems
-            rendererCache = new GroupRendererCache(characterRoot);
+            // PHASE 2 OPTIMIZATION: Use renderer cache pool instead of building new cache
+            rendererCache = RendererCachePool.Instance.GetOrCreateCache(gender, characterRoot);
             materialBinder = new MaterialBinder();
 
             // CRITICAL: Resolve OG patterns to exact mesh group names using the character's actual mesh
+            // PHASE 4 OPTIMIZATION: Pattern resolution is now cached per-gender in the catalog
             catalog.ResolvePatterns(rendererCache);
 
             assembler = new CharacterAssembler(rendererCache, materialBinder, catalog, palettes, gender);

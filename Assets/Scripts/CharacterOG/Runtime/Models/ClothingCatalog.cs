@@ -67,6 +67,10 @@ namespace CharacterOG.Models
         /// <summary>Gender-specific underwear defaults</summary>
         public Dictionary<string, Dictionary<Slot, (int idx, int texIdx, int colorIdx)>> underwear = new();
 
+        /// <summary>PHASE 4 OPTIMIZATION: Flag to track if patterns have been resolved</summary>
+        [System.NonSerialized]
+        private bool isPatternsResolved = false;
+
         /// <summary>Male body index -> body_* group name (order mirrors PirateMale.py bodys list)</summary>
         public static readonly string[] MaleBodyIndexToGroup =
         {
@@ -175,6 +179,13 @@ namespace CharacterOG.Models
         /// <summary>Resolve all OG patterns to exact mesh group names using the character model's renderer cache</summary>
         public void ResolvePatterns(CharacterOG.Runtime.Utils.GroupRendererCache cache)
         {
+            // PHASE 4 OPTIMIZATION: Skip resolution if already done
+            if (isPatternsResolved)
+            {
+                UnityEngine.Debug.Log("[ResolvePatterns] Patterns already resolved, skipping");
+                return;
+            }
+
             int totalResolved = 0;
             int debugCount = 0;
             foreach (var slotKvp in variantsBySlot)
@@ -197,7 +208,17 @@ namespace CharacterOG.Models
                     }
                 }
             }
-            UnityEngine.Debug.Log($"[ResolvePatterns] Resolved {totalResolved} exact mesh group names from OG patterns");
+
+            // Mark as resolved
+            isPatternsResolved = true;
+            UnityEngine.Debug.Log($"[ResolvePatterns] Resolved {totalResolved} exact mesh group names from OG patterns (cached for reuse)");
+        }
+
+        /// <summary>PHASE 4: Reset pattern resolution flag (useful if catalog is modified)</summary>
+        public void ResetPatternResolution()
+        {
+            isPatternsResolved = false;
+            UnityEngine.Debug.Log("[ClothingCatalog] Pattern resolution reset");
         }
     }
 }
