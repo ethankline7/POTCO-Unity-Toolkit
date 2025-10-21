@@ -47,14 +47,8 @@ namespace CharacterOG.Runtime
             ForceRefresh();
         }
 
-        private void Update()
-        {
-            // Continuously check and reapply if needed (only in play mode to avoid editor lag)
-            if (Application.isPlaying && hasStoredColors)
-            {
-                ReapplyColors();
-            }
-        }
+        // Removed Update() - colors should persist once applied via MaterialPropertyBlock
+        // If colors are lost, the issue is elsewhere (material instantiation, shader changes, etc.)
 
         private void OnDestroy()
         {
@@ -171,21 +165,10 @@ namespace CharacterOG.Runtime
             renderer.GetPropertyBlock(block);
 
             // Set color properties - try all common shader property names
-            if (renderer.sharedMaterial != null)
-            {
-                if (renderer.sharedMaterial.HasProperty(BaseColorProperty))
-                {
-                    block.SetColor(BaseColorProperty, color);
-                }
-                if (renderer.sharedMaterial.HasProperty(MainColorProperty))
-                {
-                    block.SetColor(MainColorProperty, color);
-                }
-                if (renderer.sharedMaterial.HasProperty(DyeColorProperty))
-                {
-                    block.SetColor(DyeColorProperty, color);
-                }
-            }
+            // Don't check if material has property - MaterialPropertyBlock will handle it
+            block.SetColor(BaseColorProperty, color);
+            block.SetColor(MainColorProperty, color);
+            block.SetColor(DyeColorProperty, color);
 
             renderer.SetPropertyBlock(block);
         }

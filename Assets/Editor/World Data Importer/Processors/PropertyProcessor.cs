@@ -654,6 +654,27 @@ namespace WorldDataImporter.Processors
 
                     dnaApplier.ApplyDNA(pirateDna);
 
+                    // Add CharacterColorPersistence for play mode color persistence
+                    var colorPersistence = instance.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                    if (colorPersistence == null)
+                    {
+                        colorPersistence = instance.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                    }
+
+                    // Store applied colors for persistence
+                    var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
+                    colorPersistence.StoreColors(skin, hair, top, bot);
+
+                    // Add CharacterGenderData for animation system
+                    var genderData = instance.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+                    if (genderData == null)
+                    {
+                        genderData = instance.AddComponent<CharacterOG.Runtime.CharacterGenderData>();
+                    }
+                    genderData.SetGender(pirateDna.gender);
+
+                    DebugLogger.LogNPCImport($"✅ Added color persistence and gender data to {pirateDna.name}");
+
                     // Debug: Check position values
                     DebugLogger.LogNPCImport($"🔍 Spawn Check: gridPos={objectData.gridPos}, hasPos={objectData.hasPos}, currentPos={currentGO.transform.localPosition}");
 
