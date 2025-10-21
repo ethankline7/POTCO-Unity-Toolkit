@@ -727,23 +727,29 @@ namespace WorldDataImporter.Processors
                     var jewelryTattoos = dataSource.LoadJewelryAndTattoos(pirateDna.gender);
                     var facialMorphs = dataSource.LoadFacialMorphs(pirateDna.gender);
 
-                    // Auto-find head and body roots
+                    // Auto-find head and body roots (EXACT logic from NPCPreviewWindow + working commit)
                     Transform headRoot = null;
                     Transform bodyRoot = null;
+
                     Transform[] allTransforms = instance.GetComponentsInChildren<Transform>();
 
-                    string[] headCandidates = { "def_head", "Head", "head", "HeadRoot" };
+                    // POTCO characters use def_neck as the parent for all facial bones (def_trs_*, trs_face_*, etc.)
+                    // The facial morphs modify bones like def_trs_left_forehead, def_trs_mid_jaw, etc which are children of def_neck
+                    // POTCO headScale → applied to def_head01
+                    string[] headCandidates = { "def_head01", "def_neck", "zz_neck", "def_head", "zz_head" };
                     foreach (var candidate in headCandidates)
                     {
                         var found = System.Array.Find(allTransforms, t => t.name == candidate);
                         if (found != null)
                         {
                             headRoot = found;
+                            DebugLogger.LogNPCImport($"Found head root bone: {headRoot.name}");
                             break;
                         }
                     }
 
-                    string[] bodyCandidates = { "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
+                    // POTCO bodyScale → applied to def_scale_jt as GLOBAL scale
+                    string[] bodyCandidates = { "def_scale_jt", "def_spine01", "Spine", "spine01", "BodyRoot", "def_spine02" };
                     foreach (var candidate in bodyCandidates)
                     {
                         var found = System.Array.Find(allTransforms, t => t.name == candidate);
@@ -753,6 +759,8 @@ namespace WorldDataImporter.Processors
                             break;
                         }
                     }
+
+                    DebugLogger.LogNPCImport($"Auto-Find Roots: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
 
                     // Create DnaApplier and apply DNA
                     var dnaApplier = new CharacterOG.Runtime.Systems.DnaApplier(
@@ -829,6 +837,16 @@ namespace WorldDataImporter.Processors
 
                     // Parent NPC model to positioned GameObject
                     instance.transform.SetParent(currentGO.transform, false);
+
+                    // Mark all transforms dirty AFTER parenting to save body shape changes (CRITICAL!)
+                    UnityEditor.EditorUtility.SetDirty(instance);
+                    Transform[] allTransformsToMark = instance.GetComponentsInChildren<Transform>();
+                    foreach (Transform t in allTransformsToMark)
+                    {
+                        UnityEditor.EditorUtility.SetDirty(t);
+                    }
+
+                    DebugLogger.LogNPCImport($"✅ Successfully applied NPC '{pirateDna.name}' ({pirateDna.gender})");
                     DebugLogger.LogNPCImport($"👤 Spawned NPC: {pirateDna.name} (DNA: {objectData.npcDnaId})");
 
                     // Don't apply animation set - NPCAnimationPlayer will handle it

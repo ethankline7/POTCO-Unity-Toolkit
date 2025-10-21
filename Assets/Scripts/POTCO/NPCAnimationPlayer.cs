@@ -190,7 +190,8 @@ namespace POTCO
         private void DetectGender()
         {
             // Check for CharacterGenderData component (highest priority)
-            CharacterOG.Runtime.CharacterGenderData genderData = GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+            // Search in children because it's on the character model, not the NPC parent
+            CharacterOG.Runtime.CharacterGenderData genderData = GetComponentInChildren<CharacterOG.Runtime.CharacterGenderData>();
             if (genderData != null)
             {
                 string gender = genderData.GetGender();
