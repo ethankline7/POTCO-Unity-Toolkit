@@ -3,7 +3,12 @@
 /// Automatically detects gender (fp_ or mp_) and plays animations based on player state
 /// </summary>
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Player
 {
@@ -24,6 +29,16 @@ namespace Player
 
         [Header("Detected Gender (Read-Only)")]
         [SerializeField] private string genderPrefix = "mp_"; // mp_ for male, fp_ for female
+
+        [Header("Animation Transitions")]
+        [Tooltip("Duration for animation crossfade transitions")]
+        [SerializeField] private float transitionDuration = 0.15f;
+
+        [Header("Bone Sticking Fix - Manual Reset")]
+        [Tooltip("Enable manual bone reset to prevent sticking during transitions")]
+        [SerializeField] private bool enableManualBoneReset = true;
+        [Tooltip("Duration to lerp orphaned bones back to rest pose")]
+        [SerializeField] private float resetDuration = 0.3f;
 
         [Header("Animation Clips")]
         [SerializeField] private AnimationClip idleClip;
@@ -53,6 +68,12 @@ namespace Player
         private bool isInJumpAir = false; // Track if we're in the air portion of jump
         private bool jumpAnimReversing = false; // Track if jump animation is playing backwards
         private bool isPlayingLanding = false; // Track if we're playing the landing animation
+
+        // Manual bone reset system
+        private Dictionary<string, Transform> cachedBones = new Dictionary<string, Transform>();
+        private Dictionary<string, Quaternion> restPoseRotations = new Dictionary<string, Quaternion>();
+        private Dictionary<string, HashSet<string>> animationBones = new Dictionary<string, HashSet<string>>();
+        private Coroutine currentResetCoroutine = null;
 
         private void Awake()
         {
@@ -537,6 +558,13 @@ namespace Player
             if (idleClip != null && walkClip != null)
             {
                 isInitialized = true;
+
+                // Set up manual bone reset system
+                if (enableManualBoneReset)
+                {
+                    SetupManualBoneReset();
+                }
+
                 PlayAnimation("idle");
             }
             else
@@ -544,6 +572,78 @@ namespace Player
                 Debug.LogError($"❌ Failed to load required animations! Check that {genderPrefix}idle and {genderPrefix}walk exist in Resources/phase_*/char/");
                 isInitialized = false;
             }
+        }
+
+        private void SetupManualBoneReset()
+        {
+            Debug.Log("🦴 Setting up manual bone reset system...");
+
+            // Play idle animation and sample to get rest pose
+            animComponent.Play("idle");
+            animComponent.Sample();
+
+            // Cache all bone transforms in the hierarchy
+            Transform[] allTransforms = animComponent.GetComponentsInChildren<Transform>();
+            foreach (Transform bone in allTransforms)
+            {
+                // Get relative path from animation component root
+                string bonePath = GetRelativePath(animComponent.transform, bone);
+                if (!string.IsNullOrEmpty(bonePath))
+                {
+                    cachedBones[bonePath] = bone;
+                    restPoseRotations[bonePath] = bone.localRotation;
+                }
+            }
+
+            Debug.Log($"   Cached {cachedBones.Count} bones");
+
+            // Dynamically analyze ALL animations in the Animation component
+            int analyzedCount = 0;
+            foreach (AnimationState state in animComponent)
+            {
+                if (state.clip != null)
+                {
+                    AnalyzeAnimationBones(state.name, state.clip);
+                    analyzedCount++;
+                }
+            }
+
+            Debug.Log($"   Analyzed {analyzedCount} animations");
+            Debug.Log($"✅ Manual bone reset system ready!");
+        }
+
+        private string GetRelativePath(Transform root, Transform bone)
+        {
+            if (bone == root) return "";
+
+            string path = bone.name;
+            Transform parent = bone.parent;
+
+            while (parent != null && parent != root)
+            {
+                path = parent.name + "/" + path;
+                parent = parent.parent;
+            }
+
+            return path;
+        }
+
+        private void AnalyzeAnimationBones(string animName, AnimationClip clip)
+        {
+            var bones = new HashSet<string>();
+            var bindings = AnimationUtility.GetCurveBindings(clip);
+
+            foreach (var binding in bindings)
+            {
+                // Only count rotation curves (main indicator of bone animation)
+                if (binding.propertyName.StartsWith("m_LocalRotation"))
+                {
+                    bones.Add(binding.path);
+                }
+            }
+
+            animationBones[animName] = bones;
+            Debug.Log($"   {animName}: {bones.Count} bones");
         }
 
         private AnimationClip FindAndLoadClip(string animName, string[] phases, string[] searchPaths)
@@ -841,9 +941,95 @@ namespace Player
                 }
             }
 
+            // Manual bone reset for orphaned bones
+            if (enableManualBoneReset && !string.IsNullOrEmpty(currentAnim) && currentAnim != animName)
+            {
+                // Stop previous reset coroutine if still running
+                if (currentResetCoroutine != null)
+                {
+                    StopCoroutine(currentResetCoroutine);
+                }
+
+                // Start new reset coroutine
+                currentResetCoroutine = StartCoroutine(ResetOrphanedBones(currentAnim, animName));
+            }
+
             // Use CrossFade for smooth transitions
-            animComponent.CrossFade(animName, 0.15f);
+            animComponent.CrossFade(animName, transitionDuration);
             currentAnim = animName;
+        }
+
+        private IEnumerator ResetOrphanedBones(string fromAnim, string toAnim)
+        {
+            // Get bones that are in fromAnim but NOT in toAnim
+            if (!animationBones.ContainsKey(fromAnim) || !animationBones.ContainsKey(toAnim))
+            {
+                yield break;
+            }
+
+            var fromBones = animationBones[fromAnim];
+            var toBones = animationBones[toAnim];
+            var orphanedBones = new List<string>();
+
+            foreach (var bone in fromBones)
+            {
+                if (!toBones.Contains(bone))
+                {
+                    orphanedBones.Add(bone);
+                }
+            }
+
+            if (orphanedBones.Count == 0)
+            {
+                yield break;
+            }
+
+            Debug.Log($"🦴 Resetting {orphanedBones.Count} orphaned bones: {fromAnim} → {toAnim}");
+
+            // Store starting rotations
+            Dictionary<string, Quaternion> startRotations = new Dictionary<string, Quaternion>();
+            foreach (var bonePath in orphanedBones)
+            {
+                if (cachedBones.ContainsKey(bonePath))
+                {
+                    startRotations[bonePath] = cachedBones[bonePath].localRotation;
+                }
+            }
+
+            // Lerp bones from current rotation → rest pose over resetDuration
+            float elapsed = 0f;
+            while (elapsed < resetDuration)
+            {
+                float t = elapsed / resetDuration;
+                // Use smoothstep for nicer easing
+                t = t * t * (3f - 2f * t);
+
+                foreach (var bonePath in orphanedBones)
+                {
+                    if (cachedBones.ContainsKey(bonePath) && restPoseRotations.ContainsKey(bonePath))
+                    {
+                        cachedBones[bonePath].localRotation = Quaternion.Slerp(
+                            startRotations[bonePath],
+                            restPoseRotations[bonePath],
+                            t
+                        );
+                    }
+                }
+
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            // Final snap to rest pose
+            foreach (var bonePath in orphanedBones)
+            {
+                if (cachedBones.ContainsKey(bonePath) && restPoseRotations.ContainsKey(bonePath))
+                {
+                    cachedBones[bonePath].localRotation = restPoseRotations[bonePath];
+                }
+            }
+
+            currentResetCoroutine = null;
         }
 
         private void PlayLandingAnimation()
