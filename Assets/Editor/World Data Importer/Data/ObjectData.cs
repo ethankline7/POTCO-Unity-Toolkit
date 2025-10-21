@@ -35,6 +35,16 @@ namespace WorldDataImporter.Data
         public Vector3? gridPos;        // Absolute world position (GridPos)
         public bool hasPos;             // Track if Pos was set
         public bool isReadyForNPCSpawn; // Track if all NPC properties are loaded
+
+        // NPC AI properties (for runtime behavior)
+        public string npcCategory;      // Category (Commoner, Cast, etc.)
+        public float npcPatrolRadius;   // Patrol Radius
+        public string npcStartState;    // Start State (Idle, Walk, etc.)
+        public string npcTeam;          // Team (Villager, etc.)
+        public float npcAggroRadius;    // Aggro Radius
+        public string npcGreetingAnim;  // Greeting Animation
+        public string npcNoticeAnim1;   // Notice Animation 1
+        public string npcNoticeAnim2;   // Notice Animation 2
     }
     
     [System.Serializable]

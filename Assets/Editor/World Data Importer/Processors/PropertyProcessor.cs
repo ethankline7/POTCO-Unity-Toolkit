@@ -466,6 +466,76 @@ namespace WorldDataImporter.Processors
                         DebugLogger.LogNPCImport($"🎬 Stored NPC AnimSet: {animSet}");
                     }
                     break;
+                case "Category":
+                    // Store NPC category
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string category = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcCategory = category;
+                        DebugLogger.LogNPCImport($"📂 Stored NPC Category: {category}");
+                    }
+                    break;
+                case "Patrol Radius":
+                    // Store patrol radius
+                    if (objectData != null && settings?.importNPCs == true && float.TryParse(ParsingUtilities.ExtractStringValue(val), out float patrolRadius))
+                    {
+                        objectData.npcPatrolRadius = patrolRadius;
+                        DebugLogger.LogNPCImport($"🚶 Stored NPC Patrol Radius: {patrolRadius}");
+                    }
+                    break;
+                case "Start State":
+                    // Store start state
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string startState = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcStartState = startState;
+                        DebugLogger.LogNPCImport($"🎬 Stored NPC Start State: {startState}");
+                    }
+                    break;
+                case "Team":
+                    // Store team
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string team = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcTeam = team;
+                        DebugLogger.LogNPCImport($"👥 Stored NPC Team: {team}");
+                    }
+                    break;
+                case "Aggro Radius":
+                    // Store aggro radius
+                    if (objectData != null && settings?.importNPCs == true && float.TryParse(ParsingUtilities.ExtractStringValue(val), out float aggroRadius))
+                    {
+                        objectData.npcAggroRadius = aggroRadius;
+                        DebugLogger.LogNPCImport($"⚔️ Stored NPC Aggro Radius: {aggroRadius}");
+                    }
+                    break;
+                case "Greeting Animation":
+                    // Store greeting animation
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string greetingAnim = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcGreetingAnim = greetingAnim;
+                        DebugLogger.LogNPCImport($"👋 Stored NPC Greeting Animation: {greetingAnim}");
+                    }
+                    break;
+                case "Notice Animation 1":
+                    // Store notice animation 1
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string noticeAnim1 = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcNoticeAnim1 = noticeAnim1;
+                        DebugLogger.LogNPCImport($"👀 Stored NPC Notice Animation 1: {noticeAnim1}");
+                    }
+                    break;
+                case "Notice Animation 2":
+                    // Store notice animation 2
+                    if (objectData != null && settings?.importNPCs == true)
+                    {
+                        string noticeAnim2 = ParsingUtilities.ExtractStringValue(val);
+                        objectData.npcNoticeAnim2 = noticeAnim2;
+                        DebugLogger.LogNPCImport($"👀 Stored NPC Notice Animation 2: {noticeAnim2}");
+                    }
+                    break;
             }
 
             // Note: NPC spawning is now handled after all properties are processed
@@ -482,18 +552,60 @@ namespace WorldDataImporter.Processors
                 bool useCustomModel = !string.IsNullOrEmpty(objectData.npcCustomModel);
 
                 GameObject characterModel = null;
+                string modelPath = ""; // Define outside scope so it's accessible in both blocks
+                string[] alternatePaths = null; // Define outside scope for error logging
 
                 if (useCustomModel)
                 {
                     // Use custom model path (e.g., "models/char/js_2000" for Jack Sparrow)
-                    string modelPath = objectData.npcCustomModel;
+                    modelPath = objectData.npcCustomModel;
+
+                    // Try loading from Resources
                     characterModel = UnityEngine.Resources.Load<GameObject>(modelPath);
 
                     if (characterModel == null)
                     {
-                        DebugLogger.LogNPCImport($"❌ Failed to load custom NPC model: {modelPath}");
-                        return;
+                        // Try alternative paths
+                        alternatePaths = new string[]
+                        {
+                            modelPath,
+                            "phase_2/" + modelPath,
+                            "phase_3/" + modelPath,
+                            "phase_4/" + modelPath,
+                            modelPath.Replace("models/", ""),
+                            "phase_2/models/" + modelPath.Replace("models/", "")
+                        };
+
+                        foreach (string altPath in alternatePaths)
+                        {
+                            characterModel = UnityEngine.Resources.Load<GameObject>(altPath);
+                            if (characterModel != null)
+                            {
+                                DebugLogger.LogNPCImport($"✅ Loaded custom model from alternate path: {altPath}");
+                                modelPath = altPath;
+                                break;
+                            }
+                        }
                     }
+
+                    if (characterModel == null)
+                    {
+                        DebugLogger.LogNPCImport($"❌ Failed to load custom NPC model: {objectData.npcCustomModel}");
+                        DebugLogger.LogNPCImport($"   Tried paths: {string.Join(", ", alternatePaths)}");
+                        DebugLogger.LogNPCImport($"   FALLBACK: Will use DNA-based character generation instead");
+
+                        // Fallback to DNA if CustomModel fails
+                        useCustomModel = false;
+                        useDNA = true;
+                    }
+                    else
+                    {
+                        DebugLogger.LogNPCImport($"✅ Loaded custom NPC model: {modelPath}");
+                    }
+                }
+
+                if (useCustomModel && characterModel != null)
+                {
 
                     // Instantiate the custom model
                     GameObject instance = UnityEditor.PrefabUtility.InstantiatePrefab(characterModel) as GameObject;
@@ -545,17 +657,20 @@ namespace WorldDataImporter.Processors
                     instance.transform.SetParent(currentGO.transform, false);
                     DebugLogger.LogNPCImport($"👤 Spawned custom NPC model: {modelPath}");
 
-                    // Apply animation set for custom models
-                    if (!string.IsNullOrEmpty(objectData.npcAnimSet))
+                    // Add CharacterGenderData for animation system (detect from model path)
+                    string gender = modelPath.Contains("/fp_") || modelPath.Contains("fp_") ? "f" : "m";
+                    var genderData = instance.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+                    if (genderData == null)
                     {
-                        // Determine gender from the model path
-                        string gender = modelPath.Contains("/fp_") ? "f" : "m";
-                        ApplyAnimationSet(instance, objectData.npcAnimSet, gender);
+                        genderData = instance.AddComponent<CharacterOG.Runtime.CharacterGenderData>();
                     }
+                    genderData.SetGender(gender);
+                    DebugLogger.LogNPCImport($"✅ Set gender to {(gender == "f" ? "FEMALE" : "MALE")} for custom model");
                 }
-                else
+
+                // Use DNA-based character spawning (either initially or as fallback from failed CustomModel)
+                if (useDNA && !useCustomModel)
                 {
-                    // Use DNA-based character spawning
                     var dataSource = new CharacterOG.Data.PureCSharpBackend.PureCSharpDataSource();
 
                     if (!dataSource.IsAvailable)
@@ -577,7 +692,7 @@ namespace WorldDataImporter.Processors
                     DebugLogger.LogNPCImport($"👤 Found NPC DNA: {pirateDna.name} ({objectData.npcDnaId})");
 
                     // Determine model path based on gender
-                    string modelPath = pirateDna.gender.ToLower() == "f"
+                    modelPath = pirateDna.gender.ToLower() == "f"
                         ? "phase_2/models/char/fp_2000"
                         : "phase_2/models/char/mp_2000";
 
@@ -716,12 +831,16 @@ namespace WorldDataImporter.Processors
                     instance.transform.SetParent(currentGO.transform, false);
                     DebugLogger.LogNPCImport($"👤 Spawned NPC: {pirateDna.name} (DNA: {objectData.npcDnaId})");
 
-                    // Apply animation set if specified
-                    if (!string.IsNullOrEmpty(objectData.npcAnimSet))
-                    {
-                        ApplyAnimationSet(instance, objectData.npcAnimSet, pirateDna.gender);
-                    }
+                    // Don't apply animation set - NPCAnimationPlayer will handle it
+                    // if (!string.IsNullOrEmpty(objectData.npcAnimSet))
+                    // {
+                    //     ApplyAnimationSet(instance, objectData.npcAnimSet, pirateDna.gender);
+                    // }
                 }
+
+                // ADD NPC AI COMPONENTS (common for both DNA and CustomModel paths)
+                // Must be done BEFORE ApplyAnimationSet so NPCData exists
+                AddNPCComponents(currentGO, objectData);
 
                 if (stats != null)
                 {
@@ -735,6 +854,117 @@ namespace WorldDataImporter.Processors
             {
                 DebugLogger.LogNPCImport($"❌ Failed to spawn NPC: {ex.Message}");
                 Debug.LogError($"NPC spawn error: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Add NPC AI components (NPCData, CharacterController, NPCController, NPCAnimationPlayer)
+        /// </summary>
+        private static void AddNPCComponents(GameObject npcParent, ObjectData objectData)
+        {
+            try
+            {
+                // Find the character root GameObject (the one spawned in SpawnNPC - has the character name)
+                // This is typically the first direct child of npcParent (or npcParent/Model if NPCController created Model wrapper)
+                GameObject characterRootObject = null;
+
+                // Check if there's a "Model" child (created by NPCController)
+                Transform modelTransform = npcParent.transform.Find("Model");
+                if (modelTransform != null && modelTransform.childCount > 0)
+                {
+                    // Character is child of Model
+                    characterRootObject = modelTransform.GetChild(0).gameObject;
+                    DebugLogger.LogNPCImport($"📦 Found character under Model wrapper: {characterRootObject.name}");
+                }
+                else if (npcParent.transform.childCount > 0)
+                {
+                    // Character is direct child
+                    characterRootObject = npcParent.transform.GetChild(0).gameObject;
+                    DebugLogger.LogNPCImport($"📦 Found character as direct child: {characterRootObject.name}");
+                }
+
+                // Verify this is the character root by checking for SkinnedMeshRenderer in children
+                if (characterRootObject != null)
+                {
+                    SkinnedMeshRenderer smr = characterRootObject.GetComponentInChildren<SkinnedMeshRenderer>();
+                    if (smr != null)
+                    {
+                        DebugLogger.LogNPCImport($"✅ Verified character root has SkinnedMeshRenderer: {smr.name}");
+                    }
+                    else
+                    {
+                        DebugLogger.LogNPCImport($"⚠️ No SkinnedMeshRenderer found under {characterRootObject.name}");
+                    }
+                }
+
+                // Ensure Animation component exists on the character root
+                Animation animComponent = null;
+                if (characterRootObject != null)
+                {
+                    animComponent = characterRootObject.GetComponent<Animation>();
+                    if (animComponent == null)
+                    {
+                        animComponent = characterRootObject.AddComponent<Animation>();
+                        DebugLogger.LogNPCImport($"✅ Added Animation component to character root: {characterRootObject.name}");
+                    }
+                    else
+                    {
+                        DebugLogger.LogNPCImport($"✅ Animation component already exists on: {characterRootObject.name}");
+                    }
+                }
+                else
+                {
+                    DebugLogger.LogNPCImport($"⚠️ No character root found to add Animation component!");
+                }
+
+                // Add NPCData component and transfer world data
+                NPCData npcData = npcParent.GetComponent<NPCData>();
+                if (npcData == null)
+                {
+                    npcData = npcParent.AddComponent<NPCData>();
+                }
+
+                npcData.npcId = objectData.id;
+                npcData.category = objectData.npcCategory ?? "Commoner";
+                npcData.team = objectData.npcTeam ?? "Villager";
+                npcData.startState = objectData.npcStartState ?? "LandRoam";
+                npcData.patrolRadius = objectData.npcPatrolRadius > 0 ? objectData.npcPatrolRadius : 12f;
+                npcData.aggroRadius = objectData.npcAggroRadius;
+                npcData.animSet = objectData.npcAnimSet ?? "default";
+                npcData.greetingAnimation = objectData.npcGreetingAnim ?? "";
+                npcData.noticeAnimation1 = objectData.npcNoticeAnim1 ?? "";
+                npcData.noticeAnimation2 = objectData.npcNoticeAnim2 ?? "";
+
+                // Add CharacterController for movement
+                CharacterController controller = npcParent.GetComponent<CharacterController>();
+                if (controller == null)
+                {
+                    controller = npcParent.AddComponent<CharacterController>();
+                    controller.radius = 0.5f;
+                    controller.height = 2f;
+                    controller.center = new Vector3(0, 1f, 0);
+                }
+
+                // Add NPCController for AI
+                NPCController npcController = npcParent.GetComponent<NPCController>();
+                if (npcController == null)
+                {
+                    npcController = npcParent.AddComponent<NPCController>();
+                }
+
+                // Add NPCAnimationPlayer for animation control
+                NPCAnimationPlayer npcAnimPlayer = npcParent.GetComponent<NPCAnimationPlayer>();
+                if (npcAnimPlayer == null)
+                {
+                    npcAnimPlayer = npcParent.AddComponent<NPCAnimationPlayer>();
+                }
+
+                DebugLogger.LogNPCImport($"✅ Added NPC AI components to {npcParent.name}");
+                DebugLogger.LogNPCImport($"   Category: {npcData.category}, Team: {npcData.team}, Patrol Radius: {npcData.patrolRadius}");
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogNPCImport($"❌ Failed to add NPC components: {ex.Message}");
             }
         }
 
