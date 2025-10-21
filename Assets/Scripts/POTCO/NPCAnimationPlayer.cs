@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace POTCO
 {
@@ -44,6 +45,18 @@ namespace POTCO
         private NPCController.NPCState previousState = NPCController.NPCState.LandRoam;
         private bool hasPlayedIntoLook = false;
         private float intoLookStartTime = 0f;
+        private bool isPlayingOutof = false;
+        private float outofStartTime = 0f;
+
+        // def_ bone protection system
+        private struct BoneTransformData
+        {
+            public Transform bone;
+            public Vector3 localPosition;
+            public Quaternion localRotation;
+            public Vector3 localScale;
+        }
+        private List<BoneTransformData> lockedDefBones = new List<BoneTransformData>();
 
         private void Awake()
         {
@@ -117,6 +130,9 @@ namespace POTCO
             // Load animations using CustomAnims.py
             LoadAnimations();
 
+            // Lock def_ bones to prevent animations from modifying body shape
+            LockDefBones();
+
             if (isInitialized)
             {
                 Debug.Log($"✅ NPCAnimationPlayer initialized with gender prefix: {genderPrefix}");
@@ -140,6 +156,32 @@ namespace POTCO
             }
 
             UpdateAnimation();
+        }
+
+        private void LateUpdate()
+        {
+            // Force def_ bones back to their original transforms every frame
+            // This prevents animations from permanently modifying body shape
+            // Only update bones that have actually changed for better performance
+            foreach (var boneData in lockedDefBones)
+            {
+                if (boneData.bone != null)
+                {
+                    // Only set if changed (avoids unnecessary transform updates)
+                    if (boneData.bone.localPosition != boneData.localPosition)
+                    {
+                        boneData.bone.localPosition = boneData.localPosition;
+                    }
+                    if (boneData.bone.localRotation != boneData.localRotation)
+                    {
+                        boneData.bone.localRotation = boneData.localRotation;
+                    }
+                    if (boneData.bone.localScale != boneData.localScale)
+                    {
+                        boneData.bone.localScale = boneData.localScale;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -179,6 +221,36 @@ namespace POTCO
             // Default to male
             genderPrefix = "mp_";
             Debug.LogWarning("⚠️ Could not detect NPC gender. Using default MALE (mp_ prefix)");
+        }
+
+        /// <summary>
+        /// Find all def_ bones and lock their initial transforms
+        /// </summary>
+        private void LockDefBones()
+        {
+            Transform[] allTransforms = GetComponentsInChildren<Transform>(true);
+            int lockedCount = 0;
+
+            foreach (Transform t in allTransforms)
+            {
+                if (t.name.StartsWith("def_"))
+                {
+                    BoneTransformData boneData = new BoneTransformData
+                    {
+                        bone = t,
+                        localPosition = t.localPosition,
+                        localRotation = t.localRotation,
+                        localScale = t.localScale
+                    };
+                    lockedDefBones.Add(boneData);
+                    lockedCount++;
+                }
+            }
+
+            if (lockedCount > 0)
+            {
+                Debug.Log($"🔒 Locked {lockedCount} def_ bones to prevent body shape corruption");
+            }
         }
 
         /// <summary>
@@ -555,17 +627,38 @@ namespace POTCO
                         targetAnim = "walk";
                         hasPlayedGreeting = false;
                         hasPlayedIntoLook = false;
+                        isPlayingOutof = false;
                     }
                     else
                     {
+                        // Start playing outof animation when leaving Notice state
                         if (justLeftNotice && animSetOutofLook != null)
                         {
                             targetAnim = "animset_outof_look";
                             hasPlayedIntoLook = false;
+                            isPlayingOutof = true;
+                            outofStartTime = Time.time;
+                        }
+                        // Continue playing outof animation until it finishes
+                        else if (isPlayingOutof && animSetOutofLook != null)
+                        {
+                            float outofLength = animSetOutofLook.length;
+                            if (Time.time - outofStartTime >= outofLength)
+                            {
+                                // Outof animation finished, switch to idle
+                                targetAnim = GetIdleAnimation();
+                                isPlayingOutof = false;
+                            }
+                            else
+                            {
+                                // Keep playing outof animation
+                                targetAnim = "animset_outof_look";
+                            }
                         }
                         else
                         {
                             targetAnim = GetIdleAnimation();
+                            isPlayingOutof = false;
                         }
                         hasPlayedGreeting = false;
                     }
