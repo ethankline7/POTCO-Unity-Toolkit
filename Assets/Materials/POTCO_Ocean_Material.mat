@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: POTCO_Ocean_Material
+  m_Shader: {fileID: 4800000, guid: 54594fec88be7b349919145c3470b2b1, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: 3000
+  m_StringTagMap:
+    RenderType: Transparent
+  disabledShaderPasses: []
+  m_LockedProperties:
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BaseMap:
+        m_Texture: {fileID: 2800000, guid: 58f7544718210d34cafc355d00aaaf1e, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailMap:
+        m_Texture: {fileID: 2800000, guid: c2d8b8c7752ffcf489550b461d5dc394, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _NormalMap:
+        m_Texture: {fileID: 2800000, guid: 46d0b2d885e9a6f49b70007e520cbd38, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ReflectionTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _DepthFade: 5
+    - _FresnelPower: 5
+    - _ReflectionStrength: 0.5
+    - _Smoothness: 0.8
+    - _TimeSec: 0
+    m_Colors:
+    - _UVScale: {r: 0.15, g: 0.12, b: 0, a: 0}
+    - _UVSpeedA: {r: 0.03, g: 0.015, b: 0, a: 0}
+    - _UVSpeedB: {r: -0.02, g: 0.008, b: 0, a: 0}
+    - _WaterColor: {r: 0.30196078, g: 0.5019608, b: 0.7019608, a: 1}
+    - _Wave0: {r: 0.25, g: 8, b: 1.2, a: 0}
+    - _Wave1: {r: 0.15, g: 5, b: 1.8, a: 0}
+    - _Wave2: {r: 0.08, g: 2.5, b: 2.2, a: 0}
+    - _Wave3: {r: 0.05, g: 1.5, b: 2.5, a: 0}
+    - _WaveDir0: {r: 0.34, g: 0.94, b: 0, a: 0}
+    - _WaveDir1: {r: -0.87, g: 0.5, b: 0, a: 0}
+    - _WaveDir2: {r: 0.26, g: 0.97, b: 0, a: 0}
+    - _WaveDir3: {r: 0.71, g: 0.71, b: 0, a: 0}
+  m_BuildTextureStacks: []

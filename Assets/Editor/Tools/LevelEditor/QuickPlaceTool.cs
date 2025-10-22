@@ -34,7 +34,7 @@ namespace POTCO.Editor
         private bool randomRotation = false;
         private Vector2 rotationRange = new Vector2(0, 360);
 
-        [MenuItem("POTCO/Quick Place Tool")]
+        [MenuItem("POTCO/Level Editor/Quick Place Tool")]
         public static void ShowWindow()
         {
             var window = GetWindow<QuickPlaceTool>("Quick Place");

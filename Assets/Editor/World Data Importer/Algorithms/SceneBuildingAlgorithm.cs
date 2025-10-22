@@ -30,6 +30,7 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> holidayObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
+            List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
 
             for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
             {
@@ -101,11 +102,13 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     // Mark node objects for deletion if nodes are disabled
-                    if (settings != null && !settings.importNodes && 
+                    if (settings != null && !settings.importNodes &&
                         key == "Type" && !string.IsNullOrEmpty(val))
                     {
                         string objectType = ParsingUtilities.ExtractStringValue(val);
-                        if (objectType.Contains("Node") || objectType == "Townsperson")
+                        // Skip Townsperson deletion if importNPCs is enabled
+                        bool shouldDeleteTownsperson = objectType == "Townsperson" && !settings.importNPCs;
+                        if (objectType.Contains("Node") || shouldDeleteTownsperson)
                         {
                             // Mark this node object for deletion after parsing is complete
                             if (currentGO != root)
@@ -133,7 +136,31 @@ namespace WorldDataImporter.Algorithms
                     }
 
                     PropertyProcessor.ProcessProperty(key, val, currentGO, root, useEgg, currentData, stats, settings);
+
+                    // Check if NPC is ready for spawning after property processing
+                    if (settings?.importNPCs == true && currentData != null &&
+                        currentData.objectType == "Townsperson" &&
+                        currentData.isReadyForNPCSpawn &&
+                        !npcsToSpawn.Any(npc => npc.data == currentData))
+                    {
+                        npcsToSpawn.Add((currentGO, currentData));
+                        DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
+                    }
+
                     continue;
+                }
+            }
+
+            // Spawn all NPCs after all properties are processed
+            if (settings?.importNPCs == true && npcsToSpawn.Count > 0)
+            {
+                DebugLogger.LogNPCImport($"🚀 Spawning {npcsToSpawn.Count} NPCs...");
+                foreach (var (go, data) in npcsToSpawn)
+                {
+                    if (go != null && data != null && go.transform.childCount == 0)
+                    {
+                        PropertyProcessor.SpawnNPC(go, data, stats);
+                    }
                 }
             }
 
@@ -183,6 +210,12 @@ namespace WorldDataImporter.Algorithms
             // Post-import: Refresh all VisualColorHandlers to ensure colors are applied
             RefreshAllVisualColors(root);
 
+            // Post-import: Process VisZones if enabled
+            if (settings?.enableVisZones == true && settings?.importObjectListData == true)
+            {
+                VisZoneProcessor.ProcessVisZones(root, objectDataMap, path);
+            }
+
             return stats;
         }
 
@@ -205,6 +238,7 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> holidayObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
+            List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
 
             int objectsCreated = 0;
             
@@ -286,11 +320,13 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     // Mark node objects for deletion if nodes are disabled
-                    if (settings != null && !settings.importNodes && 
+                    if (settings != null && !settings.importNodes &&
                         key == "Type" && !string.IsNullOrEmpty(val))
                     {
                         string objectType = ParsingUtilities.ExtractStringValue(val);
-                        if (objectType.Contains("Node") || objectType == "Townsperson")
+                        // Skip Townsperson deletion if importNPCs is enabled
+                        bool shouldDeleteTownsperson = objectType == "Townsperson" && !settings.importNPCs;
+                        if (objectType.Contains("Node") || shouldDeleteTownsperson)
                         {
                             // Mark this node object for deletion after parsing is complete
                             if (currentGO != root)
@@ -317,6 +353,29 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     PropertyProcessor.ProcessProperty(key, val, currentGO, root, useEgg, currentData, stats, settings);
+
+                    // Check if NPC is ready for spawning after property processing
+                    if (settings?.importNPCs == true && currentData != null &&
+                        currentData.objectType == "Townsperson" &&
+                        currentData.isReadyForNPCSpawn &&
+                        !npcsToSpawn.Any(npc => npc.data == currentData))
+                    {
+                        npcsToSpawn.Add((currentGO, currentData));
+                        DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
+                    }
+                }
+            }
+
+            // Spawn all NPCs after all properties are processed
+            if (settings?.importNPCs == true && npcsToSpawn.Count > 0)
+            {
+                DebugLogger.LogNPCImport($"🚀 Spawning {npcsToSpawn.Count} NPCs...");
+                foreach (var (go, data) in npcsToSpawn)
+                {
+                    if (go != null && data != null && go.transform.childCount == 0)
+                    {
+                        PropertyProcessor.SpawnNPC(go, data, stats);
+                    }
                 }
             }
 
@@ -368,6 +427,12 @@ namespace WorldDataImporter.Algorithms
 
             // Post-import: Refresh all VisualColorHandlers to ensure colors are applied
             RefreshAllVisualColors(root);
+
+            // Post-import: Process VisZones if enabled
+            if (settings?.enableVisZones == true && settings?.importObjectListData == true)
+            {
+                VisZoneProcessor.ProcessVisZones(root, objectDataMap, path);
+            }
 
             onComplete?.Invoke(stats);
         }

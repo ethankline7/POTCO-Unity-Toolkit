@@ -14,6 +14,7 @@ namespace POTCO.Editor
         private const string DEBUG_EGG_IMPORTER_KEY = "POTCO_Debug_EggImporter";
         private const string DEBUG_WORLD_EXPORTER_KEY = "POTCO_Debug_WorldExporter";
         private const string DEBUG_PROCEDURAL_GEN_KEY = "POTCO_Debug_ProceduralGen";
+        private const string DEBUG_NPC_IMPORT_KEY = "POTCO_Debug_NPCImport";
 
         // Debug settings properties that persist between Unity sessions
         public static bool debugWorldSceneImporter
@@ -51,6 +52,12 @@ namespace POTCO.Editor
             set => EditorPrefs.SetBool(DEBUG_PROCEDURAL_GEN_KEY, value);
         }
 
+        public static bool debugNPCImport
+        {
+            get => EditorPrefs.GetBool(DEBUG_NPC_IMPORT_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_NPC_IMPORT_KEY, value);
+        }
+
         /// <summary>
         /// Enable all debug logging
         /// </summary>
@@ -61,7 +68,8 @@ namespace POTCO.Editor
             debugEggImporter = true;
             debugWorldDataExporter = true;
             debugProceduralGeneration = true;
-            
+            debugNPCImport = true;
+
             DebugLogger.LogAlways("🔍 All POTCO debug logging enabled");
         }
 
@@ -75,7 +83,8 @@ namespace POTCO.Editor
             debugEggImporter = false;
             debugWorldDataExporter = false;
             debugProceduralGeneration = false;
-            
+            debugNPCImport = false;
+
             DebugLogger.LogAlways("🔇 All POTCO debug logging disabled");
         }
 
@@ -89,10 +98,11 @@ namespace POTCO.Editor
             EditorPrefs.DeleteKey(DEBUG_EGG_IMPORTER_KEY);
             EditorPrefs.DeleteKey(DEBUG_WORLD_EXPORTER_KEY);
             EditorPrefs.DeleteKey(DEBUG_PROCEDURAL_GEN_KEY);
-            
+            EditorPrefs.DeleteKey(DEBUG_NPC_IMPORT_KEY);
+
             // Apply AutoObjectListDetection change
             AutoObjectListDetection.SetDebugLogging(false);
-            
+
             DebugLogger.LogAlways("🔄 POTCO debug settings reset to defaults");
         }
     }

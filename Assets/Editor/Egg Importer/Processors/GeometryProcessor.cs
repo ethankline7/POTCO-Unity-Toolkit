@@ -249,22 +249,38 @@ public class GeometryProcessor
             DebugLogger.LogWarningEggImporter("Mesh bounds are very small, this might cause rendering issues");
         }
 
+        // Check if this is collision geometry (uses Collision-Material)
+        bool isCollisionGeometry = materialNames.Contains("Collision-Material");
+
         if (hasSkeletalData && rootJoint != null && rootBoneObject != null)
         {
             DebugLogger.LogEggImporter("Setting up skinned mesh renderer");
-            SetupSkinnedMeshRenderer(go, mesh, rendererMaterials.ToArray(), ctx, meshVertices, rootJoint, rootBoneObject, joints);
+            var skinnedRenderer = SetupSkinnedMeshRenderer(go, mesh, rendererMaterials.ToArray(), ctx, meshVertices, rootJoint, rootBoneObject, joints);
+
+            // Collision geometry uses invisible material instead of disabling renderer
+            if (isCollisionGeometry && skinnedRenderer != null)
+            {
+                DebugLogger.LogEggImporter($"👻 Collision geometry on '{go.name}' using invisible Collision-Material");
+            }
         }
         else
         {
             DebugLogger.LogEggImporter("Setting up static mesh renderer");
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            go.AddComponent<MeshRenderer>().sharedMaterials = rendererMaterials.ToArray();
+            var meshRenderer = go.AddComponent<MeshRenderer>();
+            meshRenderer.sharedMaterials = rendererMaterials.ToArray();
+
+            // Collision geometry uses invisible material instead of disabling renderer
+            if (isCollisionGeometry)
+            {
+                DebugLogger.LogEggImporter($"👻 Collision geometry on '{go.name}' using invisible Collision-Material");
+            }
         }
         ctx.AddObjectToAsset(mesh.name, mesh);
     }
 
-    private void SetupSkinnedMeshRenderer(GameObject go, Mesh mesh, Material[] materials, 
-        AssetImportContext ctx, Vector3[] masterVertices, EggJoint rootJoint, 
+    private SkinnedMeshRenderer SetupSkinnedMeshRenderer(GameObject go, Mesh mesh, Material[] materials,
+        AssetImportContext ctx, Vector3[] masterVertices, EggJoint rootJoint,
         GameObject rootBoneObject, Dictionary<string, EggJoint> joints)
     {
         var boneWeights = new BoneWeight[masterVertices.Length];
@@ -280,7 +296,7 @@ public class GeometryProcessor
             DebugLogger.LogWarningEggImporter("No bones found, falling back to static mesh");
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             go.AddComponent<MeshRenderer>().sharedMaterials = materials;
-            return;
+            return null;
         }
 
         // Highly optimized bone weight calculation - vertex-centric approach
@@ -380,6 +396,8 @@ public class GeometryProcessor
 
         // Force update bounds
         skinnedRenderer.localBounds = mesh.bounds;
+
+        return skinnedRenderer;
     }
 
     public void CreateBoneHierarchy(Transform parent, EggJoint joint)
@@ -570,50 +588,80 @@ public class GeometryProcessor
     }
 
 
-    private void ParsePolygon(string[] lines, ref int i, Dictionary<string, List<int>> subMeshes, List<string> materialNames)
+    private void ParsePolygon(string[] lines, ref int i, Dictionary<string, List<int>> subMeshes, List<string> materialNames, bool isInCollisionGroup = false)
     {
         string polygonTextureRef = "Default-Material";
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
 
-        // Check for collision tags - skip collision polygons based on settings
-        if (EggImporterSettings.Instance.skipCollisions)
+        // Check for collision tags at polygon level OR if we're in a collision group
+        bool isCollisionPolygon = isInCollisionGroup;
+        if (!isCollisionPolygon)
         {
             for (int j = i + 1; j < blockEnd; j++)
             {
                 string innerLine = lines[j].Trim();
                 if (innerLine.StartsWith("<Collide>"))
                 {
-                    i = blockEnd;
-                    return; // Skip this polygon entirely
+                    isCollisionPolygon = true;
+                    break;
                 }
             }
         }
 
-        // Collect ALL texture references for multi-texture support
-        var textureRefs = new List<string>();
-        for (int j = i + 1; j < blockEnd; j++)
+        // Handle collision polygons based on settings
+        if (isCollisionPolygon)
         {
-            string innerLine = lines[j].Trim();
-            if (innerLine.StartsWith("<TRef>"))
+            if (EggImporterSettings.Instance.skipCollisions)
             {
-                string texRef = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
-                textureRefs.Add(texRef);
+                i = blockEnd;
+                return; // Skip this polygon entirely
+            }
+            else
+            {
+                // Import with transparent collision material
+                polygonTextureRef = "Collision-Material";
+                DebugLogger.LogEggImporter($"🔧 Assigning Collision-Material to polygon");
             }
         }
 
-        // Create material name from all texture references
-        if (textureRefs.Count > 1)
+        // Collect ALL texture references for multi-texture support (skip if already set to Collision-Material)
+        if (polygonTextureRef != "Collision-Material")
         {
-            // Multiple textures - join with || separator for multi-texture material
-            polygonTextureRef = string.Join("||", textureRefs);
-            DebugLogger.LogEggImporter($"[MultiTex] Polygon uses {textureRefs.Count} textures: {polygonTextureRef}");
+            var textureRefs = new List<string>();
+            for (int j = i + 1; j < blockEnd; j++)
+            {
+                string innerLine = lines[j].Trim();
+                if (innerLine.StartsWith("<TRef>"))
+                {
+                    int openBraceIdx = innerLine.IndexOf('{');
+                    int closeBraceIdx = innerLine.LastIndexOf('}');
+
+                    // Validate braces exist and are in correct order
+                    if (openBraceIdx == -1 || closeBraceIdx == -1 || closeBraceIdx <= openBraceIdx)
+                    {
+                        DebugLogger.LogEggImporter($"[ParsePolygon] WARNING: Invalid TRef format on line {j}: {innerLine}");
+                        continue;
+                    }
+
+                    string texRef = innerLine.Substring(openBraceIdx + 1, closeBraceIdx - openBraceIdx - 1).Trim();
+                    textureRefs.Add(texRef);
+                }
+            }
+
+            // Create material name from all texture references
+            if (textureRefs.Count > 1)
+            {
+                // Multiple textures - join with || separator for multi-texture material
+                polygonTextureRef = string.Join("||", textureRefs);
+                DebugLogger.LogEggImporter($"[MultiTex] Polygon uses {textureRefs.Count} textures: {polygonTextureRef}");
+            }
+            else if (textureRefs.Count == 1)
+            {
+                // Single texture
+                polygonTextureRef = textureRefs[0];
+            }
+            // else keep "Default-Material"
         }
-        else if (textureRefs.Count == 1)
-        {
-            // Single texture
-            polygonTextureRef = textureRefs[0];
-        }
-        // else keep "Default-Material"
 
         if (!subMeshes.ContainsKey(polygonTextureRef)) { subMeshes[polygonTextureRef] = new List<int>(); materialNames.Add(polygonTextureRef); }
         for (int j = i + 1; j < blockEnd; j++)
@@ -621,7 +669,47 @@ public class GeometryProcessor
             string innerLine = lines[j].Trim();
             if (innerLine.StartsWith("<VertexRef>"))
             {
-                string valuesString = innerLine.Substring(innerLine.IndexOf('{') + 1, innerLine.LastIndexOf('}') - innerLine.IndexOf('{') - 1).Trim();
+                int openBraceIdx = innerLine.IndexOf('{');
+                int closeBraceIdx = innerLine.LastIndexOf('}');
+
+                // Handle multi-line VertexRef (when opening brace exists but no closing brace)
+                if (openBraceIdx != -1 && closeBraceIdx == -1)
+                {
+                    // Combine lines until we find the closing brace
+                    System.Text.StringBuilder multiLineBuilder = new System.Text.StringBuilder();
+                    multiLineBuilder.Append(innerLine);
+
+                    int k = j + 1;
+                    while (k < blockEnd && !lines[k].Trim().Contains("}"))
+                    {
+                        multiLineBuilder.Append(" ");
+                        multiLineBuilder.Append(lines[k].Trim());
+                        k++;
+                    }
+
+                    // Add the closing line
+                    if (k < blockEnd)
+                    {
+                        multiLineBuilder.Append(" ");
+                        multiLineBuilder.Append(lines[k].Trim());
+                    }
+
+                    innerLine = multiLineBuilder.ToString();
+                    j = k; // Skip the lines we just combined
+
+                    // Recalculate brace positions
+                    openBraceIdx = innerLine.IndexOf('{');
+                    closeBraceIdx = innerLine.LastIndexOf('}');
+                }
+
+                // Validate braces exist and are in correct order
+                if (openBraceIdx == -1 || closeBraceIdx == -1 || closeBraceIdx <= openBraceIdx)
+                {
+                    DebugLogger.LogEggImporter($"[ParsePolygon] WARNING: Invalid VertexRef format on line {j}: {innerLine}");
+                    continue;
+                }
+
+                string valuesString = innerLine.Substring(openBraceIdx + 1, closeBraceIdx - openBraceIdx - 1).Trim();
                 
                 // Parse vertex pool reference if present
                 string referencedVertexPool = "";
@@ -685,7 +773,7 @@ public class GeometryProcessor
         i = blockEnd;
     }
 
-    public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap)
+    public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap, bool isInCollisionContext = false)
     {
         // Detect ship LOD variant sets at this level if we're in a ship model
         Dictionary<string, List<string>> shipLODVariantSets = new Dictionary<string, List<string>>();
@@ -708,15 +796,25 @@ public class GeometryProcessor
                 // Cache the group end to avoid multiple expensive FindMatchingBrace calls
                 int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
 
-                // Skip collision groups based on settings - optimized
+                // Check if this is a collision group
+                bool isCollisionGroup = groupName.IndexOf("collision", System.StringComparison.OrdinalIgnoreCase) >= 0 || ContainsCollideTag(lines, i, groupEnd);
+
+                // Handle collision groups based on settings
                 if (EggImporterSettings.Instance.skipCollisions)
                 {
-                    bool isCollisionGroup = groupName.IndexOf("collision", System.StringComparison.OrdinalIgnoreCase) >= 0 || ContainsCollideTag(lines, i, groupEnd);
                     if (isCollisionGroup)
                     {
                         DebugLogger.LogEggImporter($"🚫 Skipping collision group: '{groupName}' (Skip Collisions enabled - contains <Collide> tag or collision in name)");
                         i = groupEnd + 1;
                         continue;
+                    }
+                }
+                else
+                {
+                    // If skipCollisions is false, still process collision groups but log that they will use transparent material
+                    if (isCollisionGroup)
+                    {
+                        DebugLogger.LogEggImporter($"✅ Importing collision group with transparent material: '{groupName}'");
                     }
                 }
 
@@ -749,7 +847,9 @@ public class GeometryProcessor
                 newGO.transform.SetParent(hierarchyMap[currentPath], false);
                 hierarchyMap[newPath] = newGO.transform;
 
-                BuildHierarchyAndMapGeometry(lines, i + 1, groupEnd, newPath, hierarchyMap, geometryMap);
+                // Pass collision context down recursively - either from parent context OR if this group is a collision group
+                bool childIsInCollisionContext = isInCollisionContext || isCollisionGroup;
+                BuildHierarchyAndMapGeometry(lines, i + 1, groupEnd, newPath, hierarchyMap, geometryMap, childIsInCollisionContext);
                 i = groupEnd + 1;
             }
             else if (line.StartsWith("<Transform>"))
@@ -786,7 +886,7 @@ public class GeometryProcessor
                 {
                     geometryMap[currentPath] = new GeometryData();
                 }
-                ParsePolygon(lines, ref i, geometryMap[currentPath].subMeshes, geometryMap[currentPath].materialNames);
+                ParsePolygon(lines, ref i, geometryMap[currentPath].subMeshes, geometryMap[currentPath].materialNames, isInCollisionContext);
             }
             else
             {
@@ -998,6 +1098,9 @@ public class GeometryProcessor
 
             vertexPoolMappings[poolName] = new Dictionary<int, int>();
 
+            bool loggedNamedUVUsage = false;
+            int namedUVCount = 0;
+
             for (int localIndex = 0; localIndex < poolVertices.Count; localIndex++)
             {
                 var vertex = poolVertices[localIndex];
@@ -1005,19 +1108,43 @@ public class GeometryProcessor
 
                 masterVerticesList.Add(vertex.position);
                 masterNormalsList.Add(vertex.normal);
-                masterUVsList.Add(vertex.uv);
+
+                // Handle primary UV - if vertex has no primary UV but has named UVs, use the first named UV
+                Vector2 primaryUV = vertex.uv;
+                if (primaryUV == Vector2.zero && vertex.namedUVs.Count > 0)
+                {
+                    primaryUV = vertex.namedUVs.First().Value;
+                    namedUVCount++;
+                    if (!loggedNamedUVUsage)
+                    {
+                        DebugLogger.LogEggImporter($"[UV] Pool '{poolName}': Using named UV '{vertex.namedUVs.First().Key}' as primary UV (no primary UV defined in this pool)");
+                        loggedNamedUVUsage = true;
+                    }
+                }
+                masterUVsList.Add(primaryUV);
+
                 masterColorsList.Add(vertex.color);
 
-                // Handle UV2 - use first named UV if available
+                // Handle UV2 - use first named UV if available (and different from primary)
                 Vector2 uv2 = Vector2.zero;
-                if (vertex.namedUVs.Count > 0)
+                if (vertex.namedUVs.Count > 1)
                 {
-                    // Use the first named UV (typically "multi", "overlay", etc.)
+                    // Use the second named UV if we have multiple named UVs
+                    uv2 = vertex.namedUVs.Skip(1).First().Value;
+                }
+                else if (vertex.namedUVs.Count == 1 && vertex.uv != Vector2.zero)
+                {
+                    // If we have a primary UV AND one named UV, put named UV in UV2
                     uv2 = vertex.namedUVs.First().Value;
                 }
                 masterUV2sList.Add(uv2);
 
                 globalIndex++;
+            }
+
+            if (namedUVCount > 0)
+            {
+                DebugLogger.LogEggImporter($"[UV] Pool '{poolName}': {namedUVCount}/{poolVertices.Count} vertices using named UV as primary");
             }
 
             DebugLogger.LogEggImporter($"[VertexPool] Mapped {poolVertices.Count} vertices from pool '{poolName}' to global indices {globalIndex - poolVertices.Count}-{globalIndex - 1}");
@@ -1335,7 +1462,7 @@ public class GeometryProcessor
 
     private bool ShouldSkipNamedLODGroup(string groupName)
     {
-        // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow
+        // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow, low_medium, medium_low
         string lowerGroupName = groupName.ToLower();
 
         if (lowerGroupName == "lod_high" || lowerGroupName == "lod_hi")
@@ -1343,7 +1470,8 @@ public class GeometryProcessor
             return false; // Always import highest quality
         }
         else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" ||
-                 lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super")
+                 lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super" ||
+                 lowerGroupName == "low_medium" || lowerGroupName == "medium_low")
         {
             DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}'");
             return true; // Skip lower quality groups

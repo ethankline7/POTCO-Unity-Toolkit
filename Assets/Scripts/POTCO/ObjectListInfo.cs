@@ -44,11 +44,20 @@ namespace POTCO
             }
         }
 
+        [Header("POTCO Properties")]
         public bool disableCollision = false;
         public bool instanced = false;
+
+        [Tooltip("Holiday event this object belongs to (empty for non-holiday objects)")]
         public string holiday = "";
+
+        [Tooltip("Visibility size: 'Large' objects are always visible, others are zone-managed")]
         public string visSize = "";
 
+        [Tooltip("Visibility zone this object belongs to (for zone-based culling)")]
+        public string visZone = "";
+
+        [Header("Group Settings")]
         [Tooltip("Mark as group - only exports position/rotation and holiday/visSize if set")]
         public bool isGroup = false;
 
