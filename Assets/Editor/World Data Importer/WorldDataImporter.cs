@@ -13,7 +13,7 @@ public class WorldSceneBuilderEditor : EditorWindow
     private bool showAdvancedSettings = false;
     private bool showStatistics = false;
 
-    [MenuItem("POTCO/World Data Importer")]
+    [MenuItem("POTCO/World Data/Importer")]
     public static void ShowWindow()
     {
         GetWindow<WorldSceneBuilderEditor>("World Scene Importer");
@@ -116,7 +116,19 @@ public class WorldSceneBuilderEditor : EditorWindow
             if (settings.importNodes) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Import spawn points, locators, and other node objects (usually not needed for visuals)", EditorStyles.miniLabel);
-            
+
+            EditorGUILayout.BeginHorizontal();
+            settings.importNPCs = EditorGUILayout.Toggle("Import NPCs", settings.importNPCs);
+            if (settings.importNPCs) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Spawn Townsperson NPCs with DNA and animations (requires character models)", EditorStyles.miniLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            settings.enableVisZones = EditorGUILayout.Toggle("Enable VisZones", settings.enableVisZones);
+            if (settings.enableVisZones) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Create visibility sections and zone management (requires ObjectList data and Vis Table)", EditorStyles.miniLabel);
+
             GUILayout.Space(5);
             GUILayout.Label("Filtering Options", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();

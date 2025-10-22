@@ -13,6 +13,18 @@ namespace POTCO.ShipBuilder
         // Build options
         public bool generateCollisions = true;
         public bool addShipController = false;
+        public bool addAIController = false;
+
+        // AI Controller Settings
+        public float aiMoveSpeed = 30f;
+        public float aiRotateSpeed = 20f;
+        public float aiPatrolRadius = 100f;
+        public float aiAggroRange = 80f;
+        public float aiCircleDistance = 40f;
+        public float aiMaxHealth = 1000f;
+        public float aiRamChance = 0.05f;
+        public float aiRamDamage = 100f;
+        public bool aiCirclePlayer = false; // If true, circles player. If false, holds position.
 
         // NEW: Ship preset system
         public int selectedPresetID = -1; // -1 = custom ship, else POTCO ship ID

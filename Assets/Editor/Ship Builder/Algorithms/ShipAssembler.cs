@@ -39,12 +39,6 @@ namespace POTCO.ShipBuilder
             hullObject.name = "Hull";
             hullObject.transform.SetParent(shipRoot.transform);
 
-            // Add collisions to hull if requested
-            if (config.generateCollisions)
-            {
-                AddMeshCollidersRecursive(hullObject.transform);
-            }
-
             // Load logic model to get attachment point transforms
             GameObject logicObject = database.LoadShipLogic(config.baseHullLogicName);
             if (logicObject == null)
@@ -138,6 +132,54 @@ namespace POTCO.ShipBuilder
             {
                 var controller = shipRoot.AddComponent<POTCO.ShipController>();
                 Debug.Log("Added ShipController component");
+
+                // Add CannonController to deck cannons only (player-controlled cannons)
+                int cannonControllerCount = 0;
+                Transform deckCannonsParent = shipRoot.transform.Find("Cannons_Deck");
+                if (deckCannonsParent != null)
+                {
+                    foreach (Transform cannon in deckCannonsParent)
+                    {
+                        var cannonController = cannon.gameObject.AddComponent<POTCO.CannonController>();
+                        cannonControllerCount++;
+                    }
+                    Debug.Log($"Added CannonController to {cannonControllerCount} deck cannons for player control");
+                }
+            }
+
+            // Add AI controller and related components if requested
+            if (config.addAIController)
+            {
+                // Add Rigidbody for physics-based movement (AI uses rb.MovePosition)
+                Rigidbody rb = shipRoot.AddComponent<Rigidbody>();
+                rb.useGravity = false; // Ships float
+                rb.linearDamping = 1f; // Water resistance
+                rb.angularDamping = 2f; // Rotational resistance
+                rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ; // Only rotate on Y axis
+                rb.collisionDetectionMode = CollisionDetectionMode.Continuous; // Better collision detection
+                Debug.Log("Added Rigidbody for AI ship physics");
+
+                // Add ShipHealth component with custom settings
+                var health = shipRoot.AddComponent<POTCO.ShipHealth>();
+                health.maxHealth = config.aiMaxHealth;
+                health.currentHealth = config.aiMaxHealth;
+                Debug.Log($"Added ShipHealth component (Health: {config.aiMaxHealth})");
+
+                // Add ShipAIController component with custom settings
+                var aiController = shipRoot.AddComponent<POTCO.ShipAIController>();
+                aiController.moveSpeed = config.aiMoveSpeed;
+                aiController.rotateSpeed = config.aiRotateSpeed;
+                aiController.patrolRadius = config.aiPatrolRadius;
+                aiController.detectionRange = config.aiAggroRange;
+                // Map old combatDistance to new circle distance range
+                aiController.circleMinDistance = config.aiCircleDistance * 0.8f;
+                aiController.circleMaxDistance = config.aiCircleDistance * 1.2f;
+                aiController.ramDamage = config.aiRamDamage;
+                Debug.Log($"Added ShipAIController component (Speed: {config.aiMoveSpeed}, Detection: {config.aiAggroRange})");
+
+                // Note: ShipCombatSystem is automatically added by ShipAIController's [RequireComponent] attribute
+                // Cannons are automatically detected by ShipCombatSystem.Start() from Cannons_Broadside_Left/Right
+                Debug.Log("ShipCombatSystem will be automatically added and will detect cannons on Start()");
             }
 
             Debug.Log($"Ship assembled successfully: {shipName}");
@@ -186,12 +228,6 @@ namespace POTCO.ShipBuilder
 
                 AttachComponentAtLocator(component, locators[locatorName], categoryParent.transform, locatorName);
 
-                // Add collisions if requested
-                if (config.generateCollisions)
-                {
-                    AddMeshCollidersRecursive(component.transform);
-                }
-
                 // If this is a mast, add MastTypeInfo component and set double-sided materials
                 if (categoryName == "Masts" && componentName.Contains("pir_r_shp_mst_"))
                 {
@@ -228,26 +264,6 @@ namespace POTCO.ShipBuilder
             component.transform.localScale = locator.localScale;
         }
 
-        private void AddMeshCollidersRecursive(Transform obj)
-        {
-            // Check if this object has a MeshFilter
-            MeshFilter meshFilter = obj.GetComponent<MeshFilter>();
-            if (meshFilter != null && meshFilter.sharedMesh != null)
-            {
-                // Only add if it doesn't already have a collider
-                if (obj.GetComponent<MeshCollider>() == null)
-                {
-                    MeshCollider collider = obj.gameObject.AddComponent<MeshCollider>();
-                    collider.sharedMesh = meshFilter.sharedMesh;
-                }
-            }
-
-            // Recurse through children
-            foreach (Transform child in obj)
-            {
-                AddMeshCollidersRecursive(child);
-            }
-        }
 
         private void PositionRopeLadders(Transform mastsParent, Dictionary<string, Transform> locators, Dictionary<GameObject, string> mastToLocatorMap)
         {

@@ -228,5 +228,38 @@ namespace POTCO.Editor
         {
             Debug.LogError(message);
         }
+
+        /// <summary>
+        /// Log message for NPC Import
+        /// </summary>
+        public static void LogNPCImport(string message)
+        {
+            if (DebugSettings.debugNPCImport)
+            {
+                Debug.Log(message);
+            }
+        }
+
+        /// <summary>
+        /// Log warning for NPC Import
+        /// </summary>
+        public static void LogWarningNPCImport(string message)
+        {
+            if (DebugSettings.debugNPCImport)
+            {
+                Debug.LogWarning(message);
+            }
+        }
+
+        /// <summary>
+        /// Log error for NPC Import
+        /// </summary>
+        public static void LogErrorNPCImport(string message)
+        {
+            if (DebugSettings.debugNPCImport)
+            {
+                Debug.LogError(message);
+            }
+        }
     }
 }

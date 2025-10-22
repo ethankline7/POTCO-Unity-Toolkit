@@ -131,9 +131,29 @@ namespace POTCO
 
             foreach (Renderer renderer in renderers)
             {
-                // Skip if renderer is on a child with its own ObjectListInfo
+                // Skip if renderer is on a child with its own ObjectListInfo (separate object)
                 ObjectListInfo childInfo = renderer.GetComponent<ObjectListInfo>();
                 if (childInfo != null && childInfo != objectListInfo) continue;
+
+                // Skip if renderer is on a sibling or child that has a VisualColorHandler
+                // This prevents parent colors from leaking to independently colored children
+                VisualColorHandler childHandler = renderer.GetComponent<VisualColorHandler>();
+                if (childHandler != null && childHandler != this) continue;
+
+                // Skip if renderer is descended from another VisualColorHandler
+                // Walk up the hierarchy to check if there's a closer color handler
+                Transform parent = renderer.transform.parent;
+                bool hasCloserHandler = false;
+                while (parent != null && parent != transform)
+                {
+                    if (parent.GetComponent<VisualColorHandler>() != null)
+                    {
+                        hasCloserHandler = true;
+                        break;
+                    }
+                    parent = parent.parent;
+                }
+                if (hasCloserHandler) continue;
 
                 // Get or create MaterialPropertyBlock for this renderer
                 if (!propertyBlocks.ContainsKey(renderer) || propertyBlocks[renderer] == null)

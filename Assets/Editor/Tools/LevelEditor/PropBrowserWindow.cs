@@ -82,7 +82,7 @@ namespace POTCO.Editor
         private static readonly string CURRENT_CACHE_VERSION = "1.0.0";
         private bool thumbnailCacheLoaded = false;
 
-        [MenuItem("POTCO/Level Editor")]
+        [MenuItem("POTCO/Level Editor/Object Browser")]
         public static void ShowWindow()
         {
             var window = GetWindow<PropBrowserWindow>("Level Editor: Object Browser");

@@ -38,6 +38,7 @@ namespace POTCO.ShipBuilder
         private bool foldoutShipParts = true;
         private bool foldoutRams = false;
         private bool foldoutRepairSpots = false;
+        private bool foldoutAISettings = true;
 
         // Search/Filter
         private string searchFilter = "";
@@ -695,6 +696,62 @@ namespace POTCO.ShipBuilder
 
             currentShip.addShipController = EditorGUILayout.Toggle("Add Ship Controller", currentShip.addShipController);
             EditorGUILayout.HelpBox("Adds a ShipController component that allows you to pilot the ship. Press Shift near the wheel to enter control mode.", MessageType.Info);
+
+            EditorGUILayout.Space(10);
+
+            currentShip.addAIController = EditorGUILayout.Toggle("Add AI Enemy Controller", currentShip.addAIController);
+            EditorGUILayout.HelpBox("Adds AI components (ShipAIController + ShipHealth) to make this an enemy ship that sails around, chases players, and can be damaged/sunk by cannonballs. Includes ship collision physics.", MessageType.Info);
+
+            // AI Settings (shown when AI Controller is enabled)
+            if (currentShip.addAIController)
+            {
+                EditorGUILayout.Space(5);
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                foldoutAISettings = EditorGUILayout.Foldout(foldoutAISettings, "🤖 AI Settings", true, EditorStyles.foldoutHeader);
+
+                if (foldoutAISettings)
+                {
+                    EditorGUI.indentLevel++;
+
+                    EditorGUILayout.LabelField("Movement", EditorStyles.boldLabel);
+                    currentShip.aiMoveSpeed = EditorGUILayout.Slider("Move Speed", currentShip.aiMoveSpeed, 10f, 100f);
+                    EditorGUILayout.HelpBox("How fast the ship moves (default: 30)", MessageType.None);
+
+                    currentShip.aiRotateSpeed = EditorGUILayout.Slider("Rotate Speed", currentShip.aiRotateSpeed, 5f, 50f);
+                    EditorGUILayout.HelpBox("How fast the ship turns in degrees/sec (default: 20)", MessageType.None);
+
+                    EditorGUILayout.Space(5);
+                    EditorGUILayout.LabelField("Behavior", EditorStyles.boldLabel);
+                    currentShip.aiPatrolRadius = EditorGUILayout.Slider("Patrol Radius", currentShip.aiPatrolRadius, 20f, 500f);
+                    EditorGUILayout.HelpBox("How far the ship wanders from spawn (default: 100)", MessageType.None);
+
+                    currentShip.aiAggroRange = EditorGUILayout.Slider("Aggro Range", currentShip.aiAggroRange, 20f, 200f);
+                    EditorGUILayout.HelpBox("Detection range for player (default: 80)", MessageType.None);
+
+                    currentShip.aiCircleDistance = EditorGUILayout.Slider("Circle Distance", currentShip.aiCircleDistance, 10f, 100f);
+                    EditorGUILayout.HelpBox("Distance to maintain during combat (default: 40)", MessageType.None);
+
+                    EditorGUILayout.Space(5);
+                    EditorGUILayout.LabelField("Combat", EditorStyles.boldLabel);
+                    currentShip.aiMaxHealth = EditorGUILayout.FloatField("Max Health", currentShip.aiMaxHealth);
+                    currentShip.aiMaxHealth = Mathf.Max(100f, currentShip.aiMaxHealth);
+                    EditorGUILayout.HelpBox("Ship health points (default: 1000)", MessageType.None);
+
+                    currentShip.aiRamChance = EditorGUILayout.Slider("Ram Chance", currentShip.aiRamChance, 0f, 0.2f);
+                    EditorGUILayout.HelpBox("Chance per second to attempt ram (default: 0.05 = 5%)", MessageType.None);
+
+                    currentShip.aiRamDamage = EditorGUILayout.Slider("Ram Damage", currentShip.aiRamDamage, 10f, 500f);
+                    EditorGUILayout.HelpBox("Damage dealt on ram collision (default: 100)", MessageType.None);
+
+                    currentShip.aiCirclePlayer = EditorGUILayout.Toggle("Circle Player", currentShip.aiCirclePlayer);
+                    EditorGUILayout.HelpBox("If enabled, ship circles player while firing. If disabled, ship lines up and holds steady. (default: false)", MessageType.None);
+
+                    EditorGUI.indentLevel--;
+                }
+
+                EditorGUILayout.EndVertical();
+            }
         }
 
         private void DrawComponentCustomization()

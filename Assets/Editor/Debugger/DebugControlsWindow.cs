@@ -7,7 +7,7 @@ namespace POTCO.Editor
     {
         private Vector2 scrollPosition;
 
-        [MenuItem("POTCO/Debug Controls")]
+        [MenuItem("POTCO/Extras/Debug Controls", false, 10003)]
         public static void ShowWindow()
         {
             GetWindow<DebugControlsWindow>("POTCO Debug Controls");
@@ -79,7 +79,16 @@ namespace POTCO.Editor
             if (DebugSettings.debugProceduralGeneration) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Logs cave generation, connector validation, placement algorithms, and procedural processes", EditorStyles.miniLabel);
-            
+
+            GUILayout.Space(3);
+
+            // NPC Import
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugNPCImport = EditorGUILayout.Toggle("NPC Import", DebugSettings.debugNPCImport);
+            if (DebugSettings.debugNPCImport) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs NPC spawning, DNA loading, position conversion, and animation application", EditorStyles.miniLabel);
+
             GUILayout.Space(10);
             
             // Control buttons

@@ -103,6 +103,14 @@ public class MaterialHandler
         materials.Add(defaultMaterial);
         createdMaterialNames.Add("Default-Material");
 
+        // Always ensure Collision-Material exists (invisible material for collision geometry)
+        if (!createdMaterialNames.Contains("Collision-Material"))
+        {
+            var collisionMaterial = CreateInvisibleCollisionMaterial();
+            materials.Add(collisionMaterial);
+            createdMaterialNames.Add("Collision-Material");
+        }
+
         if (materials.Count == 1)
         {
             DebugLogger.LogEggImporter("No textures found, using default material only");
@@ -313,23 +321,41 @@ public class MaterialHandler
     {
         // Cache shaders to avoid repeated Shader.Find calls
         Shader shader = GetCachedVertexColorShader();
-        
+
         Material mat = new Material(shader) { name = materialName };
-        
+
         // Set material color to white so vertex colors show through properly
         if (mat.HasProperty(ColorPropertyId))
             mat.SetColor(ColorPropertyId, Color.white);
         else
             mat.color = Color.white;
-        
+
         // Set standard shader properties if they exist using cached property IDs
         if (mat.HasProperty(MetallicPropertyId))
             mat.SetFloat(MetallicPropertyId, 0.0f);
         if (mat.HasProperty(GlossinessPropertyId))
             mat.SetFloat(GlossinessPropertyId, 0.1f);
-            
+
         DebugLogger.LogEggImporter($"Created vertex color material '{materialName}' using shader: {shader.name}");
-        
+
+        return mat;
+    }
+
+    private Material CreateInvisibleCollisionMaterial()
+    {
+        // Use custom invisible collision shader
+        Shader invisibleShader = Shader.Find("EggImporter/InvisibleCollision");
+
+        if (invisibleShader == null)
+        {
+            DebugLogger.LogWarningEggImporter("EggImporter/InvisibleCollision shader not found!");
+            invisibleShader = Shader.Find("Hidden/InternalErrorShader");
+        }
+
+        Material mat = new Material(invisibleShader) { name = "Collision-Material" };
+
+        DebugLogger.LogEggImporter($"Created invisible Collision-Material using shader: {invisibleShader.name}");
+
         return mat;
     }
     

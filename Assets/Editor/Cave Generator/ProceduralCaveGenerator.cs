@@ -9,7 +9,7 @@ using POTCO.Editor;
 
 public class ProceduralCaveGenerator : EditorWindow
 {
-    [MenuItem("POTCO/Procedural Cave Generator")]
+    [MenuItem("POTCO/Level Editor/Procedural Cave Generator")]
     public static void ShowWindow() => GetWindow<ProceduralCaveGenerator>("Cave Generator");
 
     // --- Generation Settings ---
