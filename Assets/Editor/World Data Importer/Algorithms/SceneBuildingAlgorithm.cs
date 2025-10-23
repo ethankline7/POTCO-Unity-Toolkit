@@ -32,6 +32,8 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
+            List<(GameObject go, ObjectData data)> creaturesToSpawn = new List<(GameObject, ObjectData)>();
+            List<(GameObject go, ObjectData data)> enemiesToSpawn = new List<(GameObject, ObjectData)>();
 
             for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
             {
@@ -178,6 +180,26 @@ namespace WorldDataImporter.Algorithms
                         DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
                     }
 
+                    // Check if Animal is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Animal" &&
+                        currentData.isReadyForCreatureSpawn &&
+                        !creaturesToSpawn.Any(creature => creature.data == currentData))
+                    {
+                        creaturesToSpawn.Add((currentGO, currentData));
+                        DebugLogger.LogWorldImporter($"📋 Added Animal to spawn queue: {currentData.id} ({currentData.species})");
+                    }
+
+                    // Check if Spawn Node is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Spawn Node" &&
+                        currentData.isReadyForEnemySpawn &&
+                        !enemiesToSpawn.Any(enemy => enemy.data == currentData))
+                    {
+                        enemiesToSpawn.Add((currentGO, currentData));
+                        DebugLogger.LogWorldImporter($"📋 Added Spawn Node to spawn queue: {currentData.id} ({currentData.spawnables})");
+                    }
+
                     continue;
                 }
             }
@@ -191,6 +213,32 @@ namespace WorldDataImporter.Algorithms
                     if (go != null && data != null && go.transform.childCount == 0)
                     {
                         PropertyProcessor.SpawnNPC(go, data, stats);
+                    }
+                }
+            }
+
+            // Spawn all Animals after all properties are processed
+            if (creaturesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🐾 Spawning {creaturesToSpawn.Count} Animals...");
+                foreach (var (go, data) in creaturesToSpawn)
+                {
+                    if (go != null && data != null && go.transform.childCount == 0)
+                    {
+                        PropertyProcessor.SpawnCreature(go, data, stats);
+                    }
+                }
+            }
+
+            // Create all Spawn Nodes after all properties are processed
+            if (enemiesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"⚔️ Creating {enemiesToSpawn.Count} Spawn Nodes...");
+                foreach (var (go, data) in enemiesToSpawn)
+                {
+                    if (go != null && data != null)
+                    {
+                        PropertyProcessor.SpawnEnemy(go, data, stats);
                     }
                 }
             }
@@ -284,6 +332,8 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
+            List<(GameObject go, ObjectData data)> creaturesToSpawn = new List<(GameObject, ObjectData)>();
+            List<(GameObject go, ObjectData data)> enemiesToSpawn = new List<(GameObject, ObjectData)>();
 
             int objectsCreated = 0;
             
@@ -437,6 +487,26 @@ namespace WorldDataImporter.Algorithms
                         npcsToSpawn.Add((currentGO, currentData));
                         DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
                     }
+
+                    // Check if Animal is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Animal" &&
+                        currentData.isReadyForCreatureSpawn &&
+                        !creaturesToSpawn.Any(creature => creature.data == currentData))
+                    {
+                        creaturesToSpawn.Add((currentGO, currentData));
+                        DebugLogger.LogWorldImporter($"📋 Added Animal to spawn queue: {currentData.id} ({currentData.species})");
+                    }
+
+                    // Check if Spawn Node is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Spawn Node" &&
+                        currentData.isReadyForEnemySpawn &&
+                        !enemiesToSpawn.Any(enemy => enemy.data == currentData))
+                    {
+                        enemiesToSpawn.Add((currentGO, currentData));
+                        DebugLogger.LogWorldImporter($"📋 Added Spawn Node to spawn queue: {currentData.id} ({currentData.spawnables})");
+                    }
                 }
             }
 
@@ -449,6 +519,32 @@ namespace WorldDataImporter.Algorithms
                     if (go != null && data != null && go.transform.childCount == 0)
                     {
                         PropertyProcessor.SpawnNPC(go, data, stats);
+                    }
+                }
+            }
+
+            // Spawn all Animals after all properties are processed
+            if (creaturesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🐾 Spawning {creaturesToSpawn.Count} Animals...");
+                foreach (var (go, data) in creaturesToSpawn)
+                {
+                    if (go != null && data != null && go.transform.childCount == 0)
+                    {
+                        PropertyProcessor.SpawnCreature(go, data, stats);
+                    }
+                }
+            }
+
+            // Create all Spawn Nodes after all properties are processed
+            if (enemiesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"⚔️ Creating {enemiesToSpawn.Count} Spawn Nodes...");
+                foreach (var (go, data) in enemiesToSpawn)
+                {
+                    if (go != null && data != null)
+                    {
+                        PropertyProcessor.SpawnEnemy(go, data, stats);
                     }
                 }
             }

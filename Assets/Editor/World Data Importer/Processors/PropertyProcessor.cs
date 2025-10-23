@@ -475,40 +475,6 @@ namespace WorldDataImporter.Processors
                         DebugLogger.LogNPCImport($"📂 Stored NPC Category: {category}");
                     }
                     break;
-                case "Patrol Radius":
-                    // Store patrol radius
-                    if (objectData != null && settings?.importNPCs == true && float.TryParse(ParsingUtilities.ExtractStringValue(val), out float patrolRadius))
-                    {
-                        objectData.npcPatrolRadius = patrolRadius;
-                        DebugLogger.LogNPCImport($"🚶 Stored NPC Patrol Radius: {patrolRadius}");
-                    }
-                    break;
-                case "Start State":
-                    // Store start state
-                    if (objectData != null && settings?.importNPCs == true)
-                    {
-                        string startState = ParsingUtilities.ExtractStringValue(val);
-                        objectData.npcStartState = startState;
-                        DebugLogger.LogNPCImport($"🎬 Stored NPC Start State: {startState}");
-                    }
-                    break;
-                case "Team":
-                    // Store team
-                    if (objectData != null && settings?.importNPCs == true)
-                    {
-                        string team = ParsingUtilities.ExtractStringValue(val);
-                        objectData.npcTeam = team;
-                        DebugLogger.LogNPCImport($"👥 Stored NPC Team: {team}");
-                    }
-                    break;
-                case "Aggro Radius":
-                    // Store aggro radius
-                    if (objectData != null && settings?.importNPCs == true && float.TryParse(ParsingUtilities.ExtractStringValue(val), out float aggroRadius))
-                    {
-                        objectData.npcAggroRadius = aggroRadius;
-                        DebugLogger.LogNPCImport($"⚔️ Stored NPC Aggro Radius: {aggroRadius}");
-                    }
-                    break;
                 case "Greeting Animation":
                     // Store greeting animation
                     if (objectData != null && settings?.importNPCs == true)
@@ -536,6 +502,118 @@ namespace WorldDataImporter.Processors
                         DebugLogger.LogNPCImport($"👀 Stored NPC Notice Animation 2: {noticeAnim2}");
                     }
                     break;
+                case "Species":
+                    // Store species for Animals
+                    if (objectData != null && objectData.objectType == "Animal")
+                    {
+                        string species = ParsingUtilities.ExtractStringValue(val);
+                        objectData.species = species;
+                        objectData.isReadyForCreatureSpawn = true;
+                        DebugLogger.LogWorldImporter($"🐾 Stored Animal Species: {species}");
+                    }
+                    break;
+                case "Respawns":
+                    // Store respawns flag for Animals
+                    if (objectData != null && ParsingUtilities.ParseBool(val, out bool respawns))
+                    {
+                        objectData.respawns = respawns;
+                        DebugLogger.LogWorldImporter($"🔄 Stored Respawns: {respawns}");
+                    }
+                    break;
+                case "Spawnables":
+                    // Store spawnables for Spawn Nodes
+                    if (objectData != null)
+                    {
+                        string spawnables = ParsingUtilities.ExtractStringValue(val);
+                        objectData.spawnables = spawnables;
+                        if (objectData.objectType == "Spawn Node")
+                        {
+                            objectData.isReadyForEnemySpawn = true;
+                            DebugLogger.LogWorldImporter($"⚔️ Stored Spawn Node Spawnables: {spawnables}");
+                        }
+                    }
+                    break;
+                case "spawnTimeBegin":
+                    // Store spawn time begin for Spawn Nodes
+                    if (objectData != null && float.TryParse(val, out float spawnBegin))
+                    {
+                        objectData.spawnTimeBegin = spawnBegin;
+                        DebugLogger.LogWorldImporter($"🕐 Stored spawnTimeBegin: {spawnBegin}");
+                    }
+                    break;
+                case "spawnTimeEnd":
+                    // Store spawn time end for Spawn Nodes
+                    if (objectData != null && float.TryParse(val, out float spawnEnd))
+                    {
+                        objectData.spawnTimeEnd = spawnEnd;
+                        DebugLogger.LogWorldImporter($"🕐 Stored spawnTimeEnd: {spawnEnd}");
+                    }
+                    break;
+            }
+
+            // Handle context-sensitive properties (used by multiple types)
+            // These cases check objectType to populate the correct field
+            if (objectData != null)
+            {
+                switch (key)
+                {
+                    case "Patrol Radius":
+                        if (float.TryParse(ParsingUtilities.ExtractStringValue(val), out float patrolRad))
+                        {
+                            if (objectData.objectType == "Animal" || objectData.objectType == "Spawn Node")
+                            {
+                                objectData.patrolRadius = patrolRad;
+                                DebugLogger.LogWorldImporter($"🚶 Stored Patrol Radius: {patrolRad}");
+                            }
+                            else if (objectData.objectType == "Townsperson" && settings?.importNPCs == true)
+                            {
+                                objectData.npcPatrolRadius = patrolRad;
+                                DebugLogger.LogNPCImport($"🚶 Stored NPC Patrol Radius: {patrolRad}");
+                            }
+                        }
+                        break;
+                    case "Aggro Radius":
+                        if (float.TryParse(ParsingUtilities.ExtractStringValue(val), out float aggroRad))
+                        {
+                            if (objectData.objectType == "Spawn Node")
+                            {
+                                objectData.aggroRadius = aggroRad;
+                                DebugLogger.LogWorldImporter($"⚔️ Stored Aggro Radius: {aggroRad}");
+                            }
+                            else if (objectData.objectType == "Townsperson" && settings?.importNPCs == true)
+                            {
+                                objectData.npcAggroRadius = aggroRad;
+                                DebugLogger.LogNPCImport($"⚔️ Stored NPC Aggro Radius: {aggroRad}");
+                            }
+                        }
+                        break;
+                    case "Start State":
+                        string startStateVal = ParsingUtilities.ExtractStringValue(val);
+                        if (objectData.objectType == "Animal" || objectData.objectType == "Spawn Node")
+                        {
+                            objectData.startState = startStateVal;
+                            DebugLogger.LogWorldImporter($"🎬 Stored Start State: {startStateVal}");
+                        }
+                        else if (objectData.objectType == "Townsperson" && settings?.importNPCs == true)
+                        {
+                            objectData.npcStartState = startStateVal;
+                            DebugLogger.LogNPCImport($"🎬 Stored NPC Start State: {startStateVal}");
+                        }
+                        break;
+                    case "Team":
+                        string teamVal = ParsingUtilities.ExtractStringValue(val);
+                        if (objectData.objectType == "Spawn Node")
+                        {
+                            objectData.team = teamVal;
+                            DebugLogger.LogWorldImporter($"👥 Stored Team: {teamVal}");
+                        }
+                        else if (objectData.objectType == "Townsperson" && settings?.importNPCs == true)
+                        {
+                            objectData.npcTeam = teamVal;
+                            DebugLogger.LogNPCImport($"👥 Stored NPC Team: {teamVal}");
+                        }
+                        break;
+                }
             }
 
             // Note: NPC spawning is now handled after all properties are processed
@@ -762,7 +840,23 @@ namespace WorldDataImporter.Processors
 
                     DebugLogger.LogNPCImport($"Auto-Find Roots: Head={headRoot?.name ?? "not found"}, Body={bodyRoot?.name ?? "not found"}");
 
-                    // Create DnaApplier and apply DNA
+                    // Add persistence components BEFORE applying DNA (so MaterialBinder can find and use them)
+                    // Add CharacterColorPersistence for play mode color persistence
+                    var colorPersistence = instance.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                    if (colorPersistence == null)
+                    {
+                        colorPersistence = instance.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
+                        DebugLogger.LogNPCImport($"✅ Added CharacterColorPersistence component to {instance.name}");
+                    }
+
+                    // Add CharacterTexturePersistence for play mode texture persistence
+                    var texturePersistence = instance.GetComponent<CharacterOG.Runtime.CharacterTexturePersistence>();
+                    if (texturePersistence == null)
+                    {
+                        texturePersistence = instance.AddComponent<CharacterOG.Runtime.CharacterTexturePersistence>();
+                    }
+
+                    // Create DnaApplier and apply DNA (this will use the persistence components above)
                     var dnaApplier = new CharacterOG.Runtime.Systems.DnaApplier(
                         instance,
                         bodyShapes,
@@ -777,13 +871,6 @@ namespace WorldDataImporter.Processors
 
                     dnaApplier.ApplyDNA(pirateDna);
 
-                    // Add CharacterColorPersistence for play mode color persistence
-                    var colorPersistence = instance.GetComponent<CharacterOG.Runtime.CharacterColorPersistence>();
-                    if (colorPersistence == null)
-                    {
-                        colorPersistence = instance.AddComponent<CharacterOG.Runtime.CharacterColorPersistence>();
-                    }
-
                     // Store applied colors for persistence
                     var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
                     colorPersistence.StoreColors(skin, hair, top, bot);
@@ -796,7 +883,7 @@ namespace WorldDataImporter.Processors
                     }
                     genderData.SetGender(pirateDna.gender);
 
-                    DebugLogger.LogNPCImport($"✅ Added color persistence and gender data to {pirateDna.name}");
+                    DebugLogger.LogNPCImport($"✅ Added color/texture persistence and gender data to {pirateDna.name}");
 
                     // Debug: Check position values
                     DebugLogger.LogNPCImport($"🔍 Spawn Check: gridPos={objectData.gridPos}, hasPos={objectData.hasPos}, currentPos={currentGO.transform.localPosition}");
@@ -983,6 +1070,453 @@ namespace WorldDataImporter.Processors
             catch (System.Exception ex)
             {
                 DebugLogger.LogNPCImport($"❌ Failed to add NPC components: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Spawn an Animal (Type = "Animal") with Species, Respawns, Start State, Patrol Radius
+        /// </summary>
+        public static void SpawnCreature(GameObject currentGO, ObjectData objectData, ImportStatistics stats)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(objectData.species))
+                {
+                    DebugLogger.LogWorldImporter($"❌ Cannot spawn creature - no species defined for {objectData.id}");
+                    return;
+                }
+
+                // Load creature data from POTCO source files
+                CreatureData creatureData = CreatureDataParser.GetCreatureData(objectData.species);
+                if (creatureData == null)
+                {
+                    DebugLogger.LogWorldImporter($"❌ Unknown species: {objectData.species} - no creature file found in POTCO_Source/creature");
+                    return;
+                }
+
+                // Get best model path from creature data
+                string modelPath = creatureData.GetBestModelPath();
+                if (string.IsNullOrEmpty(modelPath))
+                {
+                    DebugLogger.LogWorldImporter($"❌ No model path found for species: {objectData.species}");
+                    return;
+                }
+
+                DebugLogger.LogWorldImporter($"🐾 Loading creature model: {modelPath} (from {objectData.species}.py)");
+
+                // Try to load the model from Resources
+                GameObject creatureModel = UnityEngine.Resources.Load<GameObject>(modelPath);
+
+                // If not found, try common path prefixes (up to phase_6)
+                if (creatureModel == null)
+                {
+                    string[] pathPrefixes = new string[] { "", "phase_2/", "phase_3/", "phase_4/", "phase_5/", "phase_6/" };
+                    foreach (string prefix in pathPrefixes)
+                    {
+                        string testPath = prefix + modelPath;
+                        creatureModel = UnityEngine.Resources.Load<GameObject>(testPath);
+                        if (creatureModel != null)
+                        {
+                            modelPath = testPath;
+                            DebugLogger.LogWorldImporter($"✅ Found creature model at: {testPath}");
+                            break;
+                        }
+                    }
+                }
+
+                if (creatureModel == null)
+                {
+                    DebugLogger.LogWorldImporter($"❌ Failed to load creature model: {modelPath} (tried phase_2 through phase_6 prefixes)");
+                    if (stats != null) stats.missingModels++;
+                    return;
+                }
+
+                // Instantiate the creature
+                GameObject instance = UnityEditor.PrefabUtility.InstantiatePrefab(creatureModel) as GameObject;
+                if (instance == null)
+                {
+                    instance = GameObject.Instantiate(creatureModel);
+                }
+
+                instance.name = objectData.species;
+
+                // Apply transform from objectData
+                // Position parent GameObject (same logic as NPC spawning)
+                if (objectData.gridPos.HasValue && !objectData.hasPos)
+                {
+                    // Convert GridPos (world position) to local position
+                    if (currentGO.transform.parent != null)
+                    {
+                        Vector3 localPos = currentGO.transform.parent.InverseTransformPoint(objectData.gridPos.Value);
+                        currentGO.transform.localPosition = localPos;
+                        DebugLogger.LogWorldImporter($"📍 Applied GridPos (world→local): {localPos}");
+                    }
+                    else
+                    {
+                        currentGO.transform.localPosition = objectData.gridPos.Value;
+                    }
+                }
+                else if (objectData.properties != null && objectData.properties.ContainsKey("Pos_Vector"))
+                {
+                    // Pos was stored but never applied
+                    string[] posParts = objectData.properties["Pos_Vector"].Split(',');
+                    Vector3 posValue = new Vector3(
+                        float.Parse(posParts[0]),
+                        float.Parse(posParts[1]),
+                        float.Parse(posParts[2])
+                    );
+                    currentGO.transform.localPosition = posValue;
+                    DebugLogger.LogWorldImporter($"📍 Applied stored Pos: {posValue}");
+                }
+
+                // Parent creature to node GameObject
+                instance.transform.SetParent(currentGO.transform, false);
+
+                // Add Animation component if not present
+                Animation animComponent = instance.GetComponent<Animation>();
+                if (animComponent == null)
+                {
+                    animComponent = instance.AddComponent<Animation>();
+                }
+
+                // Log available animations from creature data
+                if (creatureData.animations.Count > 0)
+                {
+                    DebugLogger.LogWorldImporter($"📋 Available animations for {objectData.species}: {string.Join(", ", creatureData.animations.Keys)}");
+                }
+
+                // Apply start state animation (if specified)
+                if (!string.IsNullOrEmpty(objectData.startState))
+                {
+                    string animName = objectData.startState.ToLower(); // Normalize to lowercase
+
+                    // Try to find matching animation
+                    if (creatureData.animations.ContainsKey(animName))
+                    {
+                        string animFile = creatureData.animations[animName];
+                        DebugLogger.LogWorldImporter($"🎬 Creature start state: {objectData.startState} → animation: {animFile}");
+                        // TODO: Load and assign AnimationClip from Resources based on animFile path
+                    }
+                    else
+                    {
+                        DebugLogger.LogWorldImporter($"⚠️ Start state '{objectData.startState}' not found in {objectData.species} animations");
+                    }
+                }
+
+                // Log additional properties
+                DebugLogger.LogWorldImporter($"✅ Spawned {objectData.species}: Model={modelPath}, Respawns={objectData.respawns}, PatrolRadius={objectData.patrolRadius}, StartState={objectData.startState}");
+
+                // Add AI components (reuse NPC AI system)
+                AddCreatureAIComponents(currentGO, objectData, creatureData);
+
+                if (stats != null)
+                {
+                    stats.successfulImports++;
+                    if (!stats.objectTypeCount.ContainsKey("Animal_Spawned"))
+                        stats.objectTypeCount["Animal_Spawned"] = 0;
+                    stats.objectTypeCount["Animal_Spawned"]++;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogWorldImporter($"❌ Failed to spawn creature: {ex.Message}");
+                Debug.LogError($"Creature spawn error: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// Load animation clips for creature's Animation component from Resources
+        /// </summary>
+        private static void LoadCreatureAnimations(Animation animComponent, CreatureData creatureData, string species)
+        {
+            Debug.Log($"[LoadCreatureAnimations] Called for {species}"); // Force log regardless of settings
+
+            if (animComponent == null || creatureData == null)
+            {
+                Debug.LogWarning($"[LoadCreatureAnimations] NULL: animComponent={animComponent}, creatureData={creatureData}");
+                return;
+            }
+
+            string modelPath = creatureData.GetBestModelPath();
+            if (string.IsNullOrEmpty(modelPath))
+            {
+                Debug.LogWarning($"[LoadCreatureAnimations] No model path found for {species}");
+                return;
+            }
+
+            Debug.Log($"[LoadCreatureAnimations] Model path: {modelPath}, AnimList count: {creatureData.animations.Count}");
+
+            // Get the base model name without LOD suffix (e.g., "chicken_hi" -> "chicken")
+            string modelName = System.IO.Path.GetFileNameWithoutExtension(modelPath);
+            string baseModelName = System.Text.RegularExpressions.Regex.Replace(modelName, "_hi$|_lo$|_mid$", "");
+
+            int loadedCount = 0;
+            int failedCount = 0;
+
+            // Load each animation from the AnimList
+            foreach (var kvp in creatureData.animations)
+            {
+                string animName = kvp.Key;
+                string animFile = kvp.Value;
+
+                // Animation files are at: phase_#/models/char/chicken_walk.egg
+                // Resources.Load needs path without extension: phase_4/models/char/chicken_walk
+                string[] pathsToTry = new string[]
+                {
+                    $"phase_4/models/char/{baseModelName}_{animFile}",
+                    $"phase_3/models/char/{baseModelName}_{animFile}",
+                    $"phase_5/models/char/{baseModelName}_{animFile}",
+                    $"phase_2/models/char/{baseModelName}_{animFile}",
+                    $"phase_6/models/char/{baseModelName}_{animFile}",
+                };
+
+                AnimationClip clip = null;
+                string successPath = null;
+
+                foreach (string path in pathsToTry)
+                {
+                    clip = UnityEngine.Resources.Load<AnimationClip>(path);
+                    if (clip != null)
+                    {
+                        successPath = path;
+                        break;
+                    }
+                }
+
+                if (clip != null)
+                {
+                    // Add clip with the base model + anim name (e.g., "chicken_idle")
+                    string clipName = $"{baseModelName}_{animName}";
+                    animComponent.AddClip(clip, clipName);
+
+                    // Set first animation as default
+                    if (animComponent.clip == null)
+                    {
+                        animComponent.clip = clip;
+                    }
+
+                    loadedCount++;
+                    Debug.Log($"✅ Loaded animation '{clipName}' from: {successPath}");
+                }
+                else
+                {
+                    failedCount++;
+                    Debug.LogWarning($"⚠️ Failed to load animation '{animName}' for {species}, tried paths like: phase_4/models/char/{baseModelName}_{animFile}");
+                }
+            }
+
+            if (loadedCount > 0)
+            {
+                animComponent.playAutomatically = false; // AnimalAnimationPlayer will control playback
+                animComponent.wrapMode = WrapMode.Loop;
+            }
+
+            DebugLogger.LogWorldImporter($"📋 Animation loading summary for {species}: {loadedCount} loaded, {failedCount} failed");
+        }
+
+        /// <summary>
+        /// Add AI components to spawned creature (reuses NPC AI system)
+        /// </summary>
+        private static void AddCreatureAIComponents(GameObject creatureParent, ObjectData objectData, CreatureData creatureData)
+        {
+            try
+            {
+                // Find the creature model (first child)
+                GameObject creatureModel = null;
+                if (creatureParent.transform.childCount > 0)
+                {
+                    creatureModel = creatureParent.transform.GetChild(0).gameObject;
+                }
+
+                // Ensure Animation component exists on the creature model
+                Animation animComponent = null;
+                if (creatureModel != null)
+                {
+                    animComponent = creatureModel.GetComponent<Animation>();
+                    if (animComponent == null)
+                    {
+                        animComponent = creatureModel.AddComponent<Animation>();
+                        DebugLogger.LogWorldImporter($"✅ Added Animation component to creature model: {creatureModel.name}");
+                    }
+
+                    // Load and assign animation clips from creature data
+                    LoadCreatureAnimations(animComponent, creatureData, objectData.species);
+                }
+
+                // Add NPCData component (reuse for creatures)
+                NPCData npcData = creatureParent.GetComponent<NPCData>();
+                if (npcData == null)
+                {
+                    npcData = creatureParent.AddComponent<NPCData>();
+                }
+
+                // Populate NPCData with creature properties
+                npcData.npcId = objectData.id;
+                npcData.category = "Animal"; // Mark as animal category
+                npcData.team = "Animal"; // Animals are neutral team
+                npcData.startState = objectData.startState ?? "LandRoam"; // Default to LandRoam
+                npcData.patrolRadius = objectData.patrolRadius ?? 12f;
+                npcData.aggroRadius = 0f; // Animals don't aggro by default
+                npcData.animSet = objectData.species.ToLower(); // Use species name as anim set identifier
+
+                // Add CharacterController for movement
+                CharacterController controller = creatureParent.GetComponent<CharacterController>();
+                if (controller == null)
+                {
+                    controller = creatureParent.AddComponent<CharacterController>();
+                    // Adjust based on creature size (can be refined per-species)
+                    controller.radius = 0.5f;
+                    controller.height = 1.5f;
+                    controller.center = new Vector3(0, 0.75f, 0);
+                    DebugLogger.LogWorldImporter($"✅ Added CharacterController to {objectData.species}");
+                }
+
+                // Add NPCController for AI (reuse NPC AI logic for movement and patrol)
+                NPCController npcController = creatureParent.GetComponent<NPCController>();
+                if (npcController == null)
+                {
+                    npcController = creatureParent.AddComponent<NPCController>();
+                    DebugLogger.LogWorldImporter($"✅ Added NPCController to {objectData.species}");
+                }
+
+                // Use reflection to enable patrol (it's a private field)
+                var enablePatrolField = typeof(NPCController).GetField("enablePatrol", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (enablePatrolField != null)
+                {
+                    enablePatrolField.SetValue(npcController, true);
+                    DebugLogger.LogWorldImporter($"✅ Enabled patrol for {objectData.species}");
+                }
+
+                // Ensure NPCController starts enabled
+                npcController.enabled = true;
+
+                // Add AnimalAnimationPlayer for animation control (uses parsed creature data)
+                AnimalAnimationPlayer animalAnimPlayer = creatureModel.GetComponent<AnimalAnimationPlayer>();
+                if (animalAnimPlayer == null && creatureModel != null)
+                {
+                    animalAnimPlayer = creatureModel.AddComponent<AnimalAnimationPlayer>();
+
+                    // Set animation prefix (strip LOD suffix from model path)
+                    // Example: "models/char/chicken_hi" -> "chicken"
+                    string modelPath = creatureData.GetBestModelPath();
+                    if (!string.IsNullOrEmpty(modelPath))
+                    {
+                        string modelName = System.IO.Path.GetFileNameWithoutExtension(modelPath);
+                        // Remove LOD suffixes (_hi, _lo, etc.)
+                        modelName = System.Text.RegularExpressions.Regex.Replace(modelName, "_hi$|_lo$|_mid$", "");
+                        animalAnimPlayer.animationPrefix = modelName;
+                        DebugLogger.LogWorldImporter($"✅ Set animation prefix to '{modelName}' for {objectData.species}");
+                    }
+
+                    // Initialize with parsed animation state sequences from creature .py file
+                    if (creatureData.animStates != null && creatureData.animStates.Count > 0)
+                    {
+                        animalAnimPlayer.InitializeFromCreatureData(creatureData.animStates);
+                        animalAnimPlayer.currentState = objectData.startState ?? "LandRoam";
+                        DebugLogger.LogWorldImporter($"✅ Initialized AnimalAnimationPlayer with {creatureData.animStates.Count} states, starting in '{animalAnimPlayer.currentState}'");
+                    }
+                    else
+                    {
+                        DebugLogger.LogWorldImporter($"⚠️ No animation states found in {objectData.species}.py - AnimalAnimationPlayer will need manual setup");
+                    }
+                }
+
+                DebugLogger.LogWorldImporter($"✅ Added AI components to {objectData.species}: Patrol={npcData.patrolRadius}, State={npcData.startState}");
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogWorldImporter($"❌ Failed to add creature AI components: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Spawn an Enemy Spawn Node (Type = "Spawn Node") with Spawnables, Aggro/Patrol Radius, Team
+        /// </summary>
+        public static void SpawnEnemy(GameObject currentGO, ObjectData objectData, ImportStatistics stats)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(objectData.spawnables))
+                {
+                    DebugLogger.LogWorldImporter($"❌ Cannot spawn enemy node - no spawnables defined for {objectData.id}");
+                    return;
+                }
+
+                // Apply transform from objectData
+                if (objectData.gridPos.HasValue && !objectData.hasPos)
+                {
+                    // Convert GridPos (world position) to local position
+                    if (currentGO.transform.parent != null)
+                    {
+                        Vector3 localPos = currentGO.transform.parent.InverseTransformPoint(objectData.gridPos.Value);
+                        currentGO.transform.localPosition = localPos;
+                    }
+                    else
+                    {
+                        currentGO.transform.localPosition = objectData.gridPos.Value;
+                    }
+                }
+                else if (objectData.properties != null && objectData.properties.ContainsKey("Pos_Vector"))
+                {
+                    string[] posParts = objectData.properties["Pos_Vector"].Split(',');
+                    Vector3 posValue = new Vector3(
+                        float.Parse(posParts[0]),
+                        float.Parse(posParts[1]),
+                        float.Parse(posParts[2])
+                    );
+                    currentGO.transform.localPosition = posValue;
+                }
+
+                // Create a child GameObject for the spawn node
+                GameObject spawnNodeGO = new GameObject($"SpawnNode_{objectData.spawnables}");
+                spawnNodeGO.transform.SetParent(currentGO.transform, false);
+
+                // Add SpawnNode component
+                SpawnNode spawnNode = spawnNodeGO.AddComponent<SpawnNode>();
+                spawnNode.spawnables = objectData.spawnables;
+                spawnNode.aggroRadius = objectData.aggroRadius ?? 12f;
+                spawnNode.patrolRadius = objectData.patrolRadius ?? 12f;
+                spawnNode.startState = objectData.startState ?? "Idle";
+                spawnNode.spawnTimeBegin = objectData.spawnTimeBegin ?? 0f;
+                spawnNode.spawnTimeEnd = objectData.spawnTimeEnd ?? 0f;
+
+                // Translate team string to team ID
+                Dictionary<string, int> teamNameToId = new Dictionary<string, int>()
+                {
+                    { "default", 0 },
+                    { "Villager", 1 },
+                    { "Player", 1 },
+                    { "Navy", 2 },
+                    { "EvilNavy", 3 },
+                    { "Undead", 4 },
+                    // TODO: Add more team mappings as needed
+                };
+
+                string teamName = objectData.team ?? "default";
+                if (teamNameToId.TryGetValue(teamName, out int teamId))
+                {
+                    spawnNode.teamId = teamId;
+                }
+                else
+                {
+                    spawnNode.teamId = 0;
+                    DebugLogger.LogWorldImporter($"⚠️ Unknown team '{teamName}', defaulting to 0");
+                }
+
+                DebugLogger.LogWorldImporter($"✅ Created Spawn Node: {objectData.spawnables}, Team={teamName}({teamId}), Aggro={spawnNode.aggroRadius}, Patrol={spawnNode.patrolRadius}, State={spawnNode.startState}");
+
+                if (stats != null)
+                {
+                    stats.successfulImports++;
+                    if (!stats.objectTypeCount.ContainsKey("SpawnNode_Created"))
+                        stats.objectTypeCount["SpawnNode_Created"] = 0;
+                    stats.objectTypeCount["SpawnNode_Created"]++;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                DebugLogger.LogWorldImporter($"❌ Failed to create spawn node: {ex.Message}");
+                Debug.LogError($"Spawn node creation error: {ex}");
             }
         }
 

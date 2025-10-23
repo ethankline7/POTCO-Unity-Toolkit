@@ -77,6 +77,15 @@ namespace POTCO
         private Vector3 lockedPosition;
         private Quaternion lockedRotation;
         private bool positionLocked = false;
+
+        // Stuck detection
+        private Vector3 lastPosition;
+        private float stuckTimer = 0f;
+        private const float stuckThreshold = 0.05f; // Distance per second threshold to consider "stuck"
+        private const float stuckTimeout = 2f; // Time before considering stuck and picking new waypoint
+
+        // Waypoint arrival
+        private const float waypointArrivalRadius = 1.5f; // Distance to consider waypoint "reached"
         #endregion
 
         #region Initialization
@@ -95,6 +104,7 @@ namespace POTCO
         private void Start()
         {
             spawnPosition = transform.position;
+            lastPosition = transform.position;
             currentState = NPCState.LandRoam;
             stateEnterTime = Time.time;
 
@@ -208,8 +218,20 @@ namespace POTCO
             }
             velocity.y -= gravity * Time.deltaTime;
 
-            // Apply movement
-            controller.Move(velocity * Time.deltaTime);
+            // Apply movement and check for collisions
+            CollisionFlags collisionFlags = controller.Move(velocity * Time.deltaTime);
+
+            // If hitting walls during patrol, stop moving to prevent jittering
+            if (currentState == NPCState.LandRoam && !isIdleAtWaypoint)
+            {
+                if ((collisionFlags & CollisionFlags.Sides) != 0)
+                {
+                    // Hit a wall - stop horizontal velocity
+                    velocity.x = 0;
+                    velocity.z = 0;
+                    Debug.Log($"[{gameObject.name}] Hit wall during patrol, stopping movement");
+                }
+            }
         }
         #endregion
 
@@ -261,16 +283,49 @@ namespace POTCO
             {
                 // Moving to waypoint
                 float distanceToWaypoint = Vector3.Distance(transform.position, currentWaypoint);
-                if (distanceToWaypoint < 0.5f)
+                if (distanceToWaypoint < waypointArrivalRadius)
                 {
-                    // Arrived at waypoint
+                    // Arrived at waypoint (within arrival radius)
                     isIdleAtWaypoint = true;
                     waypointArrivalTime = Time.time;
+                    stuckTimer = 0f; // Reset stuck timer
+                    velocity.x = 0; // Stop moving
+                    velocity.z = 0;
+                    Debug.Log($"[{gameObject.name}] Reached waypoint (distance: {distanceToWaypoint:F2}m)");
                 }
                 else
                 {
                     // Navigate toward waypoint
                     NavigateToPoint(currentWaypoint, walkSpeed);
+
+                    // Stuck detection: Check if position has barely changed
+                    float distanceMoved = Vector3.Distance(transform.position, lastPosition);
+
+                    // Use time-independent check: if moving less than threshold units per second
+                    float expectedMinMovement = stuckThreshold * Time.deltaTime * walkSpeed;
+                    if (distanceMoved < expectedMinMovement)
+                    {
+                        stuckTimer += Time.deltaTime;
+
+                        // If stuck for too long, pick new waypoint
+                        if (stuckTimer >= stuckTimeout)
+                        {
+                            Debug.LogWarning($"[{gameObject.name}] Stuck detected! Distance moved: {distanceMoved:F4}m in {Time.deltaTime:F4}s. Picking new waypoint...");
+                            currentWaypoint = GetRandomPatrolPoint();
+                            stuckTimer = 0f;
+
+                            // Stop velocity to prevent jittering
+                            velocity.x = 0;
+                            velocity.z = 0;
+                        }
+                    }
+                    else
+                    {
+                        // Moving successfully, reset stuck timer
+                        stuckTimer = 0f;
+                    }
+
+                    lastPosition = transform.position;
                 }
             }
         }
@@ -280,6 +335,10 @@ namespace POTCO
         /// </summary>
         private void UpdateNotice()
         {
+            // Stop moving - NPC should stand still and look at player
+            velocity.x = 0;
+            velocity.z = 0;
+
             // Check if player left detection range
             if (playerTransform == null || !ShouldNoticePlayer())
             {
@@ -335,6 +394,10 @@ namespace POTCO
         /// </summary>
         private void UpdateGreeting()
         {
+            // Stop moving - NPC should stand still during greeting
+            velocity.x = 0;
+            velocity.z = 0;
+
             // Check if player left greeting range
             if (playerTransform == null)
             {
@@ -427,8 +490,49 @@ namespace POTCO
         {
             if (npcData == null) return spawnPosition;
 
-            Vector2 randomCircle = Random.insideUnitCircle * npcData.patrolRadius;
-            return spawnPosition + new Vector3(randomCircle.x, 0, randomCircle.y);
+            int maxRetries = 10;
+            float characterRadius = controller != null ? controller.radius : 0.5f;
+
+            for (int i = 0; i < maxRetries; i++)
+            {
+                // Pick random point in patrol radius
+                Vector2 randomCircle = Random.insideUnitCircle * npcData.patrolRadius;
+                Vector3 candidatePoint = spawnPosition + new Vector3(randomCircle.x, 0, randomCircle.y);
+
+                // Check 1: Is the destination point itself inside a collider?
+                Vector3 destinationCheck = candidatePoint + new Vector3(0, characterRadius, 0);
+                if (Physics.CheckSphere(destinationCheck, characterRadius * 0.5f, LayerMask.GetMask("Default", "Collision", "Wall")))
+                {
+                    Debug.Log($"[{gameObject.name}] Patrol point {i+1} inside collision, retrying...");
+                    continue;
+                }
+
+                // Check 2: Is the path clear with a sphere cast (accounts for character width)?
+                Vector3 direction = candidatePoint - transform.position;
+                float distance = direction.magnitude;
+                if (distance < 0.1f)
+                {
+                    return candidatePoint; // Already at destination
+                }
+                direction.Normalize();
+
+                // Cast sphere at character height (center of CharacterController)
+                Vector3 rayStart = transform.position + new Vector3(0, characterRadius, 0);
+
+                // SphereCast to check if path is clear
+                if (!Physics.SphereCast(rayStart, characterRadius * 0.8f, direction, out RaycastHit hit, distance, LayerMask.GetMask("Default", "Collision", "Wall")))
+                {
+                    // Path is clear - return this point
+                    return candidatePoint;
+                }
+
+                // Path blocked - try again
+                Debug.Log($"[{gameObject.name}] Patrol point {i+1} blocked by {hit.collider.name}, retrying...");
+            }
+
+            // All retries failed - just stay at spawn position
+            Debug.LogWarning($"[{gameObject.name}] Could not find valid patrol point after {maxRetries} retries, staying at spawn");
+            return spawnPosition;
         }
         #endregion
 

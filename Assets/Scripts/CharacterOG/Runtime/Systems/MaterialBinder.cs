@@ -95,6 +95,9 @@ namespace CharacterOG.Runtime.Systems
             var block = GetOrCreatePropertyBlock(renderer);
             block.SetTexture(s_mainTexProp, tex);
             renderer.SetPropertyBlock(block);
+
+            // Store texture in persistence component (if available) for play mode preservation
+            StoreTextureInPersistence(renderer, textureId);
         }
 
         /// <summary>Apply two textures (base + overlay/detail) - used for hats with feathers, etc.</summary>
@@ -344,6 +347,29 @@ namespace CharacterOG.Runtime.Systems
             }
 
             return block;
+        }
+
+        /// <summary>Store texture in CharacterTexturePersistence component for play mode preservation</summary>
+        private void StoreTextureInPersistence(Renderer renderer, string textureId)
+        {
+            if (renderer == null || string.IsNullOrEmpty(textureId))
+                return;
+
+            // Find character root (walk up hierarchy looking for CharacterTexturePersistence)
+            Transform current = renderer.transform;
+            while (current != null)
+            {
+                var persistence = current.GetComponent<CharacterOG.Runtime.CharacterTexturePersistence>();
+                if (persistence != null)
+                {
+                    persistence.StoreTexture(renderer, textureId);
+                    return;
+                }
+                current = current.parent;
+            }
+
+            // No persistence component found - textures won't persist through play mode
+            // This is expected for non-NPC characters
         }
 
         /// <summary>Get diagnostic info (PHASE 3: updated for shared cache)</summary>
