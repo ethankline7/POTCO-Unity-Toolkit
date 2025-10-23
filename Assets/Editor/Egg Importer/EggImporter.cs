@@ -333,9 +333,11 @@ public class EggImporter : ScriptedImporter
         var vertexPool = new List<EggVertex>(1024); // Typical vertex count estimate
         var texturePaths = new Dictionary<string, string>(16); // Typical texture count
         var alphaPaths = new Dictionary<string, string>(16); // Alpha texture paths
+        var textureUVNames = new Dictionary<string, string>(16); // UV channel names for textures
+        var textureWrapModes = new Dictionary<string, TextureWrapData>(16); // Wrap modes for textures
         _joints = new Dictionary<string, EggJoint>(32); // Typical joint count
-        
-        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths);
+
+        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, textureUVNames, textureWrapModes);
         RecordTiming("Parse Textures and Vertices");
         DebugLogger.LogEggImporter($"Parsed {vertexPool.Count} vertices and {texturePaths.Count} textures");
         
@@ -345,8 +347,8 @@ public class EggImporter : ScriptedImporter
         
         PopulateJointWeightsFromVertices(vertexPool);
         RecordTiming("Populate Joint Weights");
-        
-        _materials = CreateMaterials(texturePaths, alphaPaths, rootGO);
+
+        _materials = CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO);
         RecordTiming("Create Materials");
         
         // Use optimized material dictionary creation from MaterialHandler
@@ -401,7 +403,7 @@ public class EggImporter : ScriptedImporter
         {
             allMaterialNames.AddRange(geo.materialNames);
         }
-        _materialHandler.CreateMultiTextureMaterials(_materials, allMaterialNames, texturePaths);
+        _materialHandler.CreateMultiTextureMaterials(_materials, allMaterialNames, texturePaths, textureUVNames, textureWrapModes);
         _materialDict = _materialHandler.CreateMaterialDictionary(_materials); // Rebuild dict with new materials
         RecordTiming("Create Multi-Texture Materials");
 
@@ -428,9 +430,24 @@ public class EggImporter : ScriptedImporter
         _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, _parserUtils);
     }
 
+    private void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, string> textureUVNames)
+    {
+        _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, textureUVNames, _parserUtils);
+    }
+
+    private void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, string> textureUVNames, Dictionary<string, TextureWrapData> textureWrapModes)
+    {
+        _geometryProcessor.ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, textureUVNames, textureWrapModes, _parserUtils);
+    }
+
     private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
     {
         return _materialHandler.CreateMaterials(texturePaths, alphaPaths, rootGO);
+    }
+
+    private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO)
+    {
+        return _materialHandler.CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO);
     }
 
     private void CreateMasterVertexBuffer(List<EggVertex> vertexPool)

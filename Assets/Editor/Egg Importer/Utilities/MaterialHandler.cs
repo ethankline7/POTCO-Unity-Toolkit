@@ -25,8 +25,8 @@ public class MaterialHandler
     private static Dictionary<string, Texture2D> _textureCache;
     private static bool _textureCacheInitialized = false;
     
-    // New overload that accepts alpha textures specified by .egg files
-    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
+    // New overload that accepts alpha textures and wrap modes specified by .egg files
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO)
     {
         DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths and {alphaPaths.Count} alpha paths");
         var materials = new List<Material>(texturePaths.Count + 1);
@@ -42,8 +42,17 @@ public class MaterialHandler
             // Check if this material has an alpha texture specified
             string alphaPath = alphaPaths.TryGetValue(materialName, out string alpha) ? alpha : null;
 
+            // Get wrap mode for this texture
+            TextureWrapData wrapData = textureWrapModes.TryGetValue(materialName, out TextureWrapData wrap) ? wrap : new TextureWrapData();
+
             Material mat;
             Texture2D colorTex = FindTextureInProject(texturePath);
+
+            // Ensure texture is set to repeat mode (we control wrap per-material)
+            if (colorTex)
+            {
+                ApplyWrapModeToTexture(colorTex, wrapData);
+            }
 
             Texture2D alphaTex = null;
             if (!string.IsNullOrEmpty(alphaPath))
@@ -94,6 +103,13 @@ public class MaterialHandler
             if (mat.HasProperty(GlossinessPropertyId))
                 mat.SetFloat(GlossinessPropertyId, 0.1f);
 
+            // Don't apply wrap mode in shader - causes stretching artifacts
+            // Let textures use natural UV wrapping (repeat mode)
+            if (mat.HasProperty("_MainTexWrap"))
+            {
+                mat.SetVector("_MainTexWrap", Vector4.zero); // 0 = repeat
+            }
+
             materials.Add(mat);
             createdMaterialNames.Add(materialName);
         }
@@ -119,33 +135,107 @@ public class MaterialHandler
         return materials;
     }
 
-    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths)
+    // Legacy overload without wrap modes
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
+    {
+        var textureWrapModes = new Dictionary<string, TextureWrapData>();
+        return CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO);
+    }
+
+    private void ApplyWrapModeToTexture(Texture2D texture, TextureWrapData wrapData)
+    {
+        // Set texture to repeat by default - we'll control wrap mode per-material via shader
+        texture.wrapMode = TextureWrapMode.Repeat;
+    }
+
+    private Vector4 GetWrapModeVector(TextureWrapData wrapData)
+    {
+        // Convert wrap mode to shader vector: x=wrapU, y=wrapV (0=repeat, 1=clamp)
+        float wrapU = wrapData.wrapU == "clamp" ? 1.0f : 0.0f;
+        float wrapV = wrapData.wrapV == "clamp" ? 1.0f : 0.0f;
+        return new Vector4(wrapU, wrapV, 0, 0);
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths, Dictionary<string, string> textureUVNames)
+    {
+        var textureWrapModes = new Dictionary<string, TextureWrapData>();
+        CreateMultiTextureMaterials(materials, materialNames, texturePaths, textureUVNames, textureWrapModes);
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths, Dictionary<string, string> textureUVNames, Dictionary<string, TextureWrapData> textureWrapModes)
     {
         DebugLogger.LogEggImporter($"[MultiTex] Processing {materialNames.Count} material names for multi-texture support");
+
+        // Track created materials to avoid duplicates
+        var createdMultiTexMaterials = new HashSet<string>();
 
         foreach (string matName in materialNames)
         {
             if (matName.Contains("||"))
             {
-                // Multi-texture material like "island_wild_palette_3cmla_1||pir_t_are_isl_multi_dirtRock"
+                // Skip if already created
+                if (createdMultiTexMaterials.Contains(matName))
+                {
+                    DebugLogger.LogEggImporter($"[MultiTex] Skipping duplicate material: {matName}");
+                    continue;
+                }
+
+                // Multi-texture material like "volcano_palette_3cmla_1||sand"
                 var texNames = matName.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries);
 
                 if (texNames.Length >= 2)
                 {
                     DebugLogger.LogEggImporter($"[MultiTex] Creating multi-texture material: {matName}");
 
-                    // Load textures
-                    Texture2D baseTex = null;
-                    Texture2D overlayTex = null;
+                    // Detect if we need to swap based on uv-name presence
+                    string firstTexName = texNames[0];
+                    string secondTexName = texNames[1];
 
-                    if (texturePaths.TryGetValue(texNames[0], out string basePath))
+                    bool firstHasUVName = textureUVNames.ContainsKey(firstTexName);
+                    bool secondHasUVName = textureUVNames.ContainsKey(secondTexName);
+
+                    // In Panda3D EGG format: if a texture declares uv-name, it wants named UV channel (UV1)
+                    // If no uv-name declared, it wants default UV channel (UV0)
+                    // This is true regardless of whether the uv-name matches vertex UV channel names
+                    bool firstNeedsUV1 = firstHasUVName;
+                    bool secondNeedsUV1 = secondHasUVName;
+
+                    // Shader has: _MainTex→UV0, _BlendTex→UV1
+                    // Swap if: first needs UV1 (give first TRef priority for its preferred UV channel)
+                    // When both need UV1, first gets UV1 (_BlendTex), second gets UV0 (_MainTex)
+                    bool needsSwap = firstNeedsUV1;
+
+                    string firstUVNameValue = firstHasUVName ? textureUVNames[firstTexName] : "none";
+                    string secondUVNameValue = secondHasUVName ? textureUVNames[secondTexName] : "none";
+
+                    DebugLogger.LogEggImporter($"[MultiTex] First TRef '{firstTexName}' uv-name={firstUVNameValue}, needsUV1={firstNeedsUV1}");
+                    DebugLogger.LogEggImporter($"[MultiTex] Second TRef '{secondTexName}' uv-name={secondUVNameValue}, needsUV1={secondNeedsUV1}");
+                    DebugLogger.LogEggImporter($"[MultiTex] Needs swap: {needsSwap}");
+
+                    // Load textures
+                    Texture2D mainTex = null;
+                    Texture2D blendTex = null;
+
+                    if (texturePaths.TryGetValue(firstTexName, out string firstPath))
                     {
-                        baseTex = FindTextureInProject(basePath);
+                        Texture2D firstTex = FindTextureInProject(firstPath);
+                        if (firstTex) ApplyWrapModeToTexture(firstTex, new TextureWrapData());
+
+                        if (needsSwap)
+                            blendTex = firstTex;  // First needs UV1, so goes to _BlendTex
+                        else
+                            mainTex = firstTex;   // First needs UV0, so goes to _MainTex
                     }
 
-                    if (texNames.Length > 1 && texturePaths.TryGetValue(texNames[1], out string overlayPath))
+                    if (texturePaths.TryGetValue(secondTexName, out string secondPath))
                     {
-                        overlayTex = FindTextureInProject(overlayPath);
+                        Texture2D secondTex = FindTextureInProject(secondPath);
+                        if (secondTex) ApplyWrapModeToTexture(secondTex, new TextureWrapData());
+
+                        if (needsSwap)
+                            mainTex = secondTex;  // Second needs UV0, so goes to _MainTex
+                        else
+                            blendTex = secondTex; // Second needs UV1, so goes to _BlendTex
                     }
 
                     // Create material with VertexColorTexture shader
@@ -153,23 +243,48 @@ public class MaterialHandler
 
                     Material mat = new Material(shader) { name = matName };
 
-                    if (baseTex)
+                    if (mainTex)
                     {
-                        mat.SetTexture("_MainTex", baseTex);
-                        DebugLogger.LogEggImporter($"[MultiTex] Set base texture: {baseTex.name}");
+                        mat.SetTexture("_MainTex", mainTex);
+                        DebugLogger.LogEggImporter($"[MultiTex] Set _MainTex: {mainTex.name} (samples UV0)");
                     }
 
-                    if (overlayTex)
+                    if (blendTex)
                     {
-                        mat.SetTexture("_BlendTex", overlayTex);
-                        DebugLogger.LogEggImporter($"[MultiTex] Set blend texture: {overlayTex.name}");
+                        mat.SetTexture("_BlendTex", blendTex);
+                        DebugLogger.LogEggImporter($"[MultiTex] Set _BlendTex: {blendTex.name} (samples UV1)");
                     }
+
+                    // Shader uses: _MainTex → UV0, _BlendTex → UV1
+                    // We've assigned textures to match their UV requirements
+                    mat.SetFloat("_SwapUVChannels", 0.0f);
+                    mat.DisableKeyword("SWAP_UV_CHANNELS");
+
+                    // For multi-texture materials, let UVs work naturally
+                    if (mat.HasProperty("_MainTexWrap"))
+                    {
+                        mat.SetVector("_MainTexWrap", Vector4.zero); // 0 = repeat for both
+                    }
+
+                    if (mat.HasProperty("_BlendTexWrap"))
+                    {
+                        mat.SetVector("_BlendTexWrap", Vector4.zero); // 0 = repeat for both
+                    }
+
+                    DebugLogger.LogEggImporter($"[WrapMode] Multi-texture material using natural UV wrapping");
 
                     mat.SetColor("_Color", Color.white);
                     materials.Add(mat);
+                    createdMultiTexMaterials.Add(matName);
                 }
             }
         }
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths)
+    {
+        var textureUVNames = new Dictionary<string, string>();
+        CreateMultiTextureMaterials(materials, materialNames, texturePaths, textureUVNames);
     }
 
     // Legacy overload for backward compatibility

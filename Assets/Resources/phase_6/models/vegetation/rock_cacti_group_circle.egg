@@ -14,7 +14,7 @@
   <Scalar> envtype { modulate }
 }
 <Texture> vege_fern_bush_palette_3cmla_1 {
-  "phase_3/maps/vege_fern_bush_palette_3cmla_1.jpg"
+  "phase_6/maps/vege_fern_bush_palette_3cmla_1.jpg"
   <Scalar> format { rgb }
   <Scalar> wrapu { clamp }
   <Scalar> wrapv { clamp }

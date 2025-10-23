@@ -8,6 +8,9 @@ Shader "EggImporter/VertexColorTexture"
         _Color ("Color", Color) = (1,1,1,1)
         _Cutoff ("Alpha Cutoff", Range(0,1)) = 0.1
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
+        _SwapUVChannels ("Swap UV Channels", Float) = 0
+        _MainTexWrap ("Main Tex Wrap", Vector) = (0,0,0,0)  // x=wrapU, y=wrapV (0=repeat, 1=clamp)
+        _BlendTexWrap ("Blend Tex Wrap", Vector) = (0,0,0,0)
     }
     SubShader
     {
@@ -16,12 +19,16 @@ Shader "EggImporter/VertexColorTexture"
         
         CGPROGRAM
         #pragma surface surf BrightLambert vertex:vert alphatest:_Cutoff
+        #pragma shader_feature SWAP_UV_CHANNELS
         #include "UnityCG.cginc"
 
         sampler2D _MainTex;
         sampler2D _BlendTex;
         sampler2D _AlphaTex;
         fixed4 _Color;
+        float _SwapUVChannels;
+        float4 _MainTexWrap;
+        float4 _BlendTexWrap;
 
         struct Input
         {
@@ -30,11 +37,30 @@ Shader "EggImporter/VertexColorTexture"
             fixed4 color : COLOR;
         };
 
+        // Manual UV wrap/clamp function
+        float2 ApplyWrapMode(float2 uv, float2 wrapMode)
+        {
+            float2 result = uv;
+            // wrapMode.x = wrapU (0=repeat, 1=clamp)
+            // wrapMode.y = wrapV (0=repeat, 1=clamp)
+
+            // If clamp mode (1), saturate to 0-1 range
+            if (wrapMode.x > 0.5) result.x = saturate(result.x);
+            if (wrapMode.y > 0.5) result.y = saturate(result.y);
+
+            return result;
+        }
+
         void vert(inout appdata_full v, out Input o)
         {
             UNITY_INITIALIZE_OUTPUT(Input, o);
-            o.uv_MainTex = v.texcoord.xy;
-            o.uv2_BlendTex = v.texcoord1.xy;
+
+            // Simple UV assignment matching TRef order:
+            // _MainTex uses UV0 (first TRef)
+            // _BlendTex uses UV1 (second TRef)
+            o.uv_MainTex = v.texcoord.xy;    // UV0 for main texture
+            o.uv2_BlendTex = v.texcoord1.xy; // UV1 for blend texture
+
             o.color = v.color;
         }
 
@@ -54,11 +80,15 @@ Shader "EggImporter/VertexColorTexture"
 
         void surf(Input IN, inout SurfaceOutput o)
         {
+            // Apply wrap modes to UVs
+            float2 mainUV = ApplyWrapMode(IN.uv_MainTex, _MainTexWrap.xy);
+            float2 blendUV = ApplyWrapMode(IN.uv2_BlendTex, _BlendTexWrap.xy);
+
             // Sample main texture
-            fixed4 texColor = tex2D(_MainTex, IN.uv_MainTex);
+            fixed4 texColor = tex2D(_MainTex, mainUV);
 
             // Sample blend texture with UV2
-            fixed4 blendColor = tex2D(_BlendTex, IN.uv2_BlendTex);
+            fixed4 blendColor = tex2D(_BlendTex, blendUV);
 
             // If blend texture is assigned (not white), multiply it with base texture
             if (blendColor.r < 0.99 || blendColor.g < 0.99 || blendColor.b < 0.99)

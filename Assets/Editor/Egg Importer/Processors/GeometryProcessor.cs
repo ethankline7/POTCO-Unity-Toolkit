@@ -8,6 +8,12 @@ using System.Linq;
 using System.Text;
 using POTCO.Editor;
 
+public class TextureWrapData
+{
+    public string wrapU = "repeat";
+    public string wrapV = "repeat";
+}
+
 public class GeometryProcessor
 {
     private ParserUtilities _parserUtils;
@@ -470,9 +476,23 @@ public class GeometryProcessor
 
     public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, ParserUtilities parserUtils)
     {
+        // Use the overload that captures UV names
+        var textureUVNames = new Dictionary<string, string>();
+        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, textureUVNames, parserUtils);
+    }
+
+    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, string> textureUVNames, ParserUtilities parserUtils)
+    {
+        // Use the overload that captures wrap modes
+        var textureWrapModes = new Dictionary<string, TextureWrapData>();
+        ParseAllTexturesAndVertices(lines, vertexPool, texturePaths, alphaPaths, textureUVNames, textureWrapModes, parserUtils);
+    }
+
+    public void ParseAllTexturesAndVertices(string[] lines, List<EggVertex> vertexPool, Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, string> textureUVNames, Dictionary<string, TextureWrapData> textureWrapModes, ParserUtilities parserUtils)
+    {
         // Track current vertex pool context for proper vertex association
         string currentVertexPoolName = "";
-        
+
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
@@ -493,12 +513,21 @@ public class GeometryProcessor
                 {
                     string texName = parts[1];
                     int blockEnd = parserUtils.FindMatchingBrace(lines, i);
+
+                    // Check if this texture was already defined (first definition wins)
+                    bool isFirstDefinition = !texturePaths.ContainsKey(texName);
+
+                    var wrapData = new TextureWrapData();
+
                     for (int j = i + 1; j < blockEnd; j++)
                     {
                         string innerLine = lines[j].Trim();
-                        if (innerLine.StartsWith("\"") && innerLine.EndsWith("\"")) 
-                        { 
-                            texturePaths[texName] = innerLine.Trim('"'); 
+                        if (innerLine.StartsWith("\"") && innerLine.EndsWith("\""))
+                        {
+                            if (isFirstDefinition)
+                            {
+                                texturePaths[texName] = innerLine.Trim('"');
+                            }
                         }
                         else if (innerLine.StartsWith("<Scalar> alpha-file"))
                         {
@@ -508,10 +537,63 @@ public class GeometryProcessor
                             if (startQuote >= 0 && endQuote > startQuote)
                             {
                                 string alphaPath = innerLine.Substring(startQuote + 1, endQuote - startQuote - 1);
-                                alphaPaths[texName] = alphaPath;
-                                DebugLogger.LogEggImporter($"[AlphaParse] Found alpha-file for {texName}: {alphaPath}");
+                                if (isFirstDefinition)
+                                {
+                                    alphaPaths[texName] = alphaPath;
+                                    DebugLogger.LogEggImporter($"[AlphaParse] Found alpha-file for {texName}: {alphaPath}");
+                                }
                             }
                         }
+                        else if (innerLine.StartsWith("<Scalar> uv-name"))
+                        {
+                            // Extract UV channel name from: <Scalar> uv-name { uvNoise }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace >= 0 && closeBrace > openBrace)
+                            {
+                                string uvName = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
+                                if (isFirstDefinition)
+                                {
+                                    textureUVNames[texName] = uvName;
+                                    DebugLogger.LogEggImporter($"[UVName] Texture '{texName}' uses UV channel: {uvName}");
+                                }
+                            }
+                        }
+                        else if (innerLine.StartsWith("<Scalar> wrapu"))
+                        {
+                            // Extract wrap mode: <Scalar> wrapu { clamp } or { repeat }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace >= 0 && closeBrace > openBrace)
+                            {
+                                string wrapMode = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
+                                wrapData.wrapU = wrapMode;
+                            }
+                        }
+                        else if (innerLine.StartsWith("<Scalar> wrapv"))
+                        {
+                            // Extract wrap mode: <Scalar> wrapv { clamp } or { repeat }
+                            int openBrace = innerLine.IndexOf('{');
+                            int closeBrace = innerLine.LastIndexOf('}');
+                            if (openBrace >= 0 && closeBrace > openBrace)
+                            {
+                                string wrapMode = innerLine.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
+                                wrapData.wrapV = wrapMode;
+                            }
+                        }
+                    }
+
+                    if (isFirstDefinition)
+                    {
+                        textureWrapModes[texName] = wrapData;
+                    }
+                    else
+                    {
+                        DebugLogger.LogEggImporter($"[TextureDuplicate] Ignoring duplicate definition of texture '{texName}'");
+                    }
+                    if (wrapData.wrapU != "repeat" || wrapData.wrapV != "repeat")
+                    {
+                        DebugLogger.LogEggImporter($"[WrapMode] Texture '{texName}': wrapU={wrapData.wrapU}, wrapV={wrapData.wrapV}");
                     }
                 }
             }

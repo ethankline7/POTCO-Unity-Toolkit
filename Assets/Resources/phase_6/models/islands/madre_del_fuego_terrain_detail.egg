@@ -4,7 +4,7 @@
   "bam2egg 'C:\Users\Krent\Desktop\poc-resources-master\resources\phase_5\models\islands\madre_del_fuego_terrain_detail.bam' 'C:\Users\Krent\Desktop\poc-resources-master\eggs\phase_5\models\islands\madre_del_fuego_terrain_detail.egg'"
 }
 <Texture> volcano_palette_3cmla_1 {
-  "phase_5/maps/volcano_palette_3cmla_1.jpg"
+  "phase_6/maps/volcano_palette_3cmla_1.jpg"
   <Scalar> format { rgb }
   <Scalar> wrapu { clamp }
   <Scalar> wrapv { clamp }
@@ -14,7 +14,7 @@
   <Scalar> uv-name { uvSet }
 }
 <Texture> madre_cliff {
-  "phase_5/maps/madre_cliff.jpg"
+  "phase_6/maps/madre_cliff.jpg"
   <Scalar> format { rgb }
   <Scalar> wrapu { repeat }
   <Scalar> wrapv { repeat }
@@ -23,7 +23,7 @@
   <Scalar> envtype { modulate }
 }
 <Texture> madre_cave_lavarock_B {
-  "phase_5/maps/madre_cave_lavarock_B.jpg"
+  "phase_6/maps/madre_cave_lavarock_B.jpg"
   <Scalar> format { rgb }
   <Scalar> wrapu { repeat }
   <Scalar> wrapv { repeat }
