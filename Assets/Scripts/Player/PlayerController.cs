@@ -134,6 +134,13 @@ namespace Player
 
             // Setup ground check
             SetupGroundCheck();
+
+            // Auto-add FreeCameraToggle component
+            if (GetComponent<FreeCameraToggle>() == null)
+            {
+                FreeCameraToggle freeCamToggle = gameObject.AddComponent<FreeCameraToggle>();
+                Debug.Log("✅ FreeCameraToggle component added automatically - Press Tab to toggle free camera");
+            }
         }
 
         private void Update()

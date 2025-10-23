@@ -4384,7 +4384,7 @@ objectStruct = {
                     'Pos': Point3(-1237.103, -2927.728, 193.775),
                     'Scale': VBase3(1.0, 1.0, 1.0),
                     'Visual': {
-                        'Model': 'models/buildings/fort_charles'
+                        'Model': 'models/buildings/old_fort'
                     }
                 },
                 '1155332445.21dzlu': {

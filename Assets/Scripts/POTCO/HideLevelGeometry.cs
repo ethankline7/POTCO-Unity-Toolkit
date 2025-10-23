@@ -5,7 +5,8 @@ namespace POTCO
     /// <summary>
     /// Hides level geometry and map objects on play
     /// - pir_m_prp_lev_* objects: Hide mesh, keep collisions
-    /// - minimap/smiley objects: Hide completely (disable GameObject)
+    /// - *_barrier* objects: Hide mesh, keep collisions
+    /// - minimap/smiley/water_alpha/water_color objects: Hide completely (disable GameObject)
     /// - Any mesh with no material: Hide mesh, keep collisions
     /// </summary>
     public class HideLevelGeometry : MonoBehaviour
@@ -15,6 +16,7 @@ namespace POTCO
         [SerializeField] private int mapObjectsHidden = 0;
         [SerializeField] private int renderersDisabled = 0;
         [SerializeField] private int noMaterialMeshesHidden = 0;
+        [SerializeField] private int barrierMeshesHidden = 0;
 
         public void HideObjects()
         {
@@ -22,6 +24,7 @@ namespace POTCO
             mapObjectsHidden = 0;
             renderersDisabled = 0;
             noMaterialMeshesHidden = 0;
+            barrierMeshesHidden = 0;
 
             Debug.Log("[HideLevelGeometry] Starting hide process...");
 
@@ -31,6 +34,7 @@ namespace POTCO
             int scannedCount = 0;
             int levelGeometryFound = 0;
             int mapObjectsFound = 0;
+            int barrierObjectsFound = 0;
 
             foreach (GameObject obj in allObjects)
             {
@@ -48,15 +52,24 @@ namespace POTCO
                     HideMeshOnly(obj);
                     levelGeometryHidden++;
                 }
-                // Category 2: minimap/smiley objects (hide completely)
-                else if (objName.Contains("minimap") || objName.Contains("smiley"))
+                // Category 2: _barrier objects (hide mesh, keep collisions)
+                else if (objName.Contains("_barrier"))
+                {
+                    barrierObjectsFound++;
+                    Debug.Log($"[HideLevelGeometry] Found barrier object: {obj.name} at path: {GetGameObjectPath(obj)}");
+                    HideMeshOnly(obj);
+                    barrierMeshesHidden++;
+                }
+                // Category 3: minimap/smiley/water objects (hide completely)
+                else if (objName.Contains("minimap") || objName.Contains("smiley") ||
+                         objName.Contains("water_alpha") || objName.Contains("water_color"))
                 {
                     mapObjectsFound++;
-                    Debug.Log($"[HideLevelGeometry] Found map object: {obj.name}");
+                    Debug.Log($"[HideLevelGeometry] Found map/water object: {obj.name}");
                     obj.SetActive(false);
                     mapObjectsHidden++;
                 }
-                // Category 3: Any mesh with no material (hide mesh only)
+                // Category 4: Any mesh with no material (hide mesh only)
                 else
                 {
                     Renderer renderer = obj.GetComponent<Renderer>();
@@ -82,12 +95,14 @@ namespace POTCO
 
             Debug.Log($"[HideLevelGeometry] Search results:");
             Debug.Log($"  - Level geometry found: {levelGeometryFound}");
-            Debug.Log($"  - Map objects found: {mapObjectsFound}");
+            Debug.Log($"  - Barrier objects found: {barrierObjectsFound}");
+            Debug.Log($"  - Map/water objects found: {mapObjectsFound}");
 
             Debug.Log($"[HideLevelGeometry] COMPLETE:");
             Debug.Log($"  - Scanned: {scannedCount} scene objects");
             Debug.Log($"  - Level geometry hidden: {levelGeometryHidden} objects ({renderersDisabled} renderers)");
-            Debug.Log($"  - Map objects disabled: {mapObjectsHidden} objects");
+            Debug.Log($"  - Barrier meshes hidden: {barrierMeshesHidden} objects (collisions kept)");
+            Debug.Log($"  - Map/water objects disabled: {mapObjectsHidden} objects (completely hidden)");
             Debug.Log($"  - Meshes with no material hidden: {noMaterialMeshesHidden} objects");
         }
 

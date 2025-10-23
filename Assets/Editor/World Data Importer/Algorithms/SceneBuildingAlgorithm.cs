@@ -30,6 +30,7 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> holidayObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
+            HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
 
             for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
@@ -134,7 +135,7 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     // Mark collision objects for deletion if collisions are disabled
-                    if (settings != null && !settings.importCollisions && 
+                    if (settings != null && !settings.importCollisions &&
                         key == "Type" && !string.IsNullOrEmpty(val))
                     {
                         string objectType = ParsingUtilities.ExtractStringValue(val);
@@ -145,6 +146,22 @@ namespace WorldDataImporter.Algorithms
                             {
                                 DebugLogger.LogWorldImporter($"🚧 Marking collision object for deletion: {currentGO.name} (Type: {objectType})");
                                 collisionObjectsToDelete.Add(currentGO);
+                            }
+                        }
+                    }
+
+                    // Mark Island Game Area and Connector Tunnel objects for deletion if skipGameAreasAndTunnels is enabled
+                    if (settings != null && settings.skipGameAreasAndTunnels &&
+                        key == "Type" && !string.IsNullOrEmpty(val))
+                    {
+                        string objectType = ParsingUtilities.ExtractStringValue(val);
+                        if (objectType == "Island Game Area" || objectType == "Connector Tunnel")
+                        {
+                            // Mark this game area/tunnel object for deletion after parsing is complete
+                            if (currentGO != root)
+                            {
+                                DebugLogger.LogWorldImporter($"🚫 Marking game area/tunnel for deletion: {currentGO.name} (Type: {objectType})");
+                                gameAreaObjectsToDelete.Add(currentGO);
                             }
                         }
                     }
@@ -217,6 +234,19 @@ namespace WorldDataImporter.Algorithms
                 }
             }
 
+            // Clean up game area and connector tunnel objects after parsing is complete
+            if (gameAreaObjectsToDelete.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🚫 Cleaning up {gameAreaObjectsToDelete.Count} game area/tunnel objects...");
+                foreach (var gameAreaObj in gameAreaObjectsToDelete)
+                {
+                    if (gameAreaObj != null)
+                    {
+                        Object.DestroyImmediate(gameAreaObj);
+                    }
+                }
+            }
+
             stats.importTime = (float)(System.DateTime.Now - startTime).TotalSeconds;
             LogImportStatistics(stats, path);
             DebugLogger.LogWorldImporter($"✅ Scene built successfully in {stats.importTime:F2} seconds.");
@@ -252,6 +282,7 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> holidayObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
+            HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
 
             int objectsCreated = 0;
@@ -365,7 +396,7 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     // Mark collision objects for deletion if collisions are disabled
-                    if (settings != null && !settings.importCollisions && 
+                    if (settings != null && !settings.importCollisions &&
                         key == "Type" && !string.IsNullOrEmpty(val))
                     {
                         string objectType = ParsingUtilities.ExtractStringValue(val);
@@ -378,7 +409,23 @@ namespace WorldDataImporter.Algorithms
                             }
                         }
                     }
-                    
+
+                    // Mark Island Game Area and Connector Tunnel objects for deletion if skipGameAreasAndTunnels is enabled
+                    if (settings != null && settings.skipGameAreasAndTunnels &&
+                        key == "Type" && !string.IsNullOrEmpty(val))
+                    {
+                        string objectType = ParsingUtilities.ExtractStringValue(val);
+                        if (objectType == "Island Game Area" || objectType == "Connector Tunnel")
+                        {
+                            // Mark this game area/tunnel object for deletion after parsing is complete
+                            if (currentGO != root)
+                            {
+                                DebugLogger.LogWorldImporter($"🚫 Marking game area/tunnel for deletion: {currentGO.name} (Type: {objectType})");
+                                gameAreaObjectsToDelete.Add(currentGO);
+                            }
+                        }
+                    }
+
                     PropertyProcessor.ProcessProperty(key, val, currentGO, root, useEgg, currentData, stats, settings);
 
                     // Check if NPC is ready for spawning after property processing
@@ -447,7 +494,20 @@ namespace WorldDataImporter.Algorithms
                     }
                 }
             }
-            
+
+            // Clean up game area and connector tunnel objects after parsing is complete
+            if (gameAreaObjectsToDelete.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🚫 Cleaning up {gameAreaObjectsToDelete.Count} game area/tunnel objects...");
+                foreach (var gameAreaObj in gameAreaObjectsToDelete)
+                {
+                    if (gameAreaObj != null)
+                    {
+                        Object.DestroyImmediate(gameAreaObj);
+                    }
+                }
+            }
+
             stats.importTime = (float)(System.DateTime.Now - startTime).TotalSeconds;
             LogImportStatistics(stats, path);
             DebugLogger.LogWorldImporter($"✅ Scene built successfully in {stats.importTime:F2} seconds with delays.");

@@ -19,6 +19,7 @@ namespace WorldDataImporter.Data
         public bool importNodes = false;
         public bool importNPCs = false;
         public bool enableVisZones = false;
+        public bool skipGameAreasAndTunnels = true;
         
         [Header("Filtering Options")]
         public bool importHolidayObjects = true;
