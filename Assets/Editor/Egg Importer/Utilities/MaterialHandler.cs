@@ -203,23 +203,35 @@ public class MaterialHandler
                     bool firstHasUVName = textureUVNames.ContainsKey(firstTexName);
                     bool secondHasUVName = textureUVNames.ContainsKey(secondTexName);
 
-                    // In Panda3D EGG format: if a texture declares uv-name, it wants named UV channel (UV1)
-                    // If no uv-name declared, it wants default UV channel (UV0)
-                    bool firstNeedsUV1 = firstHasUVName;
-                    bool secondNeedsUV1 = secondHasUVName;
+                    // Check wrap modes - palette textures use clamp, tiling textures use repeat
+                    bool firstIsClamp = textureWrapModes.ContainsKey(firstTexName) &&
+                        (textureWrapModes[firstTexName].wrapU == "clamp" || textureWrapModes[firstTexName].wrapV == "clamp");
+                    bool secondIsClamp = textureWrapModes.ContainsKey(secondTexName) &&
+                        (textureWrapModes[secondTexName].wrapU == "clamp" || textureWrapModes[secondTexName].wrapV == "clamp");
 
                     // Shader has: _MainTex→UV0, _BlendTex→UV1
-                    // Swap logic:
-                    // - If both have uv-names OR both don't: keep TRef order (first→Main, second→Blend)
-                    // - If only first has uv-name: swap (first needs UV1→Blend, second needs UV0→Main)
-                    // - If only second has uv-name: don't swap (first needs UV0→Main, second needs UV1→Blend)
-                    bool needsSwap = firstNeedsUV1 && !secondNeedsUV1;
+                    // Smart swap logic using wrap modes as hint:
+                    // Clamp textures (palettes) typically use named UVs (UV1), repeat textures use primary UVs (UV0)
+                    bool needsSwap;
+                    if (firstHasUVName && secondHasUVName)
+                    {
+                        // Both have uv-names: use wrap mode to determine assignment
+                        // If first is clamp (palette), it should go to BlendTex/UV1 (swap=true)
+                        // If second is clamp (palette), it should go to BlendTex/UV1 (swap=false)
+                        needsSwap = firstIsClamp;
+                        DebugLogger.LogEggImporter($"[MultiTex] Both have uv-names, using wrap mode: first clamp={firstIsClamp}, second clamp={secondIsClamp}, swap={needsSwap}");
+                    }
+                    else
+                    {
+                        // Standard logic: swap if only first needs UV1
+                        needsSwap = firstHasUVName && !secondHasUVName;
+                    }
 
                     string firstUVNameValue = firstHasUVName ? textureUVNames[firstTexName] : "none";
                     string secondUVNameValue = secondHasUVName ? textureUVNames[secondTexName] : "none";
 
-                    DebugLogger.LogEggImporter($"[MultiTex] First TRef '{firstTexName}' uv-name={firstUVNameValue}, needsUV1={firstNeedsUV1}");
-                    DebugLogger.LogEggImporter($"[MultiTex] Second TRef '{secondTexName}' uv-name={secondUVNameValue}, needsUV1={secondNeedsUV1}");
+                    DebugLogger.LogEggImporter($"[MultiTex] First TRef '{firstTexName}' uv-name={firstUVNameValue}, hasUVName={firstHasUVName}, clamp={firstIsClamp}");
+                    DebugLogger.LogEggImporter($"[MultiTex] Second TRef '{secondTexName}' uv-name={secondUVNameValue}, hasUVName={secondHasUVName}, clamp={secondIsClamp}");
                     DebugLogger.LogEggImporter($"[MultiTex] Needs swap: {needsSwap}");
 
                     // Load textures
