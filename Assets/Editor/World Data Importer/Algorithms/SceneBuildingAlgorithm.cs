@@ -51,29 +51,30 @@ namespace WorldDataImporter.Algorithms
                 if (ParsingUtilities.IsObjectId(line, out string currentId))
                 {
                     var newGO = new GameObject(currentId);
-                    var newData = new ObjectData 
-                    { 
-                        id = currentId, 
-                        gameObject = newGO, 
-                        indent = indent 
+                    var newData = new ObjectData
+                    {
+                        id = currentId,
+                        gameObject = newGO,
+                        indent = indent
                     };
-                    
+
                     // Add ObjectListInfo component to store metadata only if ImportObjectListData is enabled
                     if (settings != null && settings.importObjectListData)
                     {
                         var typeInfo = Undo.AddComponent<ObjectListInfo>(newGO);
                         typeInfo.objectId = currentId;
                     }
-                    
+
                     createdObjects[currentId] = newGO;
                     objectDataMap[currentId] = newData;
                     stats.totalObjects++;
 
-                    if (currentGO != null) 
+
+                    if (currentGO != null)
                     {
                         newGO.transform.SetParent(currentGO.transform, false);
                     }
-                    else 
+                    else
                     {
                         root = newGO;
                         rootData = newData;
@@ -85,8 +86,21 @@ namespace WorldDataImporter.Algorithms
 
                 if (ParsingUtilities.IsProperty(line, out string key, out string val) && currentGO != null)
                 {
+                    // Handle multi-line properties (value on next line)
+                    if (string.IsNullOrWhiteSpace(val) && lineIndex + 1 < lines.Length)
+                    {
+                        string nextLine = lines[lineIndex + 1].Trim();
+                        // Check if next line contains a quoted value
+                        if (nextLine.StartsWith("'") && nextLine.Contains("'"))
+                        {
+                            val = nextLine;
+                            lineIndex++; // Skip the next line since we've already processed it
+                            DebugLogger.LogWorldImporter($"📄 Multi-line property detected: {key} = {val}");
+                        }
+                    }
+
                     // Mark holiday objects for deletion after parsing (don't destroy during parsing)
-                    if (settings != null && !settings.importHolidayObjects && 
+                    if (settings != null && !settings.importHolidayObjects &&
                         key == "Holiday" && !string.IsNullOrEmpty(val))
                     {
                         string holiday = ParsingUtilities.ExtractStringValue(val);
@@ -279,11 +293,11 @@ namespace WorldDataImporter.Algorithms
                     objectDataMap[currentId] = newData;
                     stats.totalObjects++;
 
-                    if (currentGO != null) 
+                    if (currentGO != null)
                     {
                         newGO.transform.SetParent(currentGO.transform, false);
                     }
-                    else 
+                    else
                     {
                         root = newGO;
                         rootData = newData;
@@ -291,20 +305,33 @@ namespace WorldDataImporter.Algorithms
 
                     parentStack.Push((newGO, newData, indent));
                     objectsCreated++;
-                    
+
                     // Add delay after creating objects (but not after every line parse)
                     if (settings != null && settings.useGenerationDelay && objectsCreated % 5 == 0) // Every 5 objects
                     {
                         yield return new WaitForSeconds(settings.delayBetweenObjects);
                     }
-                    
+
                     continue;
                 }
 
                 if (ParsingUtilities.IsProperty(line, out string key, out string val) && currentGO != null)
                 {
+                    // Handle multi-line properties (value on next line)
+                    if (string.IsNullOrWhiteSpace(val) && lineIndex + 1 < lines.Length)
+                    {
+                        string nextLine = lines[lineIndex + 1].Trim();
+                        // Check if next line contains a quoted value
+                        if (nextLine.StartsWith("'") && nextLine.Contains("'"))
+                        {
+                            val = nextLine;
+                            lineIndex++; // Skip the next line since we've already processed it
+                            DebugLogger.LogWorldImporter($"📄 Multi-line property detected: {key} = {val}");
+                        }
+                    }
+
                     // Mark holiday objects for deletion after parsing (don't destroy during parsing)
-                    if (settings != null && !settings.importHolidayObjects && 
+                    if (settings != null && !settings.importHolidayObjects &&
                         key == "Holiday" && !string.IsNullOrEmpty(val))
                     {
                         string holiday = ParsingUtilities.ExtractStringValue(val);
