@@ -32,21 +32,13 @@ namespace WorldDataImporter.Utilities
                 assetToInstantiate = AssetDatabase.LoadAssetAtPath<GameObject>(attemptPath);
                 if (assetToInstantiate != null)
                 {
-                    GameObject instance;
-                    if (useEgg)
-                    {
-                        // For .egg files, instantiate the imported GameObject
-                        instance = Object.Instantiate(assetToInstantiate);
-                    }
-                    else
-                    {
-                        // For .prefab files, use PrefabUtility to maintain prefab connection
-                        instance = (GameObject)PrefabUtility.InstantiatePrefab(assetToInstantiate);
-                    }
-                    
+                    // Use PrefabUtility for both .egg and .prefab files to maintain asset connection
+                    // This ensures meshes update properly when .egg files are reimported
+                    GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(assetToInstantiate);
+
                     instance.name = assetToInstantiate.name;
                     instance.transform.SetParent(parentGO.transform, false);
-                    
+
                     if (stats != null) stats.successfulImports++;
                     return instance;
                 }

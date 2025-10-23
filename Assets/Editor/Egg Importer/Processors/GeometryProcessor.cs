@@ -29,6 +29,11 @@ public class GeometryProcessor
     // Store current asset path for context-aware LOD filtering
     private string _currentAssetPath = "";
 
+    // Cache for best available LOD distance to avoid repeated file scans
+    private float? _bestAvailableLODDistance = null;
+    private string[] _cachedLinesForLOD = null;
+    private int _bestNamedLODQuality = -2; // -2 = uninitialized, -1 = no named LODs found
+
     public GeometryProcessor()
     {
         _parserUtils = new ParserUtilities();
@@ -38,6 +43,13 @@ public class GeometryProcessor
     public void SetCurrentAssetPath(string assetPath)
     {
         _currentAssetPath = assetPath;
+    }
+
+    public void ClearLODCache()
+    {
+        _bestAvailableLODDistance = null;
+        _cachedLinesForLOD = null;
+        _bestNamedLODQuality = -2; // Reset for new file
     }
 
     public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx,
@@ -674,8 +686,9 @@ public class GeometryProcessor
     {
         string polygonTextureRef = "Default-Material";
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
+        bool hasAlphaBlend = false;
 
-        // Check for collision tags at polygon level OR if we're in a collision group
+        // Check for collision tags and alpha blend at polygon level
         bool isCollisionPolygon = isInCollisionGroup;
         if (!isCollisionPolygon)
         {
@@ -685,7 +698,11 @@ public class GeometryProcessor
                 if (innerLine.StartsWith("<Collide>"))
                 {
                     isCollisionPolygon = true;
-                    break;
+                }
+                else if (innerLine.StartsWith("<Scalar> alpha") && innerLine.Contains("blend"))
+                {
+                    hasAlphaBlend = true;
+                    DebugLogger.LogEggImporter($"[AlphaBlend] Polygon uses alpha blending");
                 }
             }
         }
@@ -743,6 +760,12 @@ public class GeometryProcessor
                 polygonTextureRef = textureRefs[0];
             }
             // else keep "Default-Material"
+        }
+
+        // Append alpha blend marker if needed
+        if (hasAlphaBlend && polygonTextureRef != "Collision-Material")
+        {
+            polygonTextureRef += "_ALPHABLEND";
         }
 
         if (!subMeshes.ContainsKey(polygonTextureRef)) { subMeshes[polygonTextureRef] = new List<int>(); materialNames.Add(polygonTextureRef); }
@@ -908,7 +931,7 @@ public class GeometryProcessor
                 }
 
                 // Check if this is a named LOD group and handle according to settings
-                if (EggImporterSettings.Instance.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly && ShouldSkipNamedLODGroup(groupName))
+                if (EggImporterSettings.Instance.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly && ShouldSkipNamedLODGroup(groupName, lines))
                 {
                     DebugLogger.LogEggImporter($"🚫 Skipping named LOD group: '{groupName}' (Highest LOD only enabled)");
                     i = groupEnd + 1;
@@ -916,11 +939,21 @@ public class GeometryProcessor
                 }
                 
                 // Check if this is an LOD group and handle according to settings
-                if (IsLODGroup(lines, i, groupEnd) && !ShouldImportLOD(lines, i, groupEnd, groupName))
+                bool isLODGroup = IsLODGroup(lines, i, groupEnd);
+                if (isLODGroup)
                 {
-                    DebugLogger.LogEggImporter($"🚫 Skipping LOD group: '{groupName}' based on import settings");
-                    i = groupEnd + 1;
-                    continue;
+                    DebugLogger.LogEggImporter($"🔍 Found LOD group: '{groupName}'");
+                    bool shouldImport = ShouldImportLOD(lines, i, groupEnd, groupName);
+                    if (!shouldImport)
+                    {
+                        DebugLogger.LogEggImporter($"🚫 Skipping LOD group: '{groupName}' based on import settings");
+                        i = groupEnd + 1;
+                        continue;
+                    }
+                    else
+                    {
+                        DebugLogger.LogEggImporter($"✅ Importing LOD group: '{groupName}'");
+                    }
                 }
                 
                 string newPath = string.IsNullOrEmpty(currentPath) ? groupName : currentPath + "/" + groupName;
@@ -928,6 +961,11 @@ public class GeometryProcessor
                 GameObject newGO = new GameObject(groupName);
                 newGO.transform.SetParent(hierarchyMap[currentPath], false);
                 hierarchyMap[newPath] = newGO.transform;
+
+                if (isLODGroup)
+                {
+                    DebugLogger.LogEggImporter($"📦 Created LOD group GameObject at path: '{newPath}', now recursing into children...");
+                }
 
                 // Pass collision context down recursively - either from parent context OR if this group is a collision group
                 bool childIsInCollisionContext = isInCollisionContext || isCollisionGroup;
@@ -1295,23 +1333,50 @@ public class GeometryProcessor
     
     private bool IsLODGroup(string[] lines, int groupStart, int groupEnd)
     {
-        // Check if this group contains both <SwitchCondition> and <Distance>
-        bool hasSwitchCondition = false;
+        // Check if this group contains <Distance> tag as a direct child OR inside a direct <SwitchCondition> child
+        // Standard Panda3D LOD pattern: <Group> lod_X { <SwitchCondition> { <Distance> ... } }
         bool hasDistance = false;
-        
+        int depth = 0;
+        bool inDirectSwitchCondition = false;
+
         for (int i = groupStart + 1; i < groupEnd; i++)
         {
             string line = lines[i].Trim();
-            if (line.StartsWith("<SwitchCondition>"))
-                hasSwitchCondition = true;
-            else if (line.StartsWith("<Distance>"))
+
+            // Track nesting depth
+            if (line.StartsWith("<Group>") || line.StartsWith("<Transform>"))
+            {
+                depth++;
+            }
+            else if (line.StartsWith("<SwitchCondition>"))
+            {
+                if (depth == 0)
+                {
+                    inDirectSwitchCondition = true; // Direct child SwitchCondition
+                }
+                depth++;
+            }
+            else if (line == "}")
+            {
+                if (depth > 0)
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        inDirectSwitchCondition = false;
+                    }
+                }
+            }
+
+            // Check Distance tags at depth 0 (direct child) OR inside a direct SwitchCondition
+            if ((depth == 0 || (depth == 1 && inDirectSwitchCondition)) && line.StartsWith("<Distance>"))
+            {
                 hasDistance = true;
-                
-            if (hasSwitchCondition && hasDistance)
-                return true;
+                break;
+            }
         }
-        
-        return false;
+
+        return hasDistance;
     }
     
     private bool ShouldImportLOD(string[] lines, int groupStart, int groupEnd, string groupName)
@@ -1339,9 +1404,10 @@ public class GeometryProcessor
         }
     }
     
-    private bool IsHighestQualityLOD(string[] lines, int groupStart, int groupEnd)
+    private float? GetLODMaxDistance(string[] lines, int groupStart, int groupEnd)
     {
-        // Find the Distance tag and check if the second number is 0
+        // Find the Distance tag and extract the max distance value (first number)
+        // Lower max distance = better quality (closer to camera)
         for (int i = groupStart + 1; i < groupEnd; i++)
         {
             string line = lines[i].Trim();
@@ -1354,19 +1420,102 @@ public class GeometryProcessor
                 {
                     string distanceContent = line.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
                     var parts = distanceContent.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
-                    
-                    if (parts.Length >= 2 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float minDistance))
+
+                    if (parts.Length >= 1 && float.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float maxDistance))
                     {
-                        bool isHighest = minDistance == 0.0f;
-                        DebugLogger.LogEggImporter($"🔍 LOD Distance check - Min distance: {minDistance}, Is highest: {isHighest}");
-                        return isHighest;
+                        return maxDistance;
                     }
                 }
                 break;
             }
         }
-        
-        return false; // Default to not importing if we can't determine
+
+        return null;
+    }
+
+    private float GetBestAvailableLODDistance(string[] lines)
+    {
+        // Use cached value if available and lines array hasn't changed
+        if (_bestAvailableLODDistance.HasValue && _cachedLinesForLOD == lines)
+        {
+            return _bestAvailableLODDistance.Value;
+        }
+
+        // Scan entire file to find the best (lowest) max distance
+        // Lower max distance = better quality (closer to camera)
+        float bestDistance = float.MaxValue;
+        bool foundAnyLOD = false;
+
+        // Simple linear scan looking for <Distance> tags anywhere in the file
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i].Trim();
+            if (line.StartsWith("<Distance>"))
+            {
+                // Parse the distance values: <Distance> { max_distance min_distance <Vertex> { 0 0 0 } }
+                int openBrace = line.IndexOf('{');
+                int closeBrace = line.IndexOf('}');
+                if (openBrace != -1 && closeBrace != -1)
+                {
+                    string distanceContent = line.Substring(openBrace + 1, closeBrace - openBrace - 1).Trim();
+                    var parts = distanceContent.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+
+                    if (parts.Length >= 1 && float.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float maxDistance))
+                    {
+                        foundAnyLOD = true;
+                        if (maxDistance < bestDistance)
+                        {
+                            bestDistance = maxDistance;
+                        }
+                    }
+                }
+            }
+        }
+
+        float result = foundAnyLOD ? bestDistance : 0.0f;
+
+        // Cache the result
+        _bestAvailableLODDistance = result;
+        _cachedLinesForLOD = lines;
+
+        if (foundAnyLOD)
+        {
+            DebugLogger.LogEggImporter($"🎯 Best available LOD max distance in file: {result}");
+        }
+
+        return result;
+    }
+
+    private bool IsHighestQualityLOD(string[] lines, int groupStart, int groupEnd)
+    {
+        float? thisLODDistance = GetLODMaxDistance(lines, groupStart, groupEnd);
+
+        if (!thisLODDistance.HasValue)
+        {
+            // No LOD distance tag found, assume it should be imported
+            DebugLogger.LogEggImporter($"🔍 LOD Distance check - No distance tag found in group, importing by default");
+            return true;
+        }
+
+        // Get the best available LOD distance across the entire file
+        float bestAvailableDistance = GetBestAvailableLODDistance(lines);
+
+        bool isBestAvailable = Math.Abs(thisLODDistance.Value - bestAvailableDistance) < 0.01f;
+
+        // Get group name for better logging
+        string groupName = "unknown";
+        if (groupStart < lines.Length)
+        {
+            string groupLine = lines[groupStart].Trim();
+            if (groupLine.Contains("{"))
+            {
+                groupName = groupLine.Substring(groupLine.IndexOf(' ') + 1, groupLine.IndexOf('{') - groupLine.IndexOf(' ') - 1).Trim();
+            }
+        }
+
+        DebugLogger.LogEggImporter($"🔍 LOD Distance check - Group: '{groupName}', This LOD max distance: {thisLODDistance.Value}, Best available: {bestAvailableDistance}, Is best: {isBestAvailable}");
+
+        return isBestAvailable;
     }
     
     private bool ContainsCollideTag(string[] lines, int groupStart, int groupEnd)
@@ -1542,24 +1691,75 @@ public class GeometryProcessor
         }
     }
 
-    private bool ShouldSkipNamedLODGroup(string groupName)
+    private int GetNamedLODQuality(string groupName)
     {
-        // Handle named LOD groups: lod_high, lod_medium, lod_low, lod_superlow, low_medium, medium_low
+        // Return quality score for named LOD groups (higher = better)
+        // Returns 0 if not a named LOD group
         string lowerGroupName = groupName.ToLower();
 
         if (lowerGroupName == "lod_high" || lowerGroupName == "lod_hi")
+            return 4;
+        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med")
+            return 3;
+        else if (lowerGroupName == "low_medium" || lowerGroupName == "medium_low")
+            return 2;
+        else if (lowerGroupName == "lod_low")
+            return 1;
+        else if (lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super")
+            return 0;
+
+        return -1; // Not a named LOD group
+    }
+
+    private bool ShouldSkipNamedLODGroup(string groupName, string[] lines)
+    {
+        // Get quality of this group
+        int thisQuality = GetNamedLODQuality(groupName);
+
+        // If not a named LOD group, don't skip
+        if (thisQuality == -1)
+            return false;
+
+        // Find the best available named LOD in the file (if we haven't already)
+        if (_bestNamedLODQuality == -2) // -2 means uninitialized
         {
-            return false; // Always import highest quality
-        }
-        else if (lowerGroupName == "lod_medium" || lowerGroupName == "lod_med" ||
-                 lowerGroupName == "lod_low" || lowerGroupName == "lod_superlow" || lowerGroupName == "lod_super" ||
-                 lowerGroupName == "low_medium" || lowerGroupName == "medium_low")
-        {
-            DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}'");
-            return true; // Skip lower quality groups
+            _bestNamedLODQuality = FindBestNamedLODQuality(lines);
         }
 
-        return false; // Not a named LOD group
+        // Import if this is the best available quality
+        if (thisQuality == _bestNamedLODQuality)
+        {
+            DebugLogger.LogEggImporter($"✅ Importing best available named LOD: '{groupName}' (quality: {thisQuality})");
+            return false;
+        }
+        else
+        {
+            DebugLogger.LogEggImporter($"🚫 Skipping lower quality named LOD group: '{groupName}' (quality: {thisQuality}, best: {_bestNamedLODQuality})");
+            return true;
+        }
+    }
+
+    private int FindBestNamedLODQuality(string[] lines)
+    {
+        // Scan the entire file for the best named LOD group
+        int bestQuality = -1;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i].Trim();
+            if (line.StartsWith("<Group>"))
+            {
+                string name = _parserUtils.GetGroupName(line);
+                int quality = GetNamedLODQuality(name);
+                if (quality > bestQuality)
+                {
+                    bestQuality = quality;
+                }
+            }
+        }
+
+        DebugLogger.LogEggImporter($"🎯 Best available named LOD quality: {bestQuality}");
+        return bestQuality;
     }
     
     private Material GetCachedDefaultMaterial(string materialName)

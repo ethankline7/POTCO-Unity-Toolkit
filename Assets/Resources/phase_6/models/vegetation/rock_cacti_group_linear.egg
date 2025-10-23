@@ -4,8 +4,8 @@
   "bam2egg 'C:\Users\Krent\Desktop\Panda3D\Resources-master\phase_6\models\vegetation\rock_cacti_group_linear.bam' 'C:\Users\Krent\Desktop\Panda3D\eggs-with_lods\phase_6\models\vegetation\rock_cacti_group_linear.egg'"
 }
 <Texture> vege_fern_bush_palette_4amla_1 {
-  "phase_3/maps/vege_fern_bush_palette_4amla_1.jpg"
-  <Scalar> alpha-file { "phase_3/maps/vege_fern_bush_palette_4amla_1_a.rgb" }
+  "phase_6/maps/vege_fern_bush_palette_4amla_1.jpg"
+  <Scalar> alpha-file { "phase_6/maps/vege_fern_bush_palette_4amla_1_a.rgb" }
   <Scalar> format { rgba }
   <Scalar> wrapu { clamp }
   <Scalar> wrapv { clamp }
@@ -14,7 +14,7 @@
   <Scalar> envtype { modulate }
 }
 <Texture> vege_fern_bush_palette_3cmla_1 {
-  "phase_3/maps/vege_fern_bush_palette_3cmla_1.jpg"
+  "phase_6/maps/vege_fern_bush_palette_3cmla_1.jpg"
   <Scalar> format { rgb }
   <Scalar> wrapu { clamp }
   <Scalar> wrapv { clamp }
