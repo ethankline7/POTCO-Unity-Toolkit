@@ -205,14 +205,15 @@ public class MaterialHandler
 
                     // In Panda3D EGG format: if a texture declares uv-name, it wants named UV channel (UV1)
                     // If no uv-name declared, it wants default UV channel (UV0)
-                    // This is true regardless of whether the uv-name matches vertex UV channel names
                     bool firstNeedsUV1 = firstHasUVName;
                     bool secondNeedsUV1 = secondHasUVName;
 
                     // Shader has: _MainTex→UV0, _BlendTex→UV1
-                    // Swap if: first needs UV1 (give first TRef priority for its preferred UV channel)
-                    // When both need UV1, first gets UV1 (_BlendTex), second gets UV0 (_MainTex)
-                    bool needsSwap = firstNeedsUV1;
+                    // Swap logic:
+                    // - If both have uv-names OR both don't: keep TRef order (first→Main, second→Blend)
+                    // - If only first has uv-name: swap (first needs UV1→Blend, second needs UV0→Main)
+                    // - If only second has uv-name: don't swap (first needs UV0→Main, second needs UV1→Blend)
+                    bool needsSwap = firstNeedsUV1 && !secondNeedsUV1;
 
                     string firstUVNameValue = firstHasUVName ? textureUVNames[firstTexName] : "none";
                     string secondUVNameValue = secondHasUVName ? textureUVNames[secondTexName] : "none";
@@ -231,9 +232,15 @@ public class MaterialHandler
                         if (firstTex) ApplyWrapModeToTexture(firstTex, new TextureWrapData());
 
                         if (needsSwap)
+                        {
                             blendTex = firstTex;  // First needs UV1, so goes to _BlendTex
+                            DebugLogger.LogEggImporter($"[MultiTex] First texture '{firstTexName}' → _BlendTex (UV1)");
+                        }
                         else
+                        {
                             mainTex = firstTex;   // First needs UV0, so goes to _MainTex
+                            DebugLogger.LogEggImporter($"[MultiTex] First texture '{firstTexName}' → _MainTex (UV0)");
+                        }
                     }
 
                     if (texturePaths.TryGetValue(secondTexName, out string secondPath))
@@ -242,9 +249,15 @@ public class MaterialHandler
                         if (secondTex) ApplyWrapModeToTexture(secondTex, new TextureWrapData());
 
                         if (needsSwap)
+                        {
                             mainTex = secondTex;  // Second needs UV0, so goes to _MainTex
+                            DebugLogger.LogEggImporter($"[MultiTex] Second texture '{secondTexName}' → _MainTex (UV0)");
+                        }
                         else
+                        {
                             blendTex = secondTex; // Second needs UV1, so goes to _BlendTex
+                            DebugLogger.LogEggImporter($"[MultiTex] Second texture '{secondTexName}' → _BlendTex (UV1)");
+                        }
                     }
 
                     // Create material with appropriate shader (transparent if alpha blend needed)
