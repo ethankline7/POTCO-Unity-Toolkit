@@ -22,6 +22,19 @@ namespace POTCO
         [Tooltip("Model prefix for animation names (e.g., 'chicken_hi', 'rooster_hi')")]
         public string animationPrefix = "";
 
+        [Header("Animation Blending")]
+        [Tooltip("Time in seconds to blend from idle to walk animation")]
+        [Range(0.0f, 1.0f)]
+        public float idleToWalkBlendTime = 0.3f;
+
+        [Tooltip("Time in seconds to blend from walk to idle animation")]
+        [Range(0.0f, 1.0f)]
+        public float walkToIdleBlendTime = 0.3f;
+
+        [Tooltip("Default blend time for other animation transitions")]
+        [Range(0.0f, 1.0f)]
+        public float defaultBlendTime = 0.2f;
+
         private Animation animComponent;
         private CharacterController characterController;
         private AnimationStateSequence activeSequence;
@@ -59,6 +72,15 @@ namespace POTCO
             // Get CharacterController from parent (for movement detection)
             characterController = GetComponentInParent<CharacterController>();
 
+            if (characterController != null)
+            {
+                Debug.Log($"🐾 [AnimalAnimationPlayer] Found CharacterController on parent: {characterController.gameObject.name}");
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ [AnimalAnimationPlayer] CharacterController NOT FOUND on {gameObject.name} or parents!");
+            }
+
             // Debug: List all available animations on this component
             Debug.Log($"[AnimalAnimationPlayer] Available animations on {gameObject.name}:");
             foreach (AnimationState state in animComponent)
@@ -79,24 +101,37 @@ namespace POTCO
             bool wasMoving = isMoving;
             if (characterController != null)
             {
-                isMoving = characterController.velocity.magnitude > 0.1f;
+                float velocityMag = characterController.velocity.magnitude;
+                isMoving = velocityMag > 0.1f;
+
+                // Log every 60 frames to avoid spam
+                if (Time.frameCount % 60 == 0)
+                {
+                    Debug.Log($"🐾 [AnimalAnimationPlayer] {gameObject.name} - Velocity: {velocityMag:F3}, IsMoving: {isMoving}");
+                }
+            }
+            else if (Time.frameCount % 120 == 0) // Log less frequently if no controller
+            {
+                Debug.LogWarning($"⚠️ [AnimalAnimationPlayer] {gameObject.name} - CharacterController is NULL, cannot detect movement!");
             }
 
             // Play appropriate animation based on movement
             if (isMoving && !wasMoving)
             {
                 // Started moving - play walk
+                Debug.Log($"🐾 [AnimalAnimationPlayer] {gameObject.name} STARTED MOVING - playing walk");
                 PlayAnimationByName("walk");
             }
             else if (!isMoving && wasMoving)
             {
                 // Stopped moving - play idle
+                Debug.Log($"🐾 [AnimalAnimationPlayer] {gameObject.name} STOPPED MOVING - playing idle");
                 PlayAnimationByName("idle");
             }
         }
 
         /// <summary>
-        /// Play animation by name (e.g., "idle", "walk")
+        /// Play animation by name (e.g., "idle", "walk") with smooth crossfade
         /// </summary>
         private void PlayAnimationByName(string animName)
         {
@@ -106,12 +141,23 @@ namespace POTCO
             if (lastPlayedAnim == fullAnimName && animComponent.IsPlaying(fullAnimName))
                 return;
 
+            // Determine blend time based on transition type
+            float blendTime = defaultBlendTime;
+            if (lastPlayedAnim.Contains("idle") && animName == "walk")
+            {
+                blendTime = idleToWalkBlendTime;
+            }
+            else if (lastPlayedAnim.Contains("walk") && animName == "idle")
+            {
+                blendTime = walkToIdleBlendTime;
+            }
+
             AnimationState state = animComponent[fullAnimName];
             if (state != null)
             {
-                animComponent.CrossFade(fullAnimName, 0.2f);
+                animComponent.CrossFade(fullAnimName, blendTime);
                 lastPlayedAnim = fullAnimName;
-                Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{fullAnimName}' on {gameObject.name}");
+                Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{fullAnimName}' on {gameObject.name} (blend: {blendTime:F2}s)");
             }
             else
             {
@@ -120,9 +166,9 @@ namespace POTCO
                 {
                     if (s.name.Contains(animName))
                     {
-                        animComponent.CrossFade(s.name, 0.2f);
+                        animComponent.CrossFade(s.name, blendTime);
                         lastPlayedAnim = s.name;
-                        Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{s.name}' on {gameObject.name} (fallback match)");
+                        Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{s.name}' on {gameObject.name} (fallback match, blend: {blendTime:F2}s)");
                         return;
                     }
                 }

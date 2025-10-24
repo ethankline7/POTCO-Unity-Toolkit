@@ -194,7 +194,14 @@ namespace WorldDataImporter.Processors
                             DebugLogger.LogWorldImporter($"🎄 Skipped holiday model: {modelPath}");
                             break;
                         }
-                        
+
+                        // Skip smiley models for Spawn Nodes - SpawnNode.Start() will instantiate the actual creature
+                        if (objectData != null && objectData.objectType == "Spawn Node")
+                        {
+                            DebugLogger.LogWorldImporter($"⚔️ Skipped spawn node smiley model: {modelPath} (creature will be spawned by SpawnNode component)");
+                            break;
+                        }
+
                         var instance = AssetUtilities.InstantiatePrefab(modelPath, currentGO, useEgg, stats);
                         
                         // Update the ObjectListInfo with model path only if ImportObjectListData is enabled
@@ -1442,6 +1449,9 @@ namespace WorldDataImporter.Processors
                     return;
                 }
 
+                // Rename the GameObject to SpawnNode_[creature]
+                currentGO.name = $"SpawnNode_{objectData.spawnables}";
+
                 // Apply transform from objectData
                 if (objectData.gridPos.HasValue && !objectData.hasPos)
                 {
@@ -1467,18 +1477,39 @@ namespace WorldDataImporter.Processors
                     currentGO.transform.localPosition = posValue;
                 }
 
-                // Create a child GameObject for the spawn node
-                GameObject spawnNodeGO = new GameObject($"SpawnNode_{objectData.spawnables}");
-                spawnNodeGO.transform.SetParent(currentGO.transform, false);
-
-                // Add SpawnNode component
-                SpawnNode spawnNode = spawnNodeGO.AddComponent<SpawnNode>();
+                // Add SpawnNode component directly to the GameObject (no child needed)
+                SpawnNode spawnNode = currentGO.AddComponent<SpawnNode>();
                 spawnNode.spawnables = objectData.spawnables;
                 spawnNode.aggroRadius = objectData.aggroRadius ?? 12f;
                 spawnNode.patrolRadius = objectData.patrolRadius ?? 12f;
                 spawnNode.startState = objectData.startState ?? "Idle";
                 spawnNode.spawnTimeBegin = objectData.spawnTimeBegin ?? 0f;
                 spawnNode.spawnTimeEnd = objectData.spawnTimeEnd ?? 0f;
+
+                // Determine if this is a creature type (uses dynamic parser)
+                bool isCreature = WorldDataImporter.Utilities.EnemyDataParser.IsCreatureType(objectData.spawnables);
+
+                // Get base species name for creature loading (e.g., "Crab T1" -> "crab")
+                string baseSpecies = objectData.spawnables.Split(' ')[0];
+
+                // Look up creature model path from CreatureData
+                string modelPath = "";
+                if (isCreature)
+                {
+                    CreatureData creatureData = CreatureDataParser.GetCreatureData(baseSpecies);
+                    if (creatureData != null)
+                    {
+                        modelPath = creatureData.GetBestModelPath();
+                        DebugLogger.LogWorldImporter($"   → Found creature model path: {modelPath}");
+                    }
+                    else
+                    {
+                        DebugLogger.LogWorldImporter($"⚠️ No CreatureData found for spawnable '{baseSpecies}'");
+                    }
+                }
+
+                spawnNode.SetCreatureInfo(isCreature, baseSpecies.ToLower(), modelPath);
+                DebugLogger.LogWorldImporter($"   → Spawnable '{objectData.spawnables}' is creature: {isCreature}, species: {baseSpecies}, modelPath: {modelPath}");
 
                 // Translate team string to team ID
                 Dictionary<string, int> teamNameToId = new Dictionary<string, int>()

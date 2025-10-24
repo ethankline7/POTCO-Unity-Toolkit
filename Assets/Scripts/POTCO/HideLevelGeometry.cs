@@ -53,7 +53,8 @@ namespace POTCO
                     levelGeometryHidden++;
                 }
                 // Category 2: _barrier objects (hide mesh, keep collisions)
-                else if (objName.Contains("_barrier"))
+                // IMPORTANT: Skip "natural_barrier" objects - these are visible trees/rocks
+                else if (objName.Contains("_barrier") && !objName.Contains("natural_barrier"))
                 {
                     barrierObjectsFound++;
                     Debug.Log($"[HideLevelGeometry] Found barrier object: {obj.name} at path: {GetGameObjectPath(obj)}");
@@ -64,6 +65,13 @@ namespace POTCO
                 else if (objName.Contains("minimap") || objName.Contains("smiley") ||
                          objName.Contains("water_alpha") || objName.Contains("water_color"))
                 {
+                    // Skip if this is a SpawnNode itself (renamed from smiley to SpawnNode_creature)
+                    if (obj.GetComponent<SpawnNode>() != null)
+                    {
+                        Debug.Log($"[HideLevelGeometry] Skipping SpawnNode: {obj.name}");
+                        continue;
+                    }
+
                     mapObjectsFound++;
                     Debug.Log($"[HideLevelGeometry] Found map/water object: {obj.name}");
                     obj.SetActive(false);
@@ -125,6 +133,7 @@ namespace POTCO
         /// Hide all renderers on this object and its children, but keep colliders active
         /// Adds PermanentlyHiddenRenderer marker so VisZone system won't re-enable them
         /// Also hides any renderers that have no material assigned
+        /// SKIPS renderers that belong to SpawnNodes or their spawned creatures
         /// </summary>
         private void HideMeshOnly(GameObject obj)
         {
@@ -153,6 +162,14 @@ namespace POTCO
             {
                 if (childRenderer != null)
                 {
+                    // Skip if this renderer belongs to a SpawnNode or spawned creature
+                    SpawnNode spawnNode = childRenderer.GetComponentInParent<SpawnNode>();
+                    if (spawnNode != null)
+                    {
+                        Debug.Log($"[HideLevelGeometry]   - SKIPPING renderer on: {childRenderer.gameObject.name} (belongs to SpawnNode)");
+                        continue;
+                    }
+
                     // Check if renderer has no material
                     bool hasNoMaterial = childRenderer.sharedMaterial == null ||
                                         (childRenderer.sharedMaterials != null && childRenderer.sharedMaterials.Length == 0);

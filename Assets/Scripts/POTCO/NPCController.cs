@@ -86,6 +86,11 @@ namespace POTCO
 
         // Waypoint arrival
         private const float waypointArrivalRadius = 1.5f; // Distance to consider waypoint "reached"
+
+        // Spawn position initialization
+        private bool spawnPositionInitialized = false;
+        private float spawnInitTimer = 0f;
+        private const float spawnInitDelay = 0.5f; // Wait 0.5 seconds for creature to settle on ground
         #endregion
 
         #region Initialization
@@ -103,21 +108,37 @@ namespace POTCO
 
         private void Start()
         {
-            spawnPosition = transform.position;
             lastPosition = transform.position;
             currentState = NPCState.LandRoam;
             stateEnterTime = Time.time;
+            spawnInitTimer = 0f;
+            spawnPositionInitialized = false;
+
+            // Don't set spawnPosition yet - wait for creature to settle on ground first
+            // This prevents spawning in mid-air and picking unreachable waypoints
+        }
+
+        /// <summary>
+        /// Initialize spawn position after creature has settled on ground
+        /// Called from Update after a short delay
+        /// </summary>
+        private void InitializeSpawnPosition()
+        {
+            spawnPosition = transform.position;
+            spawnPositionInitialized = true;
 
             // Pick initial waypoint if patrol is enabled
             if (npcData != null && npcData.patrolRadius > 0.1f)
             {
                 currentWaypoint = GetRandomPatrolPoint();
+                Debug.Log($"[{gameObject.name}] Spawn position initialized at ground level: {spawnPosition}, first waypoint: {currentWaypoint}");
             }
             else
             {
                 // No patrol - stay at spawn
                 currentWaypoint = spawnPosition;
                 isIdleAtWaypoint = true;
+                Debug.Log($"[{gameObject.name}] Spawn position initialized at ground level: {spawnPosition}, no patrol");
             }
         }
         #endregion
@@ -125,6 +146,30 @@ namespace POTCO
         #region Update Loop
         private void Update()
         {
+            // Check grounded state early (needed for spawn position initialization)
+            isGrounded = controller.isGrounded;
+
+            // Wait for creature to settle on ground before initializing spawn position
+            if (!spawnPositionInitialized)
+            {
+                spawnInitTimer += Time.deltaTime;
+                if (spawnInitTimer >= spawnInitDelay && isGrounded)
+                {
+                    InitializeSpawnPosition();
+                }
+
+                // Apply gravity while waiting to settle (let creature fall to ground)
+                if (isGrounded && velocity.y < 0)
+                {
+                    velocity.y = -2f;
+                }
+                velocity.y -= gravity * Time.deltaTime;
+                controller.Move(velocity * Time.deltaTime);
+
+                // Don't run AI until spawn position is initialized
+                return;
+            }
+
             // Re-find player if lost (check every 60 frames for performance)
             if (Time.frameCount % 60 == 0 && playerTransform == null)
             {
@@ -194,8 +239,6 @@ namespace POTCO
 
                 return; // Skip movement and gravity
             }
-
-            isGrounded = controller.isGrounded;
 
             // Handle FSM
             switch (currentState)

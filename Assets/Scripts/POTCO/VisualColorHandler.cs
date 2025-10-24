@@ -131,6 +131,10 @@ namespace POTCO
 
             foreach (Renderer renderer in renderers)
             {
+                // Skip if renderer is a child of a SpawnNode (spawned creatures)
+                SpawnNode spawnNode = renderer.GetComponentInParent<SpawnNode>();
+                if (spawnNode != null) continue;
+
                 // Skip if renderer is on a child with its own ObjectListInfo (separate object)
                 ObjectListInfo childInfo = renderer.GetComponent<ObjectListInfo>();
                 if (childInfo != null && childInfo != objectListInfo) continue;
