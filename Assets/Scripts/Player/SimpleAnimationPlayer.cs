@@ -578,15 +578,14 @@ namespace Player
         {
             Debug.Log("🦴 Setting up manual bone reset system...");
 
-            // Play idle animation and sample to get rest pose
+            // Play idle and sample to get the rest pose
             animComponent.Play("idle");
             animComponent.Sample();
 
-            // Cache all bone transforms in the hierarchy
+            // Cache all bone transforms and their idle pose
             Transform[] allTransforms = animComponent.GetComponentsInChildren<Transform>();
             foreach (Transform bone in allTransforms)
             {
-                // Get relative path from animation component root
                 string bonePath = GetRelativePath(animComponent.transform, bone);
                 if (!string.IsNullOrEmpty(bonePath))
                 {
@@ -595,20 +594,8 @@ namespace Player
                 }
             }
 
-            Debug.Log($"   Cached {cachedBones.Count} bones");
+            Debug.Log($"   Cached {cachedBones.Count} bones with their idle pose");
 
-            // Dynamically analyze ALL animations in the Animation component
-            int analyzedCount = 0;
-            foreach (AnimationState state in animComponent)
-            {
-                if (state.clip != null)
-                {
-                    AnalyzeAnimationBones(state.name, state.clip);
-                    analyzedCount++;
-                }
-            }
-
-            Debug.Log($"   Analyzed {analyzedCount} animations");
             Debug.Log($"✅ Manual bone reset system ready!");
         }
 
@@ -628,17 +615,34 @@ namespace Player
             return path;
         }
 
-        private void AnalyzeAnimationBones(string animName, AnimationClip clip)
+        /// <summary>
+        /// Runtime bone analysis - works in both Editor and Builds
+        /// Samples animation and detects which bones move from rest pose
+        /// </summary>
+        private void AnalyzeAnimationBonesRuntime(string animName, AnimationClip clip)
         {
             var bones = new HashSet<string>();
-            var bindings = AnimationUtility.GetCurveBindings(clip);
 
-            foreach (var binding in bindings)
+            // Sample this animation to see which bones it affects
+            animComponent.Play(animName);
+            animComponent.Sample();
+
+            // Check which bones moved from rest pose
+            foreach (var kvp in cachedBones)
             {
-                // Only count rotation curves (main indicator of bone animation)
-                if (binding.propertyName.StartsWith("m_LocalRotation"))
+                string bonePath = kvp.Key;
+                Transform bone = kvp.Value;
+
+                if (!restPoseRotations.ContainsKey(bonePath)) continue;
+
+                Quaternion restRot = restPoseRotations[bonePath];
+                Quaternion animRot = bone.localRotation;
+
+                // If rotation differs by more than 0.01 degrees, bone is animated
+                float angleDiff = Quaternion.Angle(restRot, animRot);
+                if (angleDiff > 0.01f)
                 {
-                    bones.Add(binding.path);
+                    bones.Add(bonePath);
                 }
             }
 
@@ -941,8 +945,9 @@ namespace Player
                 }
             }
 
-            // Manual bone reset for orphaned bones
-            if (enableManualBoneReset && !string.IsNullOrEmpty(currentAnim) && currentAnim != animName)
+            // Manual bone reset - ONLY when transitioning TO idle
+            // Reset ALL bones that the previous animation moved
+            if (enableManualBoneReset && !string.IsNullOrEmpty(currentAnim) && currentAnim != animName && animName == "idle")
             {
                 // Stop previous reset coroutine if still running
                 if (currentResetCoroutine != null)
@@ -950,8 +955,8 @@ namespace Player
                     StopCoroutine(currentResetCoroutine);
                 }
 
-                // Start new reset coroutine
-                currentResetCoroutine = StartCoroutine(ResetOrphanedBones(currentAnim, animName));
+                // Reset ALL bones from previous animation to rest pose (idle pose)
+                currentResetCoroutine = StartCoroutine(ResetAllBonesToIdle(currentAnim));
             }
 
             // Use CrossFade for smooth transitions
@@ -959,17 +964,81 @@ namespace Player
             currentAnim = animName;
         }
 
+        /// <summary>
+        /// Reset ALL bones to idle pose - simple and reliable
+        /// No complex detection needed, just reset everything
+        /// </summary>
+        private IEnumerator ResetAllBonesToIdle(string fromAnim)
+        {
+            Debug.Log($"🦴 Resetting ALL {cachedBones.Count} bones to idle pose");
+
+            // Store starting rotations of ALL bones
+            Dictionary<string, Quaternion> startRotations = new Dictionary<string, Quaternion>();
+            foreach (var kvp in cachedBones)
+            {
+                startRotations[kvp.Key] = kvp.Value.localRotation;
+            }
+
+            // Lerp ALL bones from current rotation → idle pose over resetDuration
+            float elapsed = 0f;
+            while (elapsed < resetDuration)
+            {
+                float t = elapsed / resetDuration;
+                // Use smoothstep for nicer easing
+                t = t * t * (3f - 2f * t);
+
+                foreach (var kvp in cachedBones)
+                {
+                    string bonePath = kvp.Key;
+                    Transform bone = kvp.Value;
+
+                    if (restPoseRotations.ContainsKey(bonePath))
+                    {
+                        bone.localRotation = Quaternion.Slerp(
+                            startRotations[bonePath],
+                            restPoseRotations[bonePath],
+                            t
+                        );
+                    }
+                }
+
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            // Final snap ALL bones to idle pose
+            foreach (var kvp in cachedBones)
+            {
+                if (restPoseRotations.ContainsKey(kvp.Key))
+                {
+                    kvp.Value.localRotation = restPoseRotations[kvp.Key];
+                }
+            }
+
+            Debug.Log($"✅ All bones reset to idle pose");
+            currentResetCoroutine = null;
+        }
+
         private IEnumerator ResetOrphanedBones(string fromAnim, string toAnim)
         {
-            // Get bones that are in fromAnim but NOT in toAnim
-            if (!animationBones.ContainsKey(fromAnim) || !animationBones.ContainsKey(toAnim))
+            // DEBUG: Check if bone data exists
+            if (!animationBones.ContainsKey(fromAnim))
             {
+                Debug.LogWarning($"⚠️ Missing bone data for '{fromAnim}' - skipping bone reset");
+                yield break;
+            }
+
+            if (!animationBones.ContainsKey(toAnim))
+            {
+                Debug.LogWarning($"⚠️ Missing bone data for '{toAnim}' - skipping bone reset");
                 yield break;
             }
 
             var fromBones = animationBones[fromAnim];
             var toBones = animationBones[toAnim];
             var orphanedBones = new List<string>();
+
+            Debug.Log($"📊 {fromAnim} animates {fromBones.Count} bones, {toAnim} animates {toBones.Count} bones");
 
             foreach (var bone in fromBones)
             {
@@ -981,6 +1050,7 @@ namespace Player
 
             if (orphanedBones.Count == 0)
             {
+                Debug.Log($"✅ No orphaned bones between {fromAnim} → {toAnim}");
                 yield break;
             }
 

@@ -91,6 +91,9 @@ namespace Player
             // Configure CharacterController collision settings
             controller.stepOffset = stepOffset;
             controller.skinWidth = skinWidth;
+            controller.minMoveDistance = 0f; // CRITICAL: Set to 0 to prevent falling through world in builds
+            controller.enabled = true; // Ensure controller is enabled
+
 
             Debug.Log($"✅ CharacterController configured - Step Offset: {stepOffset}, Skin Width: {skinWidth}");
 
