@@ -583,9 +583,29 @@ namespace Player
             animComponent.Sample();
 
             // Cache all bone transforms and their idle pose
+            // Bones are pure Transform nodes - they don't have MonoBehaviour components
             Transform[] allTransforms = animComponent.GetComponentsInChildren<Transform>();
             foreach (Transform bone in allTransforms)
             {
+                // Skip transforms that have MonoBehaviour components (game logic objects, not bones)
+                // Exception: Animation component is allowed since it's on the model root
+                MonoBehaviour[] components = bone.GetComponents<MonoBehaviour>();
+                bool hasNonAnimationComponents = false;
+                foreach (MonoBehaviour comp in components)
+                {
+                    if (!(comp is Animation))
+                    {
+                        hasNonAnimationComponents = true;
+                        break;
+                    }
+                }
+
+                if (hasNonAnimationComponents)
+                {
+                    Debug.Log($"   Skipping non-bone (has components): {bone.name}");
+                    continue;
+                }
+
                 string bonePath = GetRelativePath(animComponent.transform, bone);
                 if (!string.IsNullOrEmpty(bonePath))
                 {

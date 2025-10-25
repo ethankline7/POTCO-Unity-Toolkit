@@ -294,6 +294,21 @@ public class GeometryProcessor
                 DebugLogger.LogEggImporter($"👻 Collision geometry on '{go.name}' using invisible Collision-Material");
             }
         }
+
+        // Check if this GameObject is inside a "Sails" group - if so, make materials double-sided
+        if (IsInsideSailsGroup(go))
+        {
+            DebugLogger.LogEggImporter($"⛵ GameObject '{go.name}' is inside Sails group - setting materials to double-sided");
+            foreach (var mat in rendererMaterials)
+            {
+                if (mat != null && mat.HasProperty("_Cull"))
+                {
+                    mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+                    DebugLogger.LogEggImporter($"   Set material '{mat.name}' to Cull.Off");
+                }
+            }
+        }
+
         ctx.AddObjectToAsset(mesh.name, mesh);
     }
 
@@ -1771,11 +1786,28 @@ public class GeometryProcessor
             var clonedMaterial = new Material(_cachedDefaultMaterial) { name = materialName };
             return clonedMaterial;
         }
-        
+
         // Create and cache the default material
         var standardShader = Shader.Find("Standard");
         _cachedDefaultMaterial = new Material(standardShader) { name = materialName };
-        
+
         return _cachedDefaultMaterial;
+    }
+
+    private bool IsInsideSailsGroup(GameObject go)
+    {
+        // Walk up the parent hierarchy and check if any parent contains "Sails" or "sail"
+        Transform current = go.transform;
+        while (current != null)
+        {
+            string name = current.name.ToLower();
+            if (name.Contains("sail"))
+            {
+                DebugLogger.LogEggImporter($"   Found sail group in hierarchy: '{current.name}'");
+                return true;
+            }
+            current = current.parent;
+        }
+        return false;
     }
 }
