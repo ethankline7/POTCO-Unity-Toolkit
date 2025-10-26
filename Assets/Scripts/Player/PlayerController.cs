@@ -46,7 +46,7 @@ namespace Player
         [Header("Model Setup")]
         [Tooltip("POTCO models often face backwards. Set to 180 to flip model facing. Applied once at start.")]
         [SerializeField] private float modelRotationOffset = 180f;
-        [Tooltip("If true, automatically create a 'Model' child and move all visual components to it")]
+        [Tooltip("If true, automatically apply rotation offset directly to all child objects")]
         [SerializeField] private bool autoSetupModelHierarchy = true;
 
         [Header("Rotation")]
@@ -381,60 +381,16 @@ namespace Player
 
         private void SetupModelHierarchy()
         {
-            // Check if Model child already exists
-            Transform existingModel = transform.Find("Model");
-            if (existingModel != null)
-            {
-                Debug.Log("✅ Model child already exists - skipping hierarchy setup");
-                return;
-            }
-
-            Debug.Log($"🔧 Setting up model hierarchy with {modelRotationOffset}° rotation offset...");
-
-            // Create Model child
-            GameObject modelChild = new GameObject("Model");
-            modelChild.transform.SetParent(transform);
-            modelChild.transform.localPosition = Vector3.zero;
-            modelChild.transform.localRotation = Quaternion.Euler(0f, modelRotationOffset, 0f);
-            modelChild.transform.localScale = Vector3.one;
-
-            // Get all children except the one we just created
-            List<Transform> childrenToMove = new List<Transform>();
+            // Apply rotation offset directly to each child (no Model wrapper needed)
             foreach (Transform child in transform)
             {
-                if (child != modelChild.transform && child.name != "GroundCheck")
+                if (child.name != "GroundCheck" && child.name != "Armature")
                 {
-                    childrenToMove.Add(child);
+                    // Get current euler angles and set Y rotation to the offset
+                    Vector3 currentRotation = child.localEulerAngles;
+                    child.localRotation = Quaternion.Euler(currentRotation.x, modelRotationOffset, currentRotation.z);
                 }
             }
-
-            // Move all visual children to Model
-            foreach (Transform child in childrenToMove)
-            {
-                child.SetParent(modelChild.transform);
-            }
-
-            // Move Animation component to Model child
-            Animation animComponent = GetComponent<Animation>();
-            if (animComponent != null)
-            {
-                // Copy animation clips to new component on Model
-                Animation newAnimComponent = modelChild.AddComponent<Animation>();
-
-                // Copy all clips
-                foreach (AnimationState state in animComponent)
-                {
-                    newAnimComponent.AddClip(state.clip, state.name);
-                }
-
-                // Destroy old component
-                Destroy(animComponent);
-
-                Debug.Log("   ✅ Moved Animation component to Model child");
-            }
-
-            Debug.Log($"✅ Model hierarchy setup complete - moved {childrenToMove.Count} children to Model with {modelRotationOffset}° offset");
-            Debug.Log("   Player GameObject rotation is now clean and works normally with camera");
         }
 
         private void SetupGroundCheck()

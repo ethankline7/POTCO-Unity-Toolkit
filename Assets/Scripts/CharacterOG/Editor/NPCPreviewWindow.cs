@@ -921,14 +921,6 @@ namespace CharacterOG.Editor
                 Debug.Log("✅ Added CharacterController");
             }
 
-            // Add Animation component
-            Animation animComponent = character.GetComponent<Animation>();
-            if (animComponent == null)
-            {
-                animComponent = character.AddComponent<Animation>();
-                Debug.Log("✅ Added Animation component");
-            }
-
             // Add CharacterGenderData for animation system
             CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
             if (genderData == null)

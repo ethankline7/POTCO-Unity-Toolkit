@@ -1138,13 +1138,9 @@ namespace CharacterOG.Editor
                 Debug.Log("✅ Added CharacterController");
             }
 
-            // Add Animation component
-            Animation animComponent = character.GetComponent<Animation>();
-            if (animComponent == null)
-            {
-                animComponent = character.AddComponent<Animation>();
-                Debug.Log("✅ Added Animation component");
-            }
+            // DON'T add Animation component in Edit Mode - it will be created dynamically in Play Mode
+            // by SimpleAnimationPlayer.Start() after PlayerController.SetupModelHierarchy() finishes
+            // This prevents bone binding issues from hierarchy changes during Edit→Play transition
 
             // CharacterGenderData already added by ApplyToCharacter, but ensure it's set
             CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
@@ -1225,14 +1221,6 @@ namespace CharacterOG.Editor
                 controller.radius = 0.3f;
                 controller.center = new Vector3(0f, 0.9f, 0f);
                 Debug.Log("✅ Added CharacterController");
-            }
-
-            // Add Animation component
-            Animation animComponent = character.GetComponent<Animation>();
-            if (animComponent == null)
-            {
-                animComponent = character.AddComponent<Animation>();
-                Debug.Log("✅ Added Animation component");
             }
 
             // CharacterGenderData already added by ApplyToCharacter, but ensure it's set

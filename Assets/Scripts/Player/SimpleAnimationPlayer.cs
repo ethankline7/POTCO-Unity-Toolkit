@@ -214,25 +214,17 @@ namespace Player
             if (animComponent == null)
             {
                 animComponent = GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on this object");
-                }
             }
 
             // If still not found, search all children
             if (animComponent == null)
             {
                 animComponent = GetComponentInChildren<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on child: {animComponent.gameObject.name}");
-                }
             }
 
             if (animComponent == null)
             {
-                Debug.LogError($"❌ No Animation component found anywhere on {gameObject.name}!");
+                Debug.LogError($"Animation component not found on {gameObject.name}");
                 return;
             }
 

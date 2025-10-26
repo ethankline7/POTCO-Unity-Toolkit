@@ -70,57 +70,61 @@ namespace POTCO
         private void Start()
         {
             // Find Animation component - should be on character root
-            Debug.Log($"🔍 NPCAnimationPlayer searching for Animation component on: {gameObject.name}");
-
             // PRIORITY 1: Check if there's a "Model" wrapper (created by NPCController)
             Transform modelChild = transform.Find("Model");
             if (modelChild != null && modelChild.childCount > 0)
             {
                 GameObject characterRoot = modelChild.GetChild(0).gameObject;
-                Debug.Log($"   Found character under Model wrapper: {characterRoot.name}");
                 animComponent = characterRoot.GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on character root: {characterRoot.name}");
-                }
             }
 
             // PRIORITY 2: Check first direct child
             if (animComponent == null && transform.childCount > 0)
             {
                 GameObject firstChild = transform.GetChild(0).gameObject;
-                Debug.Log($"   Checking first child: {firstChild.name}");
                 animComponent = firstChild.GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on first child: {firstChild.name}");
-                }
             }
 
             // PRIORITY 3: Check this object (fallback)
             if (animComponent == null)
             {
                 animComponent = GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on this object");
-                }
             }
 
             // PRIORITY 4: Search all children (last resort)
             if (animComponent == null)
             {
                 animComponent = GetComponentInChildren<Animation>();
-                if (animComponent != null)
+            }
+
+            // PRIORITY 5: Create Animation component dynamically if not found (Play Mode spawn fix)
+            if (animComponent == null)
+            {
+                // Add to Model wrapper (parent of Armature) so it can control bone hierarchy
+                Transform modelWrapper = transform.Find("Model");
+                GameObject targetObject = null;
+
+                if (modelWrapper != null)
                 {
-                    Debug.Log($"✅ Found Animation component on descendant: {animComponent.gameObject.name}");
+                    targetObject = modelWrapper.gameObject;
                 }
+                else if (transform.childCount > 0)
+                {
+                    targetObject = transform.GetChild(0).gameObject;
+                }
+                else
+                {
+                    targetObject = gameObject;
+                }
+
+                animComponent = targetObject.AddComponent<Animation>();
+                animComponent.playAutomatically = false;
+                animComponent.enabled = true;
             }
 
             if (animComponent == null)
             {
-                Debug.LogError($"❌ No Animation component found on NPC: {gameObject.name}");
-                Debug.LogError($"   Children: {string.Join(", ", GetComponentsInChildren<Transform>().Select(t => t.name))}");
+                Debug.LogError($"❌ Failed to find or create Animation component on NPC: {gameObject.name}");
                 return;
             }
 
@@ -135,7 +139,6 @@ namespace POTCO
 
             if (isInitialized)
             {
-                Debug.Log($"✅ NPCAnimationPlayer initialized with gender prefix: {genderPrefix}");
                 string initialAnim = GetIdleAnimation();
                 PlayAnimation(initialAnim);
             }

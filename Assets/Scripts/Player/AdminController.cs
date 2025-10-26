@@ -150,6 +150,14 @@ namespace Player
                     awakeMethod.Invoke(simpleAnim, null);
                 }
 
+                // Detect NPC's gender and set it BEFORE loading animations
+                CharacterOG.Runtime.CharacterGenderData genderData = targetNPC.GetComponentInChildren<CharacterOG.Runtime.CharacterGenderData>();
+                if (genderData != null)
+                {
+                    string npcGender = genderData.GetGender();
+                    simpleAnim.SetGender(npcGender);
+                }
+
                 // Force Start() to run so it finds the Animation component
                 System.Reflection.MethodInfo startMethod = typeof(SimpleAnimationPlayer).GetMethod("Start",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -159,8 +167,8 @@ namespace Player
                     Debug.Log($"   Initialized SimpleAnimationPlayer (Animation component found)");
                 }
 
-                // NOW copy all the animation clips (after Animation component is found)
-                CopyAnimationClips(originalSimpleAnim, simpleAnim);
+                // Copy animation clips with correct gender prefix (uses NPC's gender, not player's)
+                CopyAnimationClipsWithGender(originalSimpleAnim, simpleAnim, targetNPC);
             }
 
             // COPY WorldCollisionManager if player has it
@@ -282,10 +290,10 @@ namespace Player
         }
 
         /// <summary>
-        /// Copy ALL animation clip references from player's SimpleAnimationPlayer to NPC's
-        /// This includes diagonal walking, jumping, running, strafing, everything!
+        /// Load and add animation clips with correct gender prefix for the NPC
+        /// This ensures female NPCs get fp_ animations and male NPCs get mp_ animations
         /// </summary>
-        private void CopyAnimationClips(SimpleAnimationPlayer source, SimpleAnimationPlayer destination)
+        private void CopyAnimationClipsWithGender(SimpleAnimationPlayer source, SimpleAnimationPlayer destination, GameObject targetNPC)
         {
             // Get the Animation component from destination
             var animComponentField = typeof(SimpleAnimationPlayer).GetField("animComponent",
@@ -298,48 +306,116 @@ namespace Player
                 return;
             }
 
-            // Use reflection to copy all AnimationClip fields AND add them to Animation component
+            // CRITICAL: Clear all existing animation clips (loaded by Start() with wrong gender)
+            // We need to remove all clips so we can load fresh ones with correct gender prefix
+            destAnimComp.Stop();
+
+            // Collect all clips first (can't modify collection while iterating)
+            System.Collections.Generic.List<AnimationClip> clipsToRemove = new System.Collections.Generic.List<AnimationClip>();
+            foreach (AnimationState state in destAnimComp)
+            {
+                if (state.clip != null)
+                {
+                    clipsToRemove.Add(state.clip);
+                }
+            }
+
+            // Now remove them
+            foreach (AnimationClip clip in clipsToRemove)
+            {
+                destAnimComp.RemoveClip(clip);
+            }
+
+            // Get NPC's gender prefix
+            var genderPrefixField = typeof(SimpleAnimationPlayer).GetField("genderPrefix",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            string genderPrefix = (string)genderPrefixField.GetValue(destination);
+
+            // Load gender-specific animations from Resources
+            string[] phases = { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
+            string[] paths = { "char", "models/char" };
+
+            // Get all AnimationClip fields from source to know what animations we need
             var fields = typeof(SimpleAnimationPlayer).GetFields(
                 System.Reflection.BindingFlags.Instance |
                 System.Reflection.BindingFlags.Public |
                 System.Reflection.BindingFlags.NonPublic
             );
 
-            int copiedCount = 0;
+            int loadedCount = 0;
             foreach (var field in fields)
             {
-                // Copy AnimationClip references
                 if (field.FieldType == typeof(AnimationClip))
                 {
-                    AnimationClip clipValue = (AnimationClip)field.GetValue(source);
-                    if (clipValue != null)
+                    // Get the animation name without gender prefix (e.g., "idle", "walk", "run")
+                    string clipName = GetStandardClipName(field.Name);
+                    // Keep underscores intact! Animation files are named like "fp_walk_back_diagonal_right"
+                    string animName = clipName;
+
+                    // Try to load with gender prefix
+                    AnimationClip loadedClip = LoadAnimationClip(genderPrefix + animName, phases, paths);
+
+                    if (loadedClip != null)
                     {
                         // Set the field value
-                        field.SetValue(destination, clipValue);
+                        field.SetValue(destination, loadedClip);
 
-                        // Determine the standard name for this clip based on field name
-                        string clipName = GetStandardClipName(field.Name);
-
-                        // Add to Animation component if not already there
-                        if (!destAnimComp.GetClip(clipName))
+                        // FORCE REPLACE: Remove existing clip if it exists, then add the new gender-specific one
+                        AnimationClip existingClip = destAnimComp.GetClip(clipName);
+                        if (existingClip != null)
                         {
-                            destAnimComp.AddClip(clipValue, clipName);
-                            copiedCount++;
-                            Debug.Log($"      Copied & added: {field.Name} → '{clipName}' ({clipValue.name})");
+                            destAnimComp.RemoveClip(existingClip);
+                        }
+
+                        // Add the new gender-specific clip
+                        destAnimComp.AddClip(loadedClip, clipName);
+                        loadedCount++;
+                    }
+                    else
+                    {
+                        // Fallback: copy from player if gender-specific version doesn't exist
+                        AnimationClip playerClip = (AnimationClip)field.GetValue(source);
+                        if (playerClip != null)
+                        {
+                            field.SetValue(destination, playerClip);
+                            if (!destAnimComp.GetClip(clipName))
+                            {
+                                destAnimComp.AddClip(playerClip, clipName);
+                                loadedCount++;
+                            }
                         }
                     }
                 }
             }
 
-            Debug.Log($"   ✅ Copied {copiedCount} animation clips from player to NPC");
-
-            // Mark as initialized so it doesn't try to load/map animations again
+            // Mark as initialized
             var isInitializedField = typeof(SimpleAnimationPlayer).GetField("isInitialized",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             if (isInitializedField != null)
             {
                 isInitializedField.SetValue(destination, true);
             }
+        }
+
+        /// <summary>
+        /// Load an animation clip from Resources with fallback through multiple phases and paths
+        /// </summary>
+        private AnimationClip LoadAnimationClip(string animName, string[] phases, string[] paths)
+        {
+            foreach (string phase in phases)
+            {
+                foreach (string path in paths)
+                {
+                    string fullPath = $"{phase}/{path}/{animName}";
+                    AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
+                    if (clip != null)
+                    {
+                        return clip;
+                    }
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
