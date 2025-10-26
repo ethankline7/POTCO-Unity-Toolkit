@@ -36,6 +36,9 @@ namespace POTCO.VisZones
         private Dictionary<string, GameObject> objectUidDict = new Dictionary<string, GameObject>();
         private Dictionary<string, GameObject> namedStaticDict = new Dictionary<string, GameObject>();
 
+        // Store original renderer states for Large objects and named statics (preserves character clothing, etc.)
+        private Dictionary<Renderer, bool> objectRendererStates = new Dictionary<Renderer, bool>();
+
         private void Awake()
         {
             // Auto-detect VisZoneData if not set
@@ -628,6 +631,7 @@ namespace POTCO.VisZones
 
         /// <summary>
         /// Hide object by disabling renderers (preserves component data unlike SetActive)
+        /// Stores original renderer states to preserve character clothing, etc.
         /// </summary>
         private void HideObject(GameObject obj)
         {
@@ -635,25 +639,41 @@ namespace POTCO.VisZones
             Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
             foreach (Renderer renderer in renderers)
             {
-                if (renderer != null && renderer.enabled)
+                if (renderer != null)
                 {
+                    // Store original state before disabling (only if not already stored)
+                    if (!objectRendererStates.ContainsKey(renderer))
+                    {
+                        objectRendererStates[renderer] = renderer.enabled;
+                    }
+
                     renderer.enabled = false;
                 }
             }
         }
 
         /// <summary>
-        /// Show object by enabling renderers
+        /// Show object by restoring renderers to original state
+        /// Preserves character clothing by restoring stored states instead of blindly enabling all
         /// </summary>
         private void ShowObject(GameObject obj)
         {
-            // Enable all renderers on this object and its children
+            // Restore all renderers on this object and its children to original state
             Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
             foreach (Renderer renderer in renderers)
             {
-                if (renderer != null && !renderer.enabled)
+                if (renderer != null)
                 {
-                    renderer.enabled = true;
+                    // Restore original state if we have it stored, otherwise default to enabled
+                    if (objectRendererStates.TryGetValue(renderer, out bool originalState))
+                    {
+                        renderer.enabled = originalState;
+                    }
+                    else
+                    {
+                        // No stored state - this renderer was probably always visible
+                        renderer.enabled = true;
+                    }
                 }
             }
         }
