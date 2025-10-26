@@ -159,14 +159,6 @@
                         }
                         <S$Anim> x { <V> { 1.29453003406525 } }
                       }
-                      <Table> def_left_ankle {
-                        <Xfm$Anim_S$> xform {
-                          <Scalar> fps { 24 }
-                          <S$Anim> h { <V> { 90.1821975708008 } }
-                          <S$Anim> p { <V> { 26.4428005218506 } }
-                          <S$Anim> r { <V> { -90 } }
-                        }
-                      }
                       <Table> zz_left_ball {
                         <Xfm$Anim_S$> xform {
                           <Scalar> fps { 24 }
@@ -293,14 +285,6 @@
                           }
                         }
                         <S$Anim> x { <V> { 1.29453003406525 } }
-                      }
-                      <Table> def_right_ankle {
-                        <Xfm$Anim_S$> xform {
-                          <Scalar> fps { 24 }
-                          <S$Anim> h { <V> { 90.1821975708008 } }
-                          <S$Anim> p { <V> { -26.4428005218506 } }
-                          <S$Anim> r { <V> { -90 } }
-                        }
                       }
                       <Table> zz_right_ball {
                         <Xfm$Anim_S$> xform {

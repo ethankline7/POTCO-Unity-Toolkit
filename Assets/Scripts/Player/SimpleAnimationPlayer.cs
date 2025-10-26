@@ -1054,30 +1054,16 @@ namespace Player
                 else if (!isFreeLooking && Mathf.Abs(turnInput) > 0.1f)
                 {
                     // TURNING IN PLACE (normal mode only, not moving)
-                    // Female characters use spin animations, males use turn animations
+                    // All characters use spin animations for turning
                     if (turnInput < -0.1f)
                     {
                         // Turning left (A key)
-                        if (genderPrefix == "fp_")
-                        {
-                            targetAnim = spinLeftClip != null ? "spin_left" : (turnLeftClip != null ? "turn_left" : "idle");
-                        }
-                        else
-                        {
-                            targetAnim = turnLeftClip != null ? "turn_left" : "idle";
-                        }
+                        targetAnim = spinLeftClip != null ? "spin_left" : "idle";
                     }
                     else if (turnInput > 0.1f)
                     {
                         // Turning right (D key)
-                        if (genderPrefix == "fp_")
-                        {
-                            targetAnim = spinRightClip != null ? "spin_right" : (turnRightClip != null ? "turn_right" : "idle");
-                        }
-                        else
-                        {
-                            targetAnim = turnRightClip != null ? "turn_right" : "idle";
-                        }
+                        targetAnim = spinRightClip != null ? "spin_right" : "idle";
                     }
                 }
                 else

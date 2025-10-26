@@ -244,7 +244,8 @@ namespace Player
             // Center raycast
             if (Physics.Raycast(targetFocusPoint, direction.normalized, out RaycastHit centerHit, distance, collisionMask))
             {
-                if (centerHit.collider is MeshCollider)
+                // Only react to solid mesh colliders (skip triggers like VisZones)
+                if (centerHit.collider is MeshCollider && !centerHit.collider.isTrigger)
                 {
                     closestMeshDistance = Mathf.Min(closestMeshDistance, centerHit.distance);
                     foundMeshCollision = true;
@@ -267,7 +268,8 @@ namespace Player
 
                 if (Physics.Raycast(offsetStart, offsetDirection.normalized, out RaycastHit hit, distance, collisionMask))
                 {
-                    if (hit.collider is MeshCollider)
+                    // Only react to solid mesh colliders (skip triggers like VisZones)
+                    if (hit.collider is MeshCollider && !hit.collider.isTrigger)
                     {
                         closestMeshDistance = Mathf.Min(closestMeshDistance, hit.distance);
                         foundMeshCollision = true;
