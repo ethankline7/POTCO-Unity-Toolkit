@@ -1260,11 +1260,21 @@ public class GeometryProcessor
 
                 masterColorsList.Add(vertex.color);
 
-                // Handle UV2 - use first named UV if available (and different from primary)
+                // Handle UV2
                 Vector2 uv2 = Vector2.zero;
-                if (vertex.namedUVs.Count > 1)
+
+                // Check if this is a sail or ship mast (pir_r_shp_mst)
+                bool isSailOrMast = _currentAssetPath.Contains("sail", System.StringComparison.OrdinalIgnoreCase) ||
+                                    _currentAssetPath.Contains("pir_r_shp_mst", System.StringComparison.OrdinalIgnoreCase);
+
+                if (isSailOrMast && vertex.namedUVs.Count > 0)
                 {
-                    // Use the second named UV if we have multiple named UVs
+                    // For sails/masts: Use the first named UV as UV2 (working version approach)
+                    uv2 = vertex.namedUVs.First().Value;
+                }
+                else if (vertex.namedUVs.Count > 1)
+                {
+                    // For other models: Use the second named UV if we have multiple named UVs
                     uv2 = vertex.namedUVs.Skip(1).First().Value;
                 }
                 else if (vertex.namedUVs.Count == 1 && vertex.uv != Vector2.zero)
