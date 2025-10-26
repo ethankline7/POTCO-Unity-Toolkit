@@ -61,6 +61,7 @@ namespace Player
 
         private Animation animComponent;
         private PlayerController playerController;
+        private POTCO.NPCController npcController;
         private string currentAnim = "";
         private bool isInitialized = false;
         private bool wasGrounded = true; // Track if we were grounded last frame
@@ -78,6 +79,7 @@ namespace Player
         private void Awake()
         {
             playerController = GetComponent<PlayerController>();
+            npcController = GetComponent<POTCO.NPCController>();
 
             // Use manual override if enabled
             if (manualGenderOverride)
@@ -114,20 +116,93 @@ namespace Player
             }
         }
 
+        /// <summary>
+        /// Helper class to wrap either PlayerController or NPCController
+        /// Both now have the same API so this makes SimpleAnimationPlayer controller-agnostic
+        /// </summary>
+        private class ControllerAdapter
+        {
+            public bool IsGrounded { get; set; }
+            public bool IsSwimming { get; set; }
+            public float CurrentSpeed { get; set; }
+            public Vector3 Velocity { get; set; }
+            public Vector2 MoveInput { get; set; }
+            public float TurnInput { get; set; }
+            public float StrafeInput { get; set; }
+            public bool IsFreeLooking { get; set; }
+            public bool IsRunning { get; set; }
+            public bool IsFalling { get; set; }
+        }
+
+        /// <summary>
+        /// Get the active controller (PlayerController or NPCController)
+        /// Returns null if neither is active
+        /// </summary>
+        private ControllerAdapter GetActiveController()
+        {
+            // Check PlayerController first (possession mode)
+            if (playerController != null && playerController.enabled)
+            {
+                return new ControllerAdapter
+                {
+                    IsGrounded = playerController.IsGrounded,
+                    IsSwimming = playerController.IsSwimming,
+                    CurrentSpeed = playerController.CurrentSpeed,
+                    Velocity = playerController.Velocity,
+                    MoveInput = playerController.MoveInput,
+                    TurnInput = playerController.TurnInput,
+                    StrafeInput = playerController.StrafeInput,
+                    IsFreeLooking = playerController.IsFreeLooking,
+                    IsRunning = playerController.IsRunning,
+                    IsFalling = playerController.IsFalling
+                };
+            }
+
+            // Check NPCController (normal NPC mode)
+            if (npcController != null && npcController.enabled)
+            {
+                return new ControllerAdapter
+                {
+                    IsGrounded = npcController.IsGrounded,
+                    IsSwimming = npcController.IsSwimming,
+                    CurrentSpeed = npcController.CurrentSpeed,
+                    Velocity = npcController.Velocity,
+                    MoveInput = npcController.MoveInput,
+                    TurnInput = npcController.TurnInput,
+                    StrafeInput = npcController.StrafeInput,
+                    IsFreeLooking = npcController.IsFreeLooking,
+                    IsRunning = npcController.IsRunning,
+                    IsFalling = npcController.IsFalling
+                };
+            }
+
+            return null;
+        }
+
         private void Start()
         {
             // Find Animation component AFTER PlayerController sets up hierarchy
-            Debug.Log("🔍 SimpleAnimationPlayer searching for Animation component...");
+            Debug.Log($"🔍 SimpleAnimationPlayer searching for Animation component on {gameObject.name}...");
 
-            // Check Model child first (created by PlayerController)
+            // Check Model child first (created by PlayerController or NPCController)
             Transform modelChild = transform.Find("Model");
             if (modelChild != null)
             {
                 Debug.Log($"   Found Model child at: {modelChild.name}");
+
+                // Animation might be on Model or on first child of Model
                 animComponent = modelChild.GetComponent<Animation>();
                 if (animComponent != null)
                 {
                     Debug.Log($"✅ Found Animation component on Model child");
+                }
+                else if (modelChild.childCount > 0)
+                {
+                    animComponent = modelChild.GetChild(0).GetComponent<Animation>();
+                    if (animComponent != null)
+                    {
+                        Debug.Log($"✅ Found Animation component on Model's first child: {animComponent.gameObject.name}");
+                    }
                 }
             }
             else
@@ -157,12 +232,29 @@ namespace Player
 
             if (animComponent == null)
             {
-                Debug.LogError("❌ No Animation component found anywhere!");
+                Debug.LogError($"❌ No Animation component found anywhere on {gameObject.name}!");
                 return;
             }
 
-            // Auto-load animations
-            LoadAnimations();
+            // Check if animations are already loaded (from NPCAnimationPlayer before it was disabled)
+            int existingClipCount = 0;
+            foreach (AnimationState state in animComponent)
+            {
+                existingClipCount++;
+            }
+
+            Debug.Log($"   Found {existingClipCount} existing animation clips already loaded");
+
+            if (existingClipCount > 0)
+            {
+                Debug.Log("🔗 Using existing animations (likely from NPCAnimationPlayer)");
+                MapExistingNPCAnimations();
+            }
+            else
+            {
+                Debug.Log("📥 Loading new animations from Resources");
+                LoadAnimations();
+            }
 
             if (isInitialized)
             {
@@ -206,7 +298,11 @@ namespace Player
 
         private void Update()
         {
-            if (!isInitialized || playerController == null) return;
+            if (!isInitialized) return;
+
+            // Get active controller (PlayerController or NPCController)
+            ControllerAdapter controller = GetActiveController();
+            if (controller == null) return;
 
             // Check if landing animation has finished
             if (isPlayingLanding && jumpClip != null)
@@ -226,11 +322,11 @@ namespace Player
                 }
             }
 
-            UpdateAnimation();
+            UpdateAnimation(controller);
 
             // Handle jump in-air ping-pong looping (34%-50% back and forth)
             // Only loop when actually falling (not just slightly off ground)
-            if (isInJumpAir && playerController.IsFalling && jumpClip != null)
+            if (isInJumpAir && controller.IsFalling && jumpClip != null)
             {
                 AnimationState jumpState = animComponent["jump"];
                 if (jumpState != null && jumpState.enabled)
@@ -407,6 +503,109 @@ namespace Player
             manualGender = GenderType.Male;
             Debug.LogWarning("⚠️ Could not detect gender from names. Using default MALE character (mp_ prefix)");
             Debug.LogWarning("   If this is wrong, enable 'Manual Gender Override' in Inspector and set to Female");
+        }
+
+        private void MapExistingNPCAnimations()
+        {
+            Debug.Log("🔗 Mapping existing NPC animations to SimpleAnimationPlayer...");
+
+            // List all available animations
+            Debug.Log("   Available animations:");
+            foreach (AnimationState state in animComponent)
+            {
+                if (state != null && state.clip != null)
+                {
+                    Debug.Log($"      - {state.name}");
+                }
+            }
+
+            // Map existing clips to player animation fields
+            foreach (AnimationState state in animComponent)
+            {
+                if (state == null || state.clip == null) continue;
+
+                string clipName = state.name.ToLower();
+
+                // Map idle
+                if (clipName.Contains("idle") && idleClip == null)
+                {
+                    idleClip = state.clip;
+                    Debug.Log($"   ✓ Mapped idle: {state.name}");
+                }
+                // Map walk
+                else if (clipName.Contains("walk") && !clipName.Contains("back") && walkClip == null)
+                {
+                    walkClip = state.clip;
+                    Debug.Log($"   ✓ Mapped walk: {state.name}");
+                }
+                // Map run (if available)
+                else if (clipName.Contains("run") && !clipName.Contains("back") && runClip == null)
+                {
+                    runClip = state.clip;
+                    Debug.Log($"   ✓ Mapped run: {state.name}");
+                }
+                // Map spin left (for strafing)
+                else if (clipName.Contains("spin") && clipName.Contains("left") && strafeLeftClip == null)
+                {
+                    strafeLeftClip = state.clip;
+                    Debug.Log($"   ✓ Mapped strafe_left: {state.name}");
+                }
+                // Map spin right (for strafing)
+                else if (clipName.Contains("spin") && clipName.Contains("right") && strafeRightClip == null)
+                {
+                    strafeRightClip = state.clip;
+                    Debug.Log($"   ✓ Mapped strafe_right: {state.name}");
+                }
+            }
+
+            // If run not found, use walk
+            if (runClip == null && walkClip != null)
+            {
+                runClip = walkClip;
+                Debug.Log("   ℹ Using walk animation for run (no run animation found)");
+            }
+
+            // Add standard clip names for PlayAnimation to use (only if they don't already exist)
+            if (idleClip != null && !animComponent.GetClip("idle"))
+            {
+                animComponent.AddClip(idleClip, "idle");
+            }
+            if (walkClip != null && !animComponent.GetClip("walk"))
+            {
+                animComponent.AddClip(walkClip, "walk");
+            }
+            if (runClip != null && !animComponent.GetClip("run"))
+            {
+                animComponent.AddClip(runClip, "run");
+            }
+            if (strafeLeftClip != null && !animComponent.GetClip("strafe_left"))
+            {
+                animComponent.AddClip(strafeLeftClip, "strafe_left");
+            }
+            if (strafeRightClip != null && !animComponent.GetClip("strafe_right"))
+            {
+                animComponent.AddClip(strafeRightClip, "strafe_right");
+            }
+
+            // Check if we have minimum required animations
+            if (idleClip != null && walkClip != null)
+            {
+                isInitialized = true;
+
+                // Set up manual bone reset system if enabled
+                if (enableManualBoneReset)
+                {
+                    SetupManualBoneReset();
+                }
+
+                PlayAnimation("idle");
+                Debug.Log("✅ Successfully mapped NPC animations to SimpleAnimationPlayer!");
+            }
+            else
+            {
+                Debug.LogError($"❌ Missing required animations! idle: {(idleClip != null ? "✓" : "✗")}, walk: {(walkClip != null ? "✓" : "✗")}");
+                isInitialized = false;
+            }
         }
 
         private void LoadAnimations()
@@ -710,7 +909,7 @@ namespace Player
             return null;
         }
 
-        private void UpdateAnimation()
+        private void UpdateAnimation(ControllerAdapter controller)
         {
             // Don't change animation while landing animation is playing
             if (isPlayingLanding)
@@ -720,19 +919,19 @@ namespace Player
 
             string targetAnim = "idle";
 
-            // Determine which animation to play based on player state
-            if (playerController.IsSwimming)
+            // Determine which animation to play based on controller state
+            if (controller.IsSwimming)
             {
                 targetAnim = "swim";
             }
-            else if (playerController.IsGrounded)
+            else if (controller.IsGrounded)
             {
-                float speed = playerController.CurrentSpeed;
-                Vector2 input = playerController.MoveInput;
-                float turnInput = playerController.TurnInput;
-                float strafeInput = playerController.StrafeInput;
-                bool isFreeLooking = playerController.IsFreeLooking;
-                bool isRunning = playerController.IsRunning;
+                float speed = controller.CurrentSpeed;
+                Vector2 input = controller.MoveInput;
+                float turnInput = controller.TurnInput;
+                float strafeInput = controller.StrafeInput;
+                bool isFreeLooking = controller.IsFreeLooking;
+                bool isRunning = controller.IsRunning;
 
                 // Check if moving
                 if (speed > 0.5f && (input.magnitude > 0.1f || Mathf.Abs(strafeInput) > 0.1f))
@@ -890,7 +1089,7 @@ namespace Player
             {
                 // In air
                 // Detect landing (was falling, now grounded or back on ground)
-                if (wasFalling && !playerController.IsFalling)
+                if (wasFalling && !controller.IsFalling)
                 {
                     // Just landed - play landing animation (end portion of jump clip)
                     if (jumpClip != null)
@@ -899,13 +1098,13 @@ namespace Player
                         isInJumpAir = false;
                     }
                 }
-                else if (!playerController.IsGrounded)
+                else if (!controller.IsGrounded)
                 {
                     // Not grounded (in air or slightly off ground)
                     if (jumpClip != null)
                     {
                         // If just left ground (was grounded, now not grounded)
-                        if (wasGrounded && !playerController.IsGrounded)
+                        if (wasGrounded && !controller.IsGrounded)
                         {
                             // First frame in air - play jump from start (takeoff)
                             AnimationState jumpState = animComponent["jump"];
@@ -920,7 +1119,7 @@ namespace Player
                         }
 
                         // Only show jump animation if actually falling (not just tiny bumps)
-                        if (playerController.IsFalling)
+                        if (controller.IsFalling)
                         {
                             // The Update method will handle ping-pong looping the middle portion
                             targetAnim = "jump";
@@ -939,28 +1138,34 @@ namespace Player
                 }
             }
 
-            // Track grounded and falling state for next frame
-            wasGrounded = playerController.IsGrounded;
-            wasFalling = playerController.IsFalling;
-
             // Only switch if different
             if (targetAnim != currentAnim)
             {
                 PlayAnimation(targetAnim);
             }
+
+            // Track state for next frame
+            wasGrounded = controller.IsGrounded;
+            wasFalling = controller.IsFalling;
         }
 
         private void PlayAnimation(string animName)
         {
+            Debug.Log($"[SimpleAnimationPlayer] PlayAnimation called: {animName} on {gameObject.name}");
+
             if (!animComponent.GetClip(animName))
             {
+                Debug.LogWarning($"[SimpleAnimationPlayer] Animation '{animName}' not found on {gameObject.name}");
+
                 // Fallback to idle if animation doesn't exist
                 if (animName != "idle" && animComponent.GetClip("idle"))
                 {
+                    Debug.Log($"[SimpleAnimationPlayer] Falling back to idle");
                     animName = "idle";
                 }
                 else
                 {
+                    Debug.LogError($"[SimpleAnimationPlayer] No animation to play!");
                     return;
                 }
             }

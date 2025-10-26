@@ -294,6 +294,7 @@ namespace CharacterOG.Editor
             // Player Controller checkbox
             EditorGUILayout.BeginHorizontal();
             addPlayerController = EditorGUILayout.Toggle("Player Controller", addPlayerController);
+            EditorGUILayout.LabelField(addPlayerController ? "(Playable Character)" : "(Interactive NPC)", EditorStyles.miniLabel, GUILayout.Width(150));
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.EndVertical();
@@ -1209,6 +1210,78 @@ namespace CharacterOG.Editor
             EditorUtility.SetDirty(playerCamera);
         }
 
+        private void SetupAsNPC(GameObject character, PirateDNA dna)
+        {
+            if (character == null) return;
+
+            Debug.Log($"🤖 Setting up '{character.name}' as NPC with interaction...");
+
+            // Add CharacterController for movement
+            CharacterController controller = character.GetComponent<CharacterController>();
+            if (controller == null)
+            {
+                controller = character.AddComponent<CharacterController>();
+                controller.height = 1.8f;
+                controller.radius = 0.3f;
+                controller.center = new Vector3(0f, 0.9f, 0f);
+                Debug.Log("✅ Added CharacterController");
+            }
+
+            // Add Animation component
+            Animation animComponent = character.GetComponent<Animation>();
+            if (animComponent == null)
+            {
+                animComponent = character.AddComponent<Animation>();
+                Debug.Log("✅ Added Animation component");
+            }
+
+            // CharacterGenderData already added by ApplyToCharacter, but ensure it's set
+            CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+            if (genderData != null)
+            {
+                genderData.SetGender(customDna.gender);
+            }
+
+            // Add NPCData component
+            POTCO.NPCData npcData = character.GetComponent<POTCO.NPCData>();
+            if (npcData == null)
+            {
+                npcData = character.AddComponent<POTCO.NPCData>();
+                npcData.npcId = dna.name;
+                npcData.category = "Commoner";
+                npcData.team = "Villager";
+                npcData.startState = "LandRoam";
+                npcData.patrolRadius = 12f;
+                npcData.aggroRadius = 0f;
+                npcData.animSet = "default";
+                // Set gender-aware greeting animation
+                string genderPrefix = dna.gender == "f" ? "fp_" : "mp_";
+                npcData.greetingAnimation = genderPrefix + "wave";
+                npcData.noticeAnimation1 = "";
+                npcData.noticeAnimation2 = "";
+                Debug.Log($"✅ Added NPCData with default settings (greeting: {npcData.greetingAnimation})");
+            }
+
+            // Add NPCController for AI behavior
+            POTCO.NPCController npcController = character.GetComponent<POTCO.NPCController>();
+            if (npcController == null)
+            {
+                npcController = character.AddComponent<POTCO.NPCController>();
+                Debug.Log("✅ Added NPCController");
+            }
+
+            // Add NPCAnimationPlayer for animation management
+            POTCO.NPCAnimationPlayer npcAnimPlayer = character.GetComponent<POTCO.NPCAnimationPlayer>();
+            if (npcAnimPlayer == null)
+            {
+                npcAnimPlayer = character.AddComponent<POTCO.NPCAnimationPlayer>();
+                Debug.Log("✅ Added NPCAnimationPlayer");
+            }
+
+            EditorUtility.SetDirty(character);
+            Debug.Log($"✅ '{character.name}' setup as fully functional NPC complete!");
+        }
+
         private void SpawnNewCharacter()
         {
             string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
@@ -1236,10 +1309,14 @@ namespace CharacterOG.Editor
             Selection.activeGameObject = character;
             ApplyToCharacter();
 
-            // Setup as player controller if checkbox is enabled
+            // Setup as player controller if checkbox is enabled, otherwise setup as NPC
             if (addPlayerController)
             {
                 SetupAsPlayerController(character);
+            }
+            else
+            {
+                SetupAsNPC(character, customDna);
             }
 
             DebugLogger.LogNPCImport($"Spawned new character '{character.name}'");
@@ -1331,10 +1408,14 @@ namespace CharacterOG.Editor
 
                 DebugLogger.LogNPCImport($"Applied DNA to '{selectedCharacter.name}' with color and gender persistence");
 
-                // Setup as player controller if checkbox is enabled
+                // Setup as player controller if checkbox is enabled, otherwise setup as NPC
                 if (addPlayerController)
                 {
                     SetupAsPlayerController(selectedCharacter);
+                }
+                else
+                {
+                    SetupAsNPC(selectedCharacter, customDna);
                 }
             }
             catch (System.Exception ex)

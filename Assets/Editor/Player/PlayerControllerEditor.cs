@@ -20,6 +20,13 @@ namespace PlayerEditor
                 playerController.gameObject.AddComponent<POTCO.WorldCollisionManager>();
                 Debug.Log("✅ Auto-attached WorldCollisionManager to PlayerController in Edit mode");
             }
+
+            // Ensure AdminController is attached
+            if (playerController.GetComponent<AdminController>() == null)
+            {
+                playerController.gameObject.AddComponent<AdminController>();
+                Debug.Log("✅ Auto-attached AdminController to PlayerController in Edit mode");
+            }
         }
     }
 }

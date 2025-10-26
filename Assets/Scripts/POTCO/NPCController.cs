@@ -653,6 +653,16 @@ namespace POTCO
         public float CurrentSpeed => new Vector3(velocity.x, 0, velocity.z).magnitude;
         // Return turn direction: -1 = left, 1 = right, 0 = not turning
         public float TurnDirection => currentTurnDirection;
+
+        // PlayerController-compatible API for SimpleAnimationPlayer
+        public bool IsSwimming => false; // NPCs don't swim yet
+        public Vector3 Velocity => velocity;
+        public Vector2 MoveInput => Vector2.zero; // NPCs use AI, not direct input
+        public float TurnInput => currentTurnDirection; // Alias for TurnDirection
+        public float StrafeInput => 0f; // NPCs don't strafe
+        public bool IsFreeLooking => false; // NPCs don't free-look
+        public bool IsRunning => false; // NPCs walk at constant speed
+        public bool IsFalling => !isGrounded && velocity.y < -0.5f;
         #endregion
 
         #region Gizmos
