@@ -48,7 +48,8 @@ namespace POTCO
         [Header("Model Setup")]
         [Tooltip("POTCO models face backwards - set to 180 to flip")]
         [SerializeField] private float modelRotationOffset = 180f;
-        [SerializeField] private bool autoSetupModelHierarchy = true;
+        [Tooltip("Enable for static POTCO models, disable for custom DNA characters")]
+        [SerializeField] private bool autoSetupModelHierarchy = false;
 
         [Header("Debug")]
         [SerializeField] private bool showDebugGizmos = true;
@@ -131,14 +132,14 @@ namespace POTCO
             if (npcData != null && npcData.patrolRadius > 0.1f)
             {
                 currentWaypoint = GetRandomPatrolPoint();
-                Debug.Log($"[{gameObject.name}] Spawn position initialized at ground level: {spawnPosition}, first waypoint: {currentWaypoint}");
+                DebugLogger.LogNPCController($"[{gameObject.name}] Spawn position initialized at ground level: {spawnPosition}, first waypoint: {currentWaypoint}");
             }
             else
             {
                 // No patrol - stay at spawn
                 currentWaypoint = spawnPosition;
                 isIdleAtWaypoint = true;
-                Debug.Log($"[{gameObject.name}] Spawn position initialized at ground level: {spawnPosition}, no patrol");
+                DebugLogger.LogNPCController($"[{gameObject.name}] Spawn position initialized at ground level: {spawnPosition}, no patrol");
             }
         }
         #endregion
@@ -146,6 +147,8 @@ namespace POTCO
         #region Update Loop
         private void Update()
         {
+            SimpleProfiler.BeginNPCUpdate();
+
             // Check grounded state early (needed for spawn position initialization)
             isGrounded = controller.isGrounded;
 
@@ -167,6 +170,7 @@ namespace POTCO
                 controller.Move(velocity * Time.deltaTime);
 
                 // Don't run AI until spawn position is initialized
+                SimpleProfiler.EndNPCUpdate();
                 return;
             }
 
@@ -190,7 +194,7 @@ namespace POTCO
                     if (controller != null && controller.enabled)
                     {
                         controller.enabled = false;
-                        Debug.Log($"🔒 Disabled CharacterController for stationary NPC: {gameObject.name}");
+                        DebugLogger.LogNPCController($"🔒 Disabled CharacterController for stationary NPC: {gameObject.name}");
                     }
 
                     // Also check for and disable any Rigidbody components
@@ -200,10 +204,10 @@ namespace POTCO
                         rb.isKinematic = true;
                         rb.linearVelocity = Vector3.zero;
                         rb.angularVelocity = Vector3.zero;
-                        Debug.Log($"🔒 Set Rigidbody to kinematic for stationary NPC: {gameObject.name}");
+                        DebugLogger.LogNPCController($"🔒 Set Rigidbody to kinematic for stationary NPC: {gameObject.name}");
                     }
 
-                    Debug.Log($"🔒 Position and rotation locked for stationary NPC: {gameObject.name}");
+                    DebugLogger.LogNPCController($"🔒 Position and rotation locked for stationary NPC: {gameObject.name}");
                 }
                 else
                 {
@@ -211,7 +215,7 @@ namespace POTCO
                     if (Vector3.Distance(transform.position, lockedPosition) > 0.001f)
                     {
                         transform.position = lockedPosition;
-                        Debug.LogWarning($"⚠️ Stationary NPC {gameObject.name} was moved! Resetting to locked position.");
+                        DebugLogger.LogWarningNPCController($"⚠️ Stationary NPC {gameObject.name} was moved! Resetting to locked position.");
                     }
                     if (Quaternion.Angle(transform.rotation, lockedRotation) > 0.01f)
                     {
@@ -237,6 +241,7 @@ namespace POTCO
                         break;
                 }
 
+                SimpleProfiler.EndNPCUpdate();
                 return; // Skip movement and gravity
             }
 
@@ -272,9 +277,11 @@ namespace POTCO
                     // Hit a wall - stop horizontal velocity
                     velocity.x = 0;
                     velocity.z = 0;
-                    Debug.Log($"[{gameObject.name}] Hit wall during patrol, stopping movement");
+                    DebugLogger.LogNPCController($"[{gameObject.name}] Hit wall during patrol, stopping movement");
                 }
             }
+
+            SimpleProfiler.EndNPCUpdate();
         }
         #endregion
 
@@ -334,7 +341,7 @@ namespace POTCO
                     stuckTimer = 0f; // Reset stuck timer
                     velocity.x = 0; // Stop moving
                     velocity.z = 0;
-                    Debug.Log($"[{gameObject.name}] Reached waypoint (distance: {distanceToWaypoint:F2}m)");
+                    DebugLogger.LogNPCController($"[{gameObject.name}] Reached waypoint (distance: {distanceToWaypoint:F2}m)");
                 }
                 else
                 {
@@ -353,7 +360,7 @@ namespace POTCO
                         // If stuck for too long, pick new waypoint
                         if (stuckTimer >= stuckTimeout)
                         {
-                            Debug.LogWarning($"[{gameObject.name}] Stuck detected! Distance moved: {distanceMoved:F4}m in {Time.deltaTime:F4}s. Picking new waypoint...");
+                            DebugLogger.LogWarningNPCController($"[{gameObject.name}] Stuck detected! Distance moved: {distanceMoved:F4}m in {Time.deltaTime:F4}s. Picking new waypoint...");
                             currentWaypoint = GetRandomPatrolPoint();
                             stuckTimer = 0f;
 
@@ -546,7 +553,7 @@ namespace POTCO
                 Vector3 destinationCheck = candidatePoint + new Vector3(0, characterRadius, 0);
                 if (Physics.CheckSphere(destinationCheck, characterRadius * 0.5f, LayerMask.GetMask("Default", "Collision", "Wall")))
                 {
-                    Debug.Log($"[{gameObject.name}] Patrol point {i+1} inside collision, retrying...");
+                    DebugLogger.LogNPCController($"[{gameObject.name}] Patrol point {i+1} inside collision, retrying...");
                     continue;
                 }
 
@@ -570,11 +577,11 @@ namespace POTCO
                 }
 
                 // Path blocked - try again
-                Debug.Log($"[{gameObject.name}] Patrol point {i+1} blocked by {hit.collider.name}, retrying...");
+                DebugLogger.LogNPCController($"[{gameObject.name}] Patrol point {i+1} blocked by {hit.collider.name}, retrying...");
             }
 
             // All retries failed - just stay at spawn position
-            Debug.LogWarning($"[{gameObject.name}] Could not find valid patrol point after {maxRetries} retries, staying at spawn");
+            DebugLogger.LogWarningNPCController($"[{gameObject.name}] Could not find valid patrol point after {maxRetries} retries, staying at spawn");
             return spawnPosition;
         }
         #endregion
@@ -584,7 +591,7 @@ namespace POTCO
         {
             if (currentState != newState)
             {
-                Debug.Log($"[{gameObject.name}] State: {currentState} → {newState}");
+                DebugLogger.LogNPCController($"[{gameObject.name}] State: {currentState} → {newState}");
                 currentState = newState;
                 stateEnterTime = Time.time;
             }
@@ -609,40 +616,15 @@ namespace POTCO
 
         private void SetupModelHierarchy()
         {
-            // Check if Model child already exists
-            Transform existingModel = transform.Find("Model");
-            if (existingModel != null) return;
-
-            // Store current rotation - this is the spawn rotation from world data
-            Quaternion originalRotation = transform.rotation;
-
-            // Create Model child
-            GameObject modelChild = new GameObject("Model");
-            modelChild.transform.SetParent(transform);
-            modelChild.transform.localPosition = Vector3.zero;
-            modelChild.transform.localRotation = Quaternion.Euler(0f, modelRotationOffset, 0f);
-            modelChild.transform.localScale = Vector3.one;
-
-            // Move all children except GroundCheck to Model
-            System.Collections.Generic.List<Transform> childrenToMove = new System.Collections.Generic.List<Transform>();
+            // Apply rotation offset directly to each child (no Model wrapper needed)
+            // Parent keeps original rotation from world data
             foreach (Transform child in transform)
             {
-                if (child != modelChild.transform && child.name != "GroundCheck")
+                if (child.name != "GroundCheck")
                 {
-                    childrenToMove.Add(child);
+                    child.localRotation = Quaternion.Euler(0f, modelRotationOffset, 0f);
                 }
             }
-
-            foreach (Transform child in childrenToMove)
-            {
-                child.SetParent(modelChild.transform);
-            }
-
-            // Adjust parent rotation to compensate for Model's 180° offset
-            // We want: originalRotation = parent.rotation + Model.localRotation
-            // So: parent.rotation = originalRotation - Model.localRotation
-            // Which is: parent.rotation = originalRotation - 180°
-            transform.rotation = originalRotation * Quaternion.Euler(0f, -modelRotationOffset, 0f);
         }
         #endregion
 

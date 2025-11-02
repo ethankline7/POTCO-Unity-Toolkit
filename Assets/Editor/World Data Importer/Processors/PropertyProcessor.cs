@@ -5,6 +5,7 @@ using POTCO;
 using POTCO.Editor;
 using System.Collections.Generic;
 using System.Linq;
+using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataImporter.Processors
 {
@@ -977,18 +978,10 @@ namespace WorldDataImporter.Processors
             try
             {
                 // Find the character root GameObject (the one spawned in SpawnNPC - has the character name)
-                // This is typically the first direct child of npcParent (or npcParent/Model if NPCController created Model wrapper)
+                // This is the first direct child of npcParent
                 GameObject characterRootObject = null;
 
-                // Check if there's a "Model" child (created by NPCController)
-                Transform modelTransform = npcParent.transform.Find("Model");
-                if (modelTransform != null && modelTransform.childCount > 0)
-                {
-                    // Character is child of Model
-                    characterRootObject = modelTransform.GetChild(0).gameObject;
-                    DebugLogger.LogNPCImport($"📦 Found character under Model wrapper: {characterRootObject.name}");
-                }
-                else if (npcParent.transform.childCount > 0)
+                if (npcParent.transform.childCount > 0)
                 {
                     // Character is direct child
                     characterRootObject = npcParent.transform.GetChild(0).gameObject;

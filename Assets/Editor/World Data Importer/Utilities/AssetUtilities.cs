@@ -4,6 +4,7 @@ using System.IO;
 using WorldDataImporter.Data;
 using POTCO;
 using POTCO.Editor;
+using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataImporter.Utilities
 {

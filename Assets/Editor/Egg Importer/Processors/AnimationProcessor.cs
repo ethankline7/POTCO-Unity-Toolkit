@@ -738,10 +738,11 @@ public class AnimationProcessor
     private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps)
     {
         // Skip body shape bones - these are controlled by BodyShapeApplier and shouldn't be animated
+        // ALL bones starting with "def_" are body shape bones and should NEVER be animated
         string boneName = bonePath.Split('/').Last();
-        if (BodyShapeBones.Contains(boneName))
+        if (boneName.StartsWith("def_"))
         {
-            DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' (controlled by BodyShapeApplier)");
+            DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' (all def_ bones are controlled by BodyShapeApplier)");
             return;
         }
 

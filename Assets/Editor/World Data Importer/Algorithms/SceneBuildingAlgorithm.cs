@@ -9,6 +9,7 @@ using WorldDataImporter.Processors;
 using WorldDataImporter.Data;
 using POTCO;
 using POTCO.Editor;
+using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataImporter.Algorithms
 {

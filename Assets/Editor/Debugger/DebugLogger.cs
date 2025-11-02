@@ -17,7 +17,7 @@ namespace POTCO.Editor
                 Debug.Log(message);
             }
         }
-        
+
         /// <summary>
         /// Log warning for World Scene Importer
         /// </summary>
@@ -28,7 +28,7 @@ namespace POTCO.Editor
                 Debug.LogWarning(message);
             }
         }
-        
+
         /// <summary>
         /// Log error for World Scene Importer
         /// </summary>
@@ -50,7 +50,7 @@ namespace POTCO.Editor
                 Debug.Log(message);
             }
         }
-        
+
         /// <summary>
         /// Log warning for Auto POTCO Detection (legacy support)
         /// </summary>
@@ -61,7 +61,7 @@ namespace POTCO.Editor
                 Debug.LogWarning(message);
             }
         }
-        
+
         /// <summary>
         /// Log error for Auto POTCO Detection (legacy support)
         /// </summary>
@@ -83,7 +83,7 @@ namespace POTCO.Editor
                 Debug.Log(message);
             }
         }
-        
+
         /// <summary>
         /// Log warning for Auto ObjectList Detection
         /// </summary>
@@ -94,7 +94,7 @@ namespace POTCO.Editor
                 Debug.LogWarning(message);
             }
         }
-        
+
         /// <summary>
         /// Log error for Auto ObjectList Detection
         /// </summary>
@@ -116,7 +116,7 @@ namespace POTCO.Editor
                 Debug.Log(message);
             }
         }
-        
+
         /// <summary>
         /// Log warning for EGG File Importer
         /// </summary>
@@ -127,7 +127,7 @@ namespace POTCO.Editor
                 Debug.LogWarning(message);
             }
         }
-        
+
         /// <summary>
         /// Log error for EGG File Importer
         /// </summary>
@@ -149,7 +149,7 @@ namespace POTCO.Editor
                 Debug.Log(message);
             }
         }
-        
+
         /// <summary>
         /// Log warning for World Data Exporter
         /// </summary>
@@ -160,7 +160,7 @@ namespace POTCO.Editor
                 Debug.LogWarning(message);
             }
         }
-        
+
         /// <summary>
         /// Log error for World Data Exporter
         /// </summary>
@@ -182,7 +182,7 @@ namespace POTCO.Editor
                 Debug.Log(message);
             }
         }
-        
+
         /// <summary>
         /// Log warning for Procedural Generation (Cave Generator)
         /// </summary>
@@ -193,7 +193,7 @@ namespace POTCO.Editor
                 Debug.LogWarning(message);
             }
         }
-        
+
         /// <summary>
         /// Log error for Procedural Generation (Cave Generator)
         /// </summary>
@@ -212,7 +212,7 @@ namespace POTCO.Editor
         {
             Debug.Log(message);
         }
-        
+
         /// <summary>
         /// Always log critical warnings regardless of debug settings
         /// </summary>
@@ -220,7 +220,7 @@ namespace POTCO.Editor
         {
             Debug.LogWarning(message);
         }
-        
+
         /// <summary>
         /// Always log critical errors regardless of debug settings
         /// </summary>
@@ -230,36 +230,27 @@ namespace POTCO.Editor
         }
 
         /// <summary>
-        /// Log message for NPC Import
+        /// Log message for NPC Import - forwards to runtime logger
         /// </summary>
         public static void LogNPCImport(string message)
         {
-            if (DebugSettings.debugNPCImport)
-            {
-                Debug.Log(message);
-            }
+            POTCO.DebugLogger.LogNPCImport(message);
         }
 
         /// <summary>
-        /// Log warning for NPC Import
+        /// Log warning for NPC Import - forwards to runtime logger
         /// </summary>
         public static void LogWarningNPCImport(string message)
         {
-            if (DebugSettings.debugNPCImport)
-            {
-                Debug.LogWarning(message);
-            }
+            POTCO.DebugLogger.LogWarningNPCImport(message);
         }
 
         /// <summary>
-        /// Log error for NPC Import
+        /// Log error for NPC Import - forwards to runtime logger
         /// </summary>
         public static void LogErrorNPCImport(string message)
         {
-            if (DebugSettings.debugNPCImport)
-            {
-                Debug.LogError(message);
-            }
+            POTCO.DebugLogger.LogErrorNPCImport(message);
         }
     }
 }

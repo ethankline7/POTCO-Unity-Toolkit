@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using POTCO.Editor;
 using POTCO;
+using DebugLogger = POTCO.Editor.DebugLogger;
 
 [InitializeOnLoad]
 public class EggImportStartupPrompt

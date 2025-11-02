@@ -89,6 +89,24 @@ namespace POTCO.Editor
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Logs NPC spawning, DNA loading, position conversion, and animation application", EditorStyles.miniLabel);
 
+            GUILayout.Space(3);
+
+            // NPC Controller Runtime
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugNPCController = EditorGUILayout.Toggle("NPC Controller (Runtime)", DebugSettings.debugNPCController);
+            if (DebugSettings.debugNPCController) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs NPC AI states, pathfinding, player detection, and movement (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
+
+            GUILayout.Space(3);
+
+            // NPC Animation Runtime
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugNPCAnimation = EditorGUILayout.Toggle("NPC Animation (Runtime)", DebugSettings.debugNPCAnimation);
+            if (DebugSettings.debugNPCAnimation) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs NPC animation playback, gender detection, and animation loading (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
+
             GUILayout.Space(10);
             
             // Control buttons
