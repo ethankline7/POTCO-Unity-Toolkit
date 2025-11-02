@@ -147,8 +147,6 @@ namespace POTCO
         #region Update Loop
         private void Update()
         {
-            SimpleProfiler.BeginNPCUpdate();
-
             // Check grounded state early (needed for spawn position initialization)
             isGrounded = controller.isGrounded;
 
@@ -170,7 +168,6 @@ namespace POTCO
                 controller.Move(velocity * Time.deltaTime);
 
                 // Don't run AI until spawn position is initialized
-                SimpleProfiler.EndNPCUpdate();
                 return;
             }
 
@@ -241,7 +238,6 @@ namespace POTCO
                         break;
                 }
 
-                SimpleProfiler.EndNPCUpdate();
                 return; // Skip movement and gravity
             }
 
@@ -280,8 +276,6 @@ namespace POTCO
                     DebugLogger.LogNPCController($"[{gameObject.name}] Hit wall during patrol, stopping movement");
                 }
             }
-
-            SimpleProfiler.EndNPCUpdate();
         }
         #endregion
 
