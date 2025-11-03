@@ -220,7 +220,6 @@ public class EggImporter : ScriptedImporter
                     DebugLogger.LogEggImporter($"🎬 STANDALONE: Found animation bundle: '{bundleName}'");
 
                     var clip = new AnimationClip { name = eggFileName }; // Use .egg filename instead of bundle name
-                    clip.legacy = true; // Use legacy animation for compatibility with Animation component
                     clip.wrapMode = WrapMode.Loop;
 
                     int bundleEnd = _parserUtils.FindMatchingBrace(lines, i);
@@ -284,7 +283,6 @@ public class EggImporter : ScriptedImporter
                     DebugLogger.LogEggImporter($"🎯 COMBINED: Found bundle '{bundleName}'");
 
                     var clip = new AnimationClip { name = bundleName + "_anim" };
-                    clip.legacy = true;
                     clip.wrapMode = WrapMode.Loop;
 
                     int bundleEnd = _parserUtils.FindMatchingBrace(lines, i);
@@ -307,14 +305,9 @@ public class EggImporter : ScriptedImporter
                             DebugLogger.LogEggImporter($"🎯 COMBINED: Animation clip has {curveBindings.Length} curves");
                             ctx.AddObjectToAsset(clip.name, clip);
 
-                            var animComponent = rootGO.GetComponent<Animation>();
-                            if (animComponent == null)
-                            {
-                                animComponent = rootGO.AddComponent<Animation>();
-                            }
-                            animComponent.AddClip(clip, clip.name);
-                            animComponent.clip = clip;
-                            animComponent.playAutomatically = true;
+                            // Note: Animation component not added automatically for Mecanim compatibility
+                            // Users should manually add RuntimeAnimatorPlayer component and load clips
+                            DebugLogger.LogEggImporter($"🎯 COMBINED: Animation clip '{clip.name}' ready for use with RuntimeAnimatorPlayer");
                         }
 
                         i = bundleEnd;

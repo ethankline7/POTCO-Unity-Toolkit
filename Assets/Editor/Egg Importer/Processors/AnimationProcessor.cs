@@ -90,10 +90,7 @@ public class AnimationProcessor
                             DebugLogger.LogEggImporter($"🎬 ANIMATION: Adding clip '{clip.name}' to asset context");
                             ctx.AddObjectToAsset(clip.name, clip);
 
-                            DebugLogger.LogEggImporter($"🎬 ANIMATION: Starting controller creation...");
-                            CreateAnimatorControllerForClip(clip, rootGO, ctx);
-
-                            DebugLogger.LogEggImporter($"🎮 ANIMATION: SUCCESS! Animation '{clip.name}' is ready to use!");
+                            DebugLogger.LogEggImporter($"🎮 ANIMATION: SUCCESS! Animation '{clip.name}' imported successfully!");
                         }
                         else
                         {
@@ -697,43 +694,6 @@ public class AnimationProcessor
         }
         }
 
-    private void CreateAnimatorControllerForClip(AnimationClip clip, GameObject rootGO, AssetImportContext ctx)
-    {
-        DebugLogger.LogEggImporter($"🎯 LEGACY: Setting up legacy animation for clip '{clip.name}'");
-
-        try
-        {
-            clip.legacy = true;
-            clip.wrapMode = WrapMode.Loop;
-
-            DebugLogger.LogEggImporter($"🎯 LEGACY: Configured clip as legacy with loop wrap mode");
-
-            var animator = rootGO.GetComponent<Animator>();
-            if (animator != null)
-            {
-                UnityEngine.Object.DestroyImmediate(animator);
-                DebugLogger.LogEggImporter($"🎯 LEGACY: Removed Animator component");
-            }
-
-            var animationComponent = rootGO.GetComponent<Animation>();
-            if (animationComponent == null)
-            {
-                animationComponent = rootGO.AddComponent<Animation>();
-                DebugLogger.LogEggImporter($"🎯 LEGACY: Added Animation component");
-            }
-
-            animationComponent.AddClip(clip, clip.name);
-            animationComponent.clip = clip;
-            animationComponent.playAutomatically = true;
-
-            DebugLogger.LogEggImporter($"✅ LEGACY: Complete! Legacy animation '{clip.name}' ready to play automatically");
-            DebugLogger.LogEggImporter($"🎮 READY: Just drag '{rootGO.name}' into your scene and it will animate immediately!");
-        }
-        catch (System.Exception e)
-        {
-            DebugLogger.LogErrorEggImporter($"❌ LEGACY: Exception during setup: {e.Message}\nStack: {e.StackTrace}");
-        }
-        }
 
     private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps)
     {

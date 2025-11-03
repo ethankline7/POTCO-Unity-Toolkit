@@ -297,12 +297,13 @@ namespace POTCO
 
             Debug.Log($"[SpawnNode] Parented creature to spawn node: {transform.name} at local position (0,0,0)");
 
-            // Add Animation component to the instance (matches PropertyProcessor line 1335-1340)
-            Animation animComponent = instance.GetComponent<Animation>();
+            // Add RuntimeAnimatorPlayer component to the instance
+            RuntimeAnimatorPlayer animComponent = instance.GetComponent<RuntimeAnimatorPlayer>();
             if (animComponent == null)
             {
-                animComponent = instance.AddComponent<Animation>();
-                Debug.Log($"[SpawnNode] ✅ Added Animation component to instance: {instance.name}");
+                animComponent = instance.AddComponent<RuntimeAnimatorPlayer>();
+                animComponent.Initialize();
+                Debug.Log($"[SpawnNode] ✅ Added RuntimeAnimatorPlayer component to instance: {instance.name}");
             }
 
             // Add AI components - pass the PARENT (this gameObject), not the instance
@@ -359,18 +360,19 @@ namespace POTCO
                 return;
             }
 
-            // Ensure Animation component exists on creature model - PropertyProcessor line 1331-1344
-            Animation animComponent = null;
+            // Ensure RuntimeAnimatorPlayer component exists on creature model
+            RuntimeAnimatorPlayer animComponent = null;
             if (creatureModel != null)
             {
-                animComponent = creatureModel.GetComponent<Animation>();
+                animComponent = creatureModel.GetComponent<RuntimeAnimatorPlayer>();
                 if (animComponent == null)
                 {
-                    animComponent = creatureModel.AddComponent<Animation>();
-                    Debug.Log($"[SpawnNode] ✅ Added Animation component to creature model: {creatureModel.name}");
+                    animComponent = creatureModel.AddComponent<RuntimeAnimatorPlayer>();
+                    animComponent.Initialize();
+                    Debug.Log($"[SpawnNode] ✅ Added RuntimeAnimatorPlayer component to creature model: {creatureModel.name}");
                 }
 
-                // CRITICAL: Load and assign animation clips - PropertyProcessor line 1343
+                // CRITICAL: Load and assign animation clips
                 Debug.Log($"[SpawnNode] Calling LoadCreatureAnimations for species: {species}");
                 LoadCreatureAnimations(animComponent, species);
             }
@@ -477,7 +479,7 @@ namespace POTCO
         /// Load animation clips for creature's Animation component from Resources
         /// Matches PropertyProcessor.LoadCreatureAnimations logic
         /// </summary>
-        private void LoadCreatureAnimations(Animation animComponent, string species)
+        private void LoadCreatureAnimations(RuntimeAnimatorPlayer animComponent, string species)
         {
             if (animComponent == null)
             {
@@ -530,12 +532,7 @@ namespace POTCO
                     // Add clip with the base model + anim name (e.g., "alligator_idle")
                     string clipName = $"{baseModelName}_{animName}";
                     animComponent.AddClip(clip, clipName);
-
-                    // Set first animation as default
-                    if (animComponent.clip == null)
-                    {
-                        animComponent.clip = clip;
-                    }
+                    animComponent.SetWrapMode(clipName, WrapMode.Loop);
 
                     loadedCount++;
                     Debug.Log($"[SpawnNode] ✅ Loaded animation '{clipName}' from: {successPath}");

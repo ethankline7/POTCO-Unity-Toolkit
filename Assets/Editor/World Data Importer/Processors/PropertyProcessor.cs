@@ -1002,24 +1002,25 @@ namespace WorldDataImporter.Processors
                     }
                 }
 
-                // Ensure Animation component exists on the character root
-                Animation animComponent = null;
+                // Ensure RuntimeAnimatorPlayer component exists on the character root
+                RuntimeAnimatorPlayer animComponent = null;
                 if (characterRootObject != null)
                 {
-                    animComponent = characterRootObject.GetComponent<Animation>();
+                    animComponent = characterRootObject.GetComponent<RuntimeAnimatorPlayer>();
                     if (animComponent == null)
                     {
-                        animComponent = characterRootObject.AddComponent<Animation>();
-                        DebugLogger.LogNPCImport($"✅ Added Animation component to character root: {characterRootObject.name}");
+                        animComponent = characterRootObject.AddComponent<RuntimeAnimatorPlayer>();
+                        animComponent.Initialize();
+                        DebugLogger.LogNPCImport($"✅ Added RuntimeAnimatorPlayer component to character root: {characterRootObject.name}");
                     }
                     else
                     {
-                        DebugLogger.LogNPCImport($"✅ Animation component already exists on: {characterRootObject.name}");
+                        DebugLogger.LogNPCImport($"✅ RuntimeAnimatorPlayer component already exists on: {characterRootObject.name}");
                     }
                 }
                 else
                 {
-                    DebugLogger.LogNPCImport($"⚠️ No character root found to add Animation component!");
+                    DebugLogger.LogNPCImport($"⚠️ No character root found to add RuntimeAnimatorPlayer component!");
                 }
 
                 // Add NPCData component and transfer world data
@@ -1172,11 +1173,12 @@ namespace WorldDataImporter.Processors
                 // Parent creature to node GameObject
                 instance.transform.SetParent(currentGO.transform, false);
 
-                // Add Animation component if not present
-                Animation animComponent = instance.GetComponent<Animation>();
+                // Add RuntimeAnimatorPlayer component if not present
+                RuntimeAnimatorPlayer animComponent = instance.GetComponent<RuntimeAnimatorPlayer>();
                 if (animComponent == null)
                 {
-                    animComponent = instance.AddComponent<Animation>();
+                    animComponent = instance.AddComponent<RuntimeAnimatorPlayer>();
+                    animComponent.Initialize();
                 }
 
                 // Log available animations from creature data
@@ -1225,9 +1227,9 @@ namespace WorldDataImporter.Processors
         }
 
         /// <summary>
-        /// Load animation clips for creature's Animation component from Resources
+        /// Load animation clips for creature's RuntimeAnimatorPlayer component from Resources
         /// </summary>
-        private static void LoadCreatureAnimations(Animation animComponent, CreatureData creatureData, string species)
+        private static void LoadCreatureAnimations(RuntimeAnimatorPlayer animComponent, CreatureData creatureData, string species)
         {
             Debug.Log($"[LoadCreatureAnimations] Called for {species}"); // Force log regardless of settings
 
@@ -1288,12 +1290,7 @@ namespace WorldDataImporter.Processors
                     // Add clip with the base model + anim name (e.g., "chicken_idle")
                     string clipName = $"{baseModelName}_{animName}";
                     animComponent.AddClip(clip, clipName);
-
-                    // Set first animation as default
-                    if (animComponent.clip == null)
-                    {
-                        animComponent.clip = clip;
-                    }
+                    animComponent.SetWrapMode(clipName, WrapMode.Loop);
 
                     loadedCount++;
                     Debug.Log($"✅ Loaded animation '{clipName}' from: {successPath}");
@@ -1305,11 +1302,9 @@ namespace WorldDataImporter.Processors
                 }
             }
 
-            if (loadedCount > 0)
-            {
-                animComponent.playAutomatically = false; // AnimalAnimationPlayer will control playback
-                animComponent.wrapMode = WrapMode.Loop;
-            }
+            // Note: RuntimeAnimatorPlayer doesn't have playAutomatically or wrapMode properties
+            // Wrap mode is set per-clip above with SetWrapMode()
+            // AnimalAnimationPlayer controls playback
 
             DebugLogger.LogWorldImporter($"📋 Animation loading summary for {species}: {loadedCount} loaded, {failedCount} failed");
         }
@@ -1328,15 +1323,16 @@ namespace WorldDataImporter.Processors
                     creatureModel = creatureParent.transform.GetChild(0).gameObject;
                 }
 
-                // Ensure Animation component exists on the creature model
-                Animation animComponent = null;
+                // Ensure RuntimeAnimatorPlayer component exists on the creature model
+                RuntimeAnimatorPlayer animComponent = null;
                 if (creatureModel != null)
                 {
-                    animComponent = creatureModel.GetComponent<Animation>();
+                    animComponent = creatureModel.GetComponent<RuntimeAnimatorPlayer>();
                     if (animComponent == null)
                     {
-                        animComponent = creatureModel.AddComponent<Animation>();
-                        DebugLogger.LogWorldImporter($"✅ Added Animation component to creature model: {creatureModel.name}");
+                        animComponent = creatureModel.AddComponent<RuntimeAnimatorPlayer>();
+                        animComponent.Initialize();
+                        DebugLogger.LogWorldImporter($"✅ Added RuntimeAnimatorPlayer component to creature model: {creatureModel.name}");
                     }
 
                     // Load and assign animation clips from creature data
@@ -1580,11 +1576,12 @@ namespace WorldDataImporter.Processors
                 }
                 else
                 {
-                    // Animation clip not found, just add Animation component and log
-                    Animation anim = character.GetComponent<Animation>();
+                    // Animation clip not found, just add RuntimeAnimatorPlayer component and log
+                    RuntimeAnimatorPlayer anim = character.GetComponent<RuntimeAnimatorPlayer>();
                     if (anim == null)
                     {
-                        anim = character.AddComponent<Animation>();
+                        anim = character.AddComponent<RuntimeAnimatorPlayer>();
+                        anim.Initialize();
                     }
 
                     DebugLogger.LogNPCImport($"⚠️ Animation clip not found: {animationName} (AnimSet: {animSet})");

@@ -36,40 +36,28 @@ namespace POTCO
             Debug.Log($"NPCAnimationPlayer: {(npcAnimPlayer != null ? "✓" : "✗")}");
             Debug.Log($"CharacterController: {(charController != null ? "✓" : "✗")}");
 
-            // Check for Animation component
-            Debug.Log($"--- ANIMATION COMPONENT ---");
-            Animation anim = GetComponent<Animation>();
+            // Check for RuntimeAnimatorPlayer component
+            Debug.Log($"--- ANIMATOR COMPONENT ---");
+            RuntimeAnimatorPlayer anim = GetComponent<RuntimeAnimatorPlayer>();
             if (anim == null)
             {
-                anim = GetComponentInChildren<Animation>();
+                anim = GetComponentInChildren<RuntimeAnimatorPlayer>();
                 if (anim != null)
                 {
-                    Debug.Log($"Animation component found on child: {anim.gameObject.name}");
+                    Debug.Log($"RuntimeAnimatorPlayer component found on child: {anim.gameObject.name}");
                 }
                 else
                 {
-                    Debug.LogError($"❌ NO Animation component found!");
+                    Debug.LogError($"❌ NO RuntimeAnimatorPlayer component found!");
                 }
             }
             else
             {
-                Debug.Log($"Animation component found on this GameObject");
+                Debug.Log($"RuntimeAnimatorPlayer component found on this GameObject");
             }
 
-            if (anim != null)
-            {
-                Debug.Log($"Animation clip count: {anim.GetClipCount()}");
-                foreach (AnimationState state in anim)
-                {
-                    Debug.Log($"  - Clip: {state.name} (Length: {state.length}s)");
-                }
-
-                Debug.Log($"Is Playing: {anim.isPlaying}");
-                if (anim.isPlaying)
-                {
-                    Debug.Log($"Current clip: {anim.clip?.name}");
-                }
-            }
+            // Note: Detailed clip enumeration not available with RuntimeAnimatorPlayer
+            // Use NPCAnimationPlayer inspector to see loaded clips
 
             // Check hierarchy
             Debug.Log($"--- HIERARCHY ---");
@@ -86,11 +74,11 @@ namespace POTCO
                     Debug.Log($"    - Has SkinnedMeshRenderer on: {smr.gameObject.name}");
                 }
 
-                // Check for Animation on child
-                var childAnim = child.GetComponent<Animation>();
+                // Check for RuntimeAnimatorPlayer on child
+                var childAnim = child.GetComponent<RuntimeAnimatorPlayer>();
                 if (childAnim != null)
                 {
-                    Debug.Log($"    - Has Animation component with {childAnim.GetClipCount()} clips");
+                    Debug.Log($"    - Has RuntimeAnimatorPlayer component");
                 }
             }
 

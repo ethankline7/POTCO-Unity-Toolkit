@@ -10,6 +10,7 @@ namespace POTCO
     /// </summary>
     [RequireComponent(typeof(NPCController))]
     [RequireComponent(typeof(NPCData))]
+    [RequireComponent(typeof(RuntimeAnimatorPlayer))]
     public class NPCAnimationPlayer : MonoBehaviour
     {
         [Header("Animation Transitions")]
@@ -35,7 +36,7 @@ namespace POTCO
         [Header("Props (From CustomAnims.py)")]
         [SerializeField] private GameObject attachedProp;
 
-        private Animation animComponent;
+        private RuntimeAnimatorPlayer animComponent;
         private NPCController npcController;
         private NPCData npcData;
         private string currentAnim = "";
@@ -61,27 +62,27 @@ namespace POTCO
 
         private void Start()
         {
-            // Find Animation component - should be on character root
+            // Find RuntimeAnimatorPlayer component - should be on character root
             // PRIORITY 1: Check first direct child
             if (animComponent == null && transform.childCount > 0)
             {
                 GameObject firstChild = transform.GetChild(0).gameObject;
-                animComponent = firstChild.GetComponent<Animation>();
+                animComponent = firstChild.GetComponent<RuntimeAnimatorPlayer>();
             }
 
             // PRIORITY 2: Check this object (fallback)
             if (animComponent == null)
             {
-                animComponent = GetComponent<Animation>();
+                animComponent = GetComponent<RuntimeAnimatorPlayer>();
             }
 
             // PRIORITY 3: Search all children (last resort)
             if (animComponent == null)
             {
-                animComponent = GetComponentInChildren<Animation>();
+                animComponent = GetComponentInChildren<RuntimeAnimatorPlayer>();
             }
 
-            // PRIORITY 4: Create Animation component dynamically if not found (Play Mode spawn fix)
+            // PRIORITY 4: Create RuntimeAnimatorPlayer dynamically if not found
             if (animComponent == null)
             {
                 GameObject targetObject = null;
@@ -95,14 +96,13 @@ namespace POTCO
                     targetObject = gameObject;
                 }
 
-                animComponent = targetObject.AddComponent<Animation>();
-                animComponent.playAutomatically = false;
-                animComponent.enabled = true;
+                animComponent = targetObject.AddComponent<RuntimeAnimatorPlayer>();
+                animComponent.Initialize();
             }
 
             if (animComponent == null)
             {
-                DebugLogger.LogErrorNPCAnimation($"❌ Failed to find or create Animation component on NPC: {gameObject.name}");
+                DebugLogger.LogErrorNPCAnimation($"❌ Failed to find or create RuntimeAnimatorPlayer on NPC: {gameObject.name}");
                 return;
             }
 
@@ -273,81 +273,78 @@ namespace POTCO
                 }
             }
 
-            // Add clips to Animation component
+            // Add clips to RuntimeAnimatorPlayer
             if (idleClip != null)
             {
                 animComponent.AddClip(idleClip, "idle");
-                animComponent["idle"].wrapMode = WrapMode.Loop;
-                DebugLogger.LogNPCAnimation($"   Added 'idle' clip to Animation component");
+                animComponent.SetWrapMode("idle", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'idle' clip to RuntimeAnimatorPlayer");
             }
 
             if (walkClip != null)
             {
                 animComponent.AddClip(walkClip, "walk");
-                animComponent["walk"].wrapMode = WrapMode.Loop;
-                DebugLogger.LogNPCAnimation($"   Added 'walk' clip to Animation component");
+                animComponent.SetWrapMode("walk", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'walk' clip to RuntimeAnimatorPlayer");
             }
 
             if (spinLeftClip != null)
             {
                 animComponent.AddClip(spinLeftClip, "spin_left");
-                animComponent["spin_left"].wrapMode = WrapMode.Loop;
-                DebugLogger.LogNPCAnimation($"   Added 'spin_left' clip to Animation component");
+                animComponent.SetWrapMode("spin_left", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'spin_left' clip to RuntimeAnimatorPlayer");
             }
 
             if (spinRightClip != null)
             {
                 animComponent.AddClip(spinRightClip, "spin_right");
-                animComponent["spin_right"].wrapMode = WrapMode.Loop;
-                DebugLogger.LogNPCAnimation($"   Added 'spin_right' clip to Animation component");
+                animComponent.SetWrapMode("spin_right", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'spin_right' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetIdle != null)
             {
                 animComponent.AddClip(animSetIdle, "animset_idle");
-                animComponent["animset_idle"].wrapMode = WrapMode.Loop;
-                DebugLogger.LogNPCAnimation($"   Added 'animset_idle' clip to Animation component");
+                animComponent.SetWrapMode("animset_idle", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_idle' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetIntoLook != null)
             {
                 animComponent.AddClip(animSetIntoLook, "animset_into_look");
-                animComponent["animset_into_look"].wrapMode = WrapMode.Once;
-                DebugLogger.LogNPCAnimation($"   Added 'animset_into_look' clip to Animation component");
+                animComponent.SetWrapMode("animset_into_look", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_into_look' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetLookIdle != null)
             {
                 animComponent.AddClip(animSetLookIdle, "animset_look_idle");
-                animComponent["animset_look_idle"].wrapMode = WrapMode.Loop;
-                DebugLogger.LogNPCAnimation($"   Added 'animset_look_idle' clip to Animation component");
+                animComponent.SetWrapMode("animset_look_idle", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_look_idle' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetOutofLook != null)
             {
                 animComponent.AddClip(animSetOutofLook, "animset_outof_look");
-                animComponent["animset_outof_look"].wrapMode = WrapMode.Once;
-                DebugLogger.LogNPCAnimation($"   Added 'animset_outof_look' clip to Animation component");
+                animComponent.SetWrapMode("animset_outof_look", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_outof_look' clip to RuntimeAnimatorPlayer");
             }
 
             if (greetingClip != null)
             {
                 animComponent.AddClip(greetingClip, "greeting");
-                animComponent["greeting"].wrapMode = WrapMode.Once;
-                DebugLogger.LogNPCAnimation($"   Added 'greeting' clip to Animation component");
+                animComponent.SetWrapMode("greeting", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'greeting' clip to RuntimeAnimatorPlayer");
             }
 
             if (noticeClip != null)
             {
                 animComponent.AddClip(noticeClip, "notice");
-                animComponent["notice"].wrapMode = WrapMode.Once;
-                DebugLogger.LogNPCAnimation($"   Added 'notice' clip to Animation component");
+                animComponent.SetWrapMode("notice", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'notice' clip to RuntimeAnimatorPlayer");
             }
 
-            // Enable Animation component
-            animComponent.playAutomatically = false;
-            animComponent.enabled = true;
-            DebugLogger.LogNPCAnimation($"✅ Animation component enabled: {animComponent.enabled}");
+            DebugLogger.LogNPCAnimation($"✅ RuntimeAnimatorPlayer initialized");
 
             // Check if we have minimum required animations
             bool hasAnimSet = (animSetIdle != null || animSetIntoLook != null || animSetLookIdle != null || animSetOutofLook != null);
@@ -701,11 +698,11 @@ namespace POTCO
 
         private void PlayAnimation(string animName)
         {
-            if (!animComponent.GetClip(animName))
+            if (!animComponent.HasClip(animName))
             {
                 DebugLogger.LogWarningNPCAnimation($"⚠️ Animation clip '{animName}' not found on {gameObject.name}");
                 string fallbackAnim = GetIdleAnimation();
-                if (animName != fallbackAnim && animComponent.GetClip(fallbackAnim))
+                if (animName != fallbackAnim && animComponent.HasClip(fallbackAnim))
                 {
                     DebugLogger.LogNPCAnimation($"   Falling back to {fallbackAnim} animation");
                     animName = fallbackAnim;
@@ -718,8 +715,7 @@ namespace POTCO
             }
 
             DebugLogger.LogNPCAnimation($"🎬 Playing animation: {animName} on {gameObject.name}");
-            animComponent.Stop();
-            animComponent.Play(animName);
+            animComponent.CrossFade(animName, transitionDuration);
 
             if (animComponent.IsPlaying(animName))
             {
@@ -727,7 +723,7 @@ namespace POTCO
             }
             else
             {
-                DebugLogger.LogErrorNPCAnimation($"❌ Animation '{animName}' FAILED TO PLAY!");
+                DebugLogger.LogNPCAnimation($"🔄 Animation '{animName}' queued for playback");
             }
 
             currentAnim = animName;

@@ -7,7 +7,7 @@ namespace POTCO
     /// Animation player for animals/creatures using parsed animation state data from creature .py files
     /// Plays animation sequences based on state (LandRoam, WaterRoam, etc.)
     /// </summary>
-    [RequireComponent(typeof(Animation))]
+    [RequireComponent(typeof(RuntimeAnimatorPlayer))]
     public class AnimalAnimationPlayer : MonoBehaviour
     {
         [Header("Animation State Data")]
@@ -35,7 +35,7 @@ namespace POTCO
         [Range(0.0f, 1.0f)]
         public float defaultBlendTime = 0.2f;
 
-        private Animation animComponent;
+        private RuntimeAnimatorPlayer animComponent;
         private CharacterController characterController;
         private AnimationStateSequence activeSequence;
         private int currentAnimIndex = 0;
@@ -61,12 +61,12 @@ namespace POTCO
 
         void Start()
         {
-            animComponent = GetComponent<Animation>();
+            animComponent = GetComponent<RuntimeAnimatorPlayer>();
             if (animComponent == null)
             {
-                Debug.LogError($"[AnimalAnimationPlayer] No Animation component found on {gameObject.name}");
-                enabled = false;
-                return;
+                // Create RuntimeAnimatorPlayer if not found
+                animComponent = gameObject.AddComponent<RuntimeAnimatorPlayer>();
+                animComponent.Initialize();
             }
 
             // Get CharacterController from parent (for movement detection)
@@ -81,12 +81,7 @@ namespace POTCO
                 Debug.LogWarning($"⚠️ [AnimalAnimationPlayer] CharacterController NOT FOUND on {gameObject.name} or parents!");
             }
 
-            // Debug: List all available animations on this component
-            Debug.Log($"[AnimalAnimationPlayer] Available animations on {gameObject.name}:");
-            foreach (AnimationState state in animComponent)
-            {
-                Debug.Log($"  - {state.name} (clip: {state.clip?.name})");
-            }
+            Debug.Log($"[AnimalAnimationPlayer] RuntimeAnimatorPlayer initialized on {gameObject.name}");
 
             // Start with idle animation
             PlayAnimationByName("idle");
@@ -152,8 +147,7 @@ namespace POTCO
                 blendTime = walkToIdleBlendTime;
             }
 
-            AnimationState state = animComponent[fullAnimName];
-            if (state != null)
+            if (animComponent.HasClip(fullAnimName))
             {
                 animComponent.CrossFade(fullAnimName, blendTime);
                 lastPlayedAnim = fullAnimName;
@@ -161,17 +155,6 @@ namespace POTCO
             }
             else
             {
-                // Try to find any animation with this name as fallback
-                foreach (AnimationState s in animComponent)
-                {
-                    if (s.name.Contains(animName))
-                    {
-                        animComponent.CrossFade(s.name, blendTime);
-                        lastPlayedAnim = s.name;
-                        Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{s.name}' on {gameObject.name} (fallback match, blend: {blendTime:F2}s)");
-                        return;
-                    }
-                }
                 Debug.LogWarning($"[AnimalAnimationPlayer] Animation '{fullAnimName}' not found on {gameObject.name}");
             }
         }
@@ -222,25 +205,21 @@ namespace POTCO
             // Build full animation name with prefix (e.g., "chicken" + "_" + "idle" = "chicken_idle")
             string fullAnimName = string.IsNullOrEmpty(animationPrefix) ? animName : $"{animationPrefix}_{animName}";
 
-            AnimationState state = animComponent[fullAnimName];
-            if (state == null)
+            if (!animComponent.HasClip(fullAnimName))
             {
                 Debug.LogWarning($"[AnimalAnimationPlayer] Animation '{fullAnimName}' not found on {gameObject.name}");
                 return;
             }
 
-            // Set play rate (negative = reverse)
-            state.speed = playRate;
-
+            // Note: Playables API doesn't support playRate directly
             // Play the animation
             animComponent.Play(fullAnimName);
 
             // Track timing
             currentAnimName = fullAnimName;
-            currentAnimDuration = state.length / Mathf.Abs(playRate);
             stateTimer = 0f;
 
-            Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{fullAnimName}' at rate {playRate}x on {gameObject.name}");
+            Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{fullAnimName}' on {gameObject.name}");
         }
 
         /// <summary>

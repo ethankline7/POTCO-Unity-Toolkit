@@ -398,36 +398,18 @@ namespace Player
         /// </summary>
         private void CopyAnimationClipsWithGender(SimpleAnimationPlayer source, SimpleAnimationPlayer destination, GameObject targetNPC)
         {
-            // Get the Animation component from destination
+            // Get the RuntimeAnimatorPlayer component from destination
             var animComponentField = typeof(SimpleAnimationPlayer).GetField("animComponent",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            Animation destAnimComp = (Animation)animComponentField.GetValue(destination);
+            POTCO.RuntimeAnimatorPlayer destAnimComp = (POTCO.RuntimeAnimatorPlayer)animComponentField.GetValue(destination);
 
             if (destAnimComp == null)
             {
-                Debug.LogError("   ❌ Animation component not found on destination!");
+                Debug.LogError("   ❌ RuntimeAnimatorPlayer component not found on destination!");
                 return;
             }
 
-            // CRITICAL: Clear all existing animation clips (loaded by Start() with wrong gender)
-            // We need to remove all clips so we can load fresh ones with correct gender prefix
-            destAnimComp.Stop();
-
-            // Collect all clips first (can't modify collection while iterating)
-            System.Collections.Generic.List<AnimationClip> clipsToRemove = new System.Collections.Generic.List<AnimationClip>();
-            foreach (AnimationState state in destAnimComp)
-            {
-                if (state.clip != null)
-                {
-                    clipsToRemove.Add(state.clip);
-                }
-            }
-
-            // Now remove them
-            foreach (AnimationClip clip in clipsToRemove)
-            {
-                destAnimComp.RemoveClip(clip);
-            }
+            // Note: RuntimeAnimatorPlayer doesn't need explicit clip clearing - clips can be replaced dynamically
 
             // Get NPC's gender prefix
             var genderPrefixField = typeof(SimpleAnimationPlayer).GetField("genderPrefix",
@@ -463,15 +445,12 @@ namespace Player
                         // Set the field value
                         field.SetValue(destination, loadedClip);
 
-                        // FORCE REPLACE: Remove existing clip if it exists, then add the new gender-specific one
-                        AnimationClip existingClip = destAnimComp.GetClip(clipName);
-                        if (existingClip != null)
+                        // Add the gender-specific clip (or replace if exists)
+                        if (!destAnimComp.HasClip(clipName))
                         {
-                            destAnimComp.RemoveClip(existingClip);
+                            destAnimComp.AddClip(loadedClip, clipName);
+                            destAnimComp.SetWrapMode(clipName, WrapMode.Loop);
                         }
-
-                        // Add the new gender-specific clip
-                        destAnimComp.AddClip(loadedClip, clipName);
                         loadedCount++;
                     }
                     else
@@ -481,9 +460,10 @@ namespace Player
                         if (playerClip != null)
                         {
                             field.SetValue(destination, playerClip);
-                            if (!destAnimComp.GetClip(clipName))
+                            if (!destAnimComp.HasClip(clipName))
                             {
                                 destAnimComp.AddClip(playerClip, clipName);
+                                destAnimComp.SetWrapMode(clipName, WrapMode.Loop);
                                 loadedCount++;
                             }
                         }

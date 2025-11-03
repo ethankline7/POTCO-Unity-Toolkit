@@ -477,25 +477,25 @@ namespace POTCO
                 }
 
                 // Get the Animation component from Model child (or player itself)
-                Animation playerAnim = null;
+                RuntimeAnimatorPlayer playerAnim = null;
                 Transform modelChild = playerTransform.Find("Model");
                 if (modelChild != null)
                 {
                     Debug.Log($"Found Model child: {modelChild.name}");
-                    playerAnim = modelChild.GetComponent<Animation>();
+                    playerAnim = modelChild.GetComponent<RuntimeAnimatorPlayer>();
                     if (playerAnim != null)
                     {
-                        Debug.Log("✅ Found Animation component on Model child");
+                        Debug.Log("✅ Found RuntimeAnimatorPlayer component on Model child");
                     }
                 }
 
                 if (playerAnim == null)
                 {
-                    Debug.Log("Searching for Animation in children...");
-                    playerAnim = playerTransform.GetComponentInChildren<Animation>();
+                    Debug.Log("Searching for RuntimeAnimatorPlayer in children...");
+                    playerAnim = playerTransform.GetComponentInChildren<RuntimeAnimatorPlayer>();
                     if (playerAnim != null)
                     {
-                        Debug.Log($"✅ Found Animation component on: {playerAnim.gameObject.name}");
+                        Debug.Log($"✅ Found RuntimeAnimatorPlayer component on: {playerAnim.gameObject.name}");
                     }
                 }
 
@@ -531,28 +531,19 @@ namespace POTCO
                 {
                     Debug.Log($"✅ Loaded wheel_idle clip: {wheelIdleClip.name}, length: {wheelIdleClip.length}s");
 
-                    // Stop all current animations
-                    playerAnim.Stop();
-                    Debug.Log("Stopped all current animations");
-
-                    // Remove old wheel_idle clip if it exists
-                    if (playerAnim.GetClip("wheel_idle") != null)
+                    // Add and play wheel_idle animation
+                    if (!playerAnim.HasClip("wheel_idle"))
                     {
-                        playerAnim.RemoveClip("wheel_idle");
-                        Debug.Log("Removed old wheel_idle clip");
+                        playerAnim.AddClip(wheelIdleClip, "wheel_idle");
+                        playerAnim.SetWrapMode("wheel_idle", WrapMode.Loop);
+                        Debug.Log("Added wheel_idle clip");
                     }
 
-                    // Add and play wheel_idle animation
-                    playerAnim.AddClip(wheelIdleClip, "wheel_idle");
-                    playerAnim["wheel_idle"].wrapMode = WrapMode.Loop;
-                    playerAnim["wheel_idle"].enabled = true;
-                    playerAnim["wheel_idle"].weight = 1.0f;
                     playerAnim.Play("wheel_idle");
 
                     // Verify it's playing
                     bool isPlaying = playerAnim.IsPlaying("wheel_idle");
                     Debug.Log($"🎬 Animation playing status: {isPlaying}");
-                    Debug.Log($"🎬 Animation state - enabled: {playerAnim["wheel_idle"].enabled}, weight: {playerAnim["wheel_idle"].weight}");
                     Debug.Log($"✅ Playing {wheelIdleAnimName} animation on character at wheel");
                 }
                 else
@@ -819,30 +810,21 @@ namespace POTCO
             if (playerTransform != null)
             {
                 // Reset to idle animation before re-enabling SimpleAnimationPlayer
-                Animation playerAnim = null;
+                RuntimeAnimatorPlayer playerAnim = null;
                 Transform modelChild = playerTransform.Find("Model");
                 if (modelChild != null)
                 {
-                    playerAnim = modelChild.GetComponent<Animation>();
+                    playerAnim = modelChild.GetComponent<RuntimeAnimatorPlayer>();
                 }
                 if (playerAnim == null)
                 {
-                    playerAnim = playerTransform.GetComponentInChildren<Animation>();
+                    playerAnim = playerTransform.GetComponentInChildren<RuntimeAnimatorPlayer>();
                 }
 
                 if (playerAnim != null)
                 {
-                    // Stop wheel_idle animation
-                    playerAnim.Stop();
-
-                    // Remove wheel_idle clip
-                    if (playerAnim.GetClip("wheel_idle") != null)
-                    {
-                        playerAnim.RemoveClip("wheel_idle");
-                    }
-
                     // Play idle animation if it exists
-                    if (playerAnim.GetClip("idle") != null)
+                    if (playerAnim.HasClip("idle"))
                     {
                         playerAnim.Play("idle");
                         Debug.Log("Reset player to idle animation");
@@ -907,34 +889,22 @@ namespace POTCO
         private AnimationClip LoadAnimationFromResourcesDirect(string path)
         {
             // Try loading as prefab first
+            // Try to load AnimationClip directly first
+            AnimationClip directClip = Resources.Load<AnimationClip>(path);
+            if (directClip != null)
+            {
+                Debug.Log($"[ANIM LOAD]   ✓ Loaded AnimationClip directly: {directClip.name}");
+                return directClip;
+            }
+
+            // Fallback: Try GameObject (for bundled assets)
             GameObject animObj = Resources.Load<GameObject>(path);
             if (animObj != null)
             {
                 Debug.Log($"[ANIM LOAD]   Loaded GameObject from Resources");
 
-                // Check if it has an Animation component
-                Animation anim = animObj.GetComponent<Animation>();
-                if (anim != null && anim.clip != null)
-                {
-                    Debug.Log($"[ANIM LOAD]   ✓ Found Animation component with clip: {anim.clip.name}");
-                    return anim.clip;
-                }
-
-                // Check all clips in the Animation component
-                if (anim != null)
-                {
-                    Debug.Log($"[ANIM LOAD]   Animation component exists, checking all clips...");
-                    foreach (AnimationState state in anim)
-                    {
-                        Debug.Log($"[ANIM LOAD]   ✓ Found animation clip: {state.clip.name}");
-                        return state.clip;
-                    }
-                    Debug.Log($"[ANIM LOAD]   Animation component has no clips");
-                }
-                else
-                {
-                    Debug.Log($"[ANIM LOAD]   GameObject has no Animation component");
-                }
+                // Note: Animation component no longer used
+                // AnimationClips should be loaded directly from Resources
             }
 
             // Try loading as AnimationClip directly
