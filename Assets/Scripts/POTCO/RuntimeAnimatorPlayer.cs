@@ -231,6 +231,17 @@ namespace POTCO
                 return;
             }
 
+            // IMPORTANT: Don't crossfade if this clip is already the dominant animation
+            // Check if target clip already has weight > 0.9 (basically fully playing)
+            int targetIndex = clipIndices[clipName];
+            float targetWeight = mixer.GetInputWeight(targetIndex);
+            if (targetWeight > 0.9f)
+            {
+                // Already playing this animation, just ensure it's at full weight
+                Play(clipName);
+                return;
+            }
+
             // If duration is 0 or very small, just play immediately
             if (duration < 0.01f)
             {
@@ -250,9 +261,62 @@ namespace POTCO
 
         private System.Collections.IEnumerator CrossFadeCoroutine(string toClipName, float duration)
         {
-            string fromClipName = currentClipName;
-            int fromIndex = currentClipIndex;
             int toIndex = clipIndices[toClipName];
+
+            // CRITICAL FIX: Don't use currentClipIndex (it's outdated during crossfades!)
+            // Instead, find the clip with the highest weight RIGHT NOW
+            int fromIndex = -1;
+            float fromWeight = 0f;
+            string fromClipName = "";
+
+            for (int i = 0; i < mixer.GetInputCount(); i++)
+            {
+                if (i == toIndex) continue; // Skip the target clip
+
+                float weight = mixer.GetInputWeight(i);
+                if (weight > fromWeight)
+                {
+                    fromWeight = weight;
+                    fromIndex = i;
+
+                    // Find clip name for this index
+                    foreach (var kvp in clipIndices)
+                    {
+                        if (kvp.Value == i)
+                        {
+                            fromClipName = kvp.Key;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // SAFETY: If from and to are the same clip, just ensure it's fully weighted
+            // This can happen when rapidly tapping keys (tap Q then release immediately)
+            if (fromIndex == toIndex && fromIndex >= 0)
+            {
+                // Set all weights to 0 except this one to 1.0
+                for (int i = 0; i < mixer.GetInputCount(); i++)
+                {
+                    mixer.SetInputWeight(i, i == toIndex ? 1f : 0f);
+                }
+
+                // Reset clip and play
+                var playable = clipPlayables[toClipName];
+                playable.SetTime(0);
+                playable.Play();
+
+                currentClipName = toClipName;
+                currentClipIndex = toIndex;
+                crossfadeCoroutine = null;
+
+                yield break;
+            }
+
+            // READ current weights before starting crossfade
+            // This is critical for handling interrupted crossfades (rapid animation switching)
+            float startFromWeight = fromIndex >= 0 ? mixer.GetInputWeight(fromIndex) : 0f;
+            float startToWeight = mixer.GetInputWeight(toIndex);
 
             // CRITICAL: Set ALL other clips to 0 weight before crossfade
             // This prevents bone stretching from multiple clips blending
@@ -264,26 +328,61 @@ namespace POTCO
                 }
             }
 
+            // NORMALIZE from+to weights to ensure they ALWAYS sum to 1.0
+            // This fixes T-posing when spamming animation switches (Q/E spam)
+            float totalWeight = startFromWeight + startToWeight;
+            if (totalWeight > 0.01f)
+            {
+                // Normalize so they sum to 1.0
+                startFromWeight /= totalWeight;
+                startToWeight /= totalWeight;
+
+                // Apply normalized weights immediately
+                if (fromIndex >= 0)
+                    mixer.SetInputWeight(fromIndex, startFromWeight);
+                mixer.SetInputWeight(toIndex, startToWeight);
+            }
+            else
+            {
+                // Total weight is near zero - shouldn't happen but handle it
+                // Set from to 1.0 if it exists, otherwise set to to 1.0
+                if (fromIndex >= 0)
+                {
+                    mixer.SetInputWeight(fromIndex, 1f);
+                    startFromWeight = 1f;
+                    startToWeight = 0f;
+                }
+                else
+                {
+                    mixer.SetInputWeight(toIndex, 1f);
+                    startFromWeight = 0f;
+                    startToWeight = 1f;
+                }
+            }
+
             // Reset target clip to start and play it
             var toPlayable = clipPlayables[toClipName];
             toPlayable.SetTime(0);
             toPlayable.Play();
 
-            // Crossfade weights
+            // Crossfade weights from CURRENT weights (not assuming 1.0 and 0.0)
+            // This fixes T-posing when rapidly switching animations
             float elapsed = 0f;
             while (elapsed < duration)
             {
                 float t = elapsed / duration;
 
-                // Ensure weights sum to 1.0 to prevent bone stretching
-                // Fade out old clip
+                // Lerp from current weights to target weights
+                // From: startFromWeight → 0.0
+                // To:   startToWeight   → 1.0
                 if (fromIndex >= 0)
                 {
-                    mixer.SetInputWeight(fromIndex, 1f - t);
+                    float targetFromWeight = Mathf.Lerp(startFromWeight, 0f, t);
+                    mixer.SetInputWeight(fromIndex, targetFromWeight);
                 }
 
-                // Fade in new clip
-                mixer.SetInputWeight(toIndex, t);
+                float targetToWeight = Mathf.Lerp(startToWeight, 1f, t);
+                mixer.SetInputWeight(toIndex, targetToWeight);
 
                 elapsed += Time.deltaTime;
                 yield return null;
