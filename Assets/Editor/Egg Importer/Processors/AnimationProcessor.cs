@@ -697,17 +697,19 @@ public class AnimationProcessor
 
     private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps, string bundleName)
     {
-        // Skip body shape bones ONLY for human characters (fp_/mp_) if filtering is enabled
-        if (EggImporterSettings.Instance.filterDefBonesForHumans)
-        {
-            string boneName = bonePath.Split('/').Last();
-            bool isHumanCharacter = bundleName.StartsWith("fp_") || bundleName.StartsWith("mp_");
+        // Skip body shape bones ONLY for human characters (fp/mp) if filtering is enabled
+        bool filterEnabled = EggImporterSettings.Instance.filterDefBonesForHumans;
+        string boneName = bonePath.Split('/').Last();
+        bool isDefBone = boneName.StartsWith("def_");
+        bool isClavBone = boneName == "tr_right_clav" || boneName == "tr_left_clav";
+        bool isHumanCharacter = bundleName.StartsWith("fp") || bundleName.StartsWith("mp");
 
-            if (boneName.StartsWith("def_") && isHumanCharacter)
-            {
-                DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' for human character '{bundleName}' (controlled by BodyShapeApplier)");
-                return;
-            }
+        DebugLogger.LogEggImporter($"🔍 FILTER CHECK: bone='{boneName}', bundleName='{bundleName}', isDefBone={isDefBone}, isClavBone={isClavBone}, isHuman={isHumanCharacter}, filterEnabled={filterEnabled}");
+
+        if (filterEnabled && (isDefBone || isClavBone) && isHumanCharacter)
+        {
+            DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' for human character '{bundleName}' (controlled by BodyShapeApplier)");
+            return;
         }
 
         // Fix bone path to match actual hierarchy created by GeometryProcessor

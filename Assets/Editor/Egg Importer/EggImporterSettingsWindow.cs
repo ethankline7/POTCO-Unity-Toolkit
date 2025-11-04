@@ -273,7 +273,10 @@ public class EggImporterSettingsWindow : EditorWindow
         
         var skeletalProperty = serializedSettings.FindProperty("skipSkeletalModels");
         EditorGUILayout.PropertyField(skeletalProperty, new GUIContent("Skip All Files With Bones"));
-        
+
+        var filterDefBonesProperty = serializedSettings.FindProperty("filterDefBonesForHumans");
+        EditorGUILayout.PropertyField(filterDefBonesProperty, new GUIContent("Filter def_ Bones for Humans"));
+
         if (animationProperty.boolValue && skeletalProperty.boolValue)
         {
             EditorGUILayout.HelpBox("🚫 Both animation-only files AND any files with skeletal data will be skipped. This will import only static models without bones.", MessageType.Warning);
@@ -290,7 +293,18 @@ public class EggImporterSettingsWindow : EditorWindow
         {
             EditorGUILayout.HelpBox("🎭 All animation and skeletal files will be imported. Useful for character animations and rigged models.", MessageType.Info);
         }
-        
+
+        GUILayout.Space(5);
+
+        if (filterDefBonesProperty.boolValue)
+        {
+            EditorGUILayout.HelpBox("🔒 Body shape bones (def_*) will be filtered for human characters (fp/mp) during animation import. This prevents body shape bones from being animated, as they are controlled by BodyShapeApplier. Creatures like chickens/crabs still use def_ bones normally. Enabled by default.", MessageType.Info);
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("⚠️ Body shape bone filtering is DISABLED. All bones including def_* will be imported for animations. This may cause issues with human character body shapes.", MessageType.Warning);
+        }
+
         EditorGUILayout.EndVertical();
         
         // Collision Import Settings
