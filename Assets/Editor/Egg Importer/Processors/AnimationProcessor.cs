@@ -70,7 +70,7 @@ public class AnimationProcessor
                     {
                         DebugLogger.LogEggImporter($"🎬 ANIMATION: Bundle spans lines {i} to {bundleEnd}");
 
-                        ParseAnimationBundle(lines, i + 1, bundleEnd, clip, armaturePath);
+                        ParseAnimationBundle(lines, i + 1, bundleEnd, clip, armaturePath, bundleName);
 
                         clip.wrapMode = WrapMode.Loop;
                         clip.legacy = false;
@@ -132,7 +132,7 @@ public class AnimationProcessor
         DebugLogger.LogEggImporter($"🎬 ANIMATION: Completed. Found {bundleCount} bundles total");
         }
 
-    public void ParseStandaloneAnimationBundle(string[] lines, int start, int end, AnimationClip clip)
+    public void ParseStandaloneAnimationBundle(string[] lines, int start, int end, AnimationClip clip, string bundleName)
     {
         DebugLogger.LogEggImporter($"🎬 STANDALONE: Parsing standalone animation bundle from line {start} to {end}");
 
@@ -159,7 +159,7 @@ public class AnimationProcessor
                         int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
                         if (tableEnd != -1)
                         {
-                            ParseStandaloneAnimationBundle(lines, i + 1, tableEnd, clip);
+                            ParseStandaloneAnimationBundle(lines, i + 1, tableEnd, clip, bundleName);
                             i = tableEnd + 1;
                         }
                         else
@@ -176,7 +176,7 @@ public class AnimationProcessor
                         int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
                         if (tableEnd != -1)
                         {
-                            ParseStandaloneBoneAnimationTable(lines, i + 1, tableEnd, clip, bonePath);
+                            ParseStandaloneBoneAnimationTable(lines, i + 1, tableEnd, clip, bonePath, bundleName);
                             i = tableEnd + 1;
                         }
                         else
@@ -199,7 +199,7 @@ public class AnimationProcessor
         DebugLogger.LogEggImporter($"🎬 STANDALONE: Completed parsing standalone animation bundle");
     }
 
-    private void ParseStandaloneBoneAnimationTable(string[] lines, int start, int end, AnimationClip clip, string bonePath)
+    private void ParseStandaloneBoneAnimationTable(string[] lines, int start, int end, AnimationClip clip, string bonePath, string bundleName)
     {
         DebugLogger.LogEggImporter($"🦴 STANDALONE: Parsing bone '{bonePath}' from line {start} to {end}");
 
@@ -225,7 +225,7 @@ public class AnimationProcessor
                     int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
                     if (tableEnd != -1)
                     {
-                        ParseStandaloneBoneAnimationTable(lines, i + 1, tableEnd, clip, childPath);
+                        ParseStandaloneBoneAnimationTable(lines, i + 1, tableEnd, clip, childPath, bundleName);
                         i = tableEnd + 1;
                     }
                     else
@@ -244,7 +244,7 @@ public class AnimationProcessor
                 int xfmEnd = _parserUtils.FindMatchingBrace(lines, i);
                 if (xfmEnd != -1)
                 {
-                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath);
+                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath, bundleName);
                     i = xfmEnd + 1;
                 }
                 else
@@ -261,7 +261,7 @@ public class AnimationProcessor
         DebugLogger.LogEggImporter($"🦴 STANDALONE: Completed parsing bone '{bonePath}'");
     }
 
-    public void ParseBundleBonesAndAnimations(string[] lines, int start, int end, EggJoint parentJoint, string currentPath, AnimationClip clip, Dictionary<string, EggJoint> joints)
+    public void ParseBundleBonesAndAnimations(string[] lines, int start, int end, EggJoint parentJoint, string currentPath, AnimationClip clip, Dictionary<string, EggJoint> joints, string bundleName)
     {
         DebugLogger.LogEggImporter($"🔍 BUNDLE BONES: Parsing from line {start} to {end}, path: '{currentPath}'");
 
@@ -298,8 +298,8 @@ public class AnimationProcessor
                     int jointEnd = _parserUtils.FindMatchingBrace(lines, i);
                     if (jointEnd != -1)
                     {
-                        ParseBoneContentAndAnimation(lines, i + 1, jointEnd, joint, jointPath, clip);
-                        ParseBundleBonesAndAnimations(lines, i + 1, jointEnd, joint, jointPath, clip, joints);
+                        ParseBoneContentAndAnimation(lines, i + 1, jointEnd, joint, jointPath, clip, bundleName);
+                        ParseBundleBonesAndAnimations(lines, i + 1, jointEnd, joint, jointPath, clip, joints, bundleName);
                         i = jointEnd + 1;
                     }
                     else
@@ -318,7 +318,7 @@ public class AnimationProcessor
                 int xfmEnd = _parserUtils.FindMatchingBrace(lines, i);
                 if (xfmEnd != -1)
                 {
-                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, currentPath);
+                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, currentPath, bundleName);
                     i = xfmEnd + 1;
                 }
                 else
@@ -334,7 +334,7 @@ public class AnimationProcessor
         }
         }
 
-    private void ParseAnimationBundle(string[] lines, int start, int end, AnimationClip clip, string currentPath)
+    private void ParseAnimationBundle(string[] lines, int start, int end, AnimationClip clip, string currentPath, string bundleName)
     {
         DebugLogger.LogEggImporter($"📦 BUNDLE: Parsing bundle from line {start} to {end}, currentPath: '{currentPath}'");
 
@@ -365,7 +365,7 @@ public class AnimationProcessor
                         int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
                         if (tableEnd != -1)
                         {
-                            ParseAnimationBundle(lines, i + 1, tableEnd, clip, currentPath);
+                            ParseAnimationBundle(lines, i + 1, tableEnd, clip, currentPath, bundleName);
                             i = tableEnd + 1;
                         }
                         else
@@ -382,7 +382,7 @@ public class AnimationProcessor
                         int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
                         if (tableEnd != -1)
                         {
-                            ParseBoneAnimationTable(lines, i + 1, tableEnd, clip, bonePath);
+                            ParseBoneAnimationTable(lines, i + 1, tableEnd, clip, bonePath, bundleName);
                             i = tableEnd + 1;
                         }
                         else
@@ -407,7 +407,7 @@ public class AnimationProcessor
         DebugLogger.LogEggImporter($"📦 BUNDLE: Completed. Processed {tableCount} tables");
         }
 
-    private void ParseBoneAnimationTable(string[] lines, int start, int end, AnimationClip clip, string bonePath)
+    private void ParseBoneAnimationTable(string[] lines, int start, int end, AnimationClip clip, string bonePath, string bundleName)
     {
         DebugLogger.LogEggImporter($"🦴 BONE: Parsing bone '{bonePath}' from line {start} to {end}");
 
@@ -437,7 +437,7 @@ public class AnimationProcessor
                     int tableEnd = _parserUtils.FindMatchingBrace(lines, i);
                     if (tableEnd != -1)
                     {
-                        ParseBoneAnimationTable(lines, i + 1, tableEnd, clip, childPath);
+                        ParseBoneAnimationTable(lines, i + 1, tableEnd, clip, childPath, bundleName);
                         i = tableEnd + 1;
                     }
                     else
@@ -459,7 +459,7 @@ public class AnimationProcessor
                 int xfmEnd = _parserUtils.FindMatchingBrace(lines, i);
                 if (xfmEnd != -1)
                 {
-                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath);
+                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath, bundleName);
                     i = xfmEnd + 1;
                 }
                 else
@@ -477,7 +477,7 @@ public class AnimationProcessor
         DebugLogger.LogEggImporter($"🦴 BONE: Completed '{bonePath}'. Found {xfmCount} transforms, {childTableCount} child tables");
         }
 
-    private void ParseBoneContentAndAnimation(string[] lines, int start, int end, EggJoint joint, string bonePath, AnimationClip clip)
+    private void ParseBoneContentAndAnimation(string[] lines, int start, int end, EggJoint joint, string bonePath, AnimationClip clip, string bundleName)
     {
         DebugLogger.LogEggImporter($"🔍 BONE CONTENT: Parsing bone '{joint.name}' from line {start} to {end}");
 
@@ -502,14 +502,14 @@ public class AnimationProcessor
                 int xfmEnd = _parserUtils.FindMatchingBrace(lines, i);
                 if (xfmEnd != -1)
                 {
-                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath);
+                    ParseXfmAnim(lines, i + 1, xfmEnd, clip, bonePath, bundleName);
                     i = xfmEnd;
                 }
             }
         }
         }
 
-    private void ParseXfmAnim(string[] lines, int start, int end, AnimationClip clip, string bonePath)
+    private void ParseXfmAnim(string[] lines, int start, int end, AnimationClip clip, string bonePath, string bundleName)
     {
         DebugLogger.LogEggImporter($"🔄 TRANSFORM: Parsing transform animation for '{bonePath}' from line {start} to {end}");
 
@@ -686,7 +686,7 @@ public class AnimationProcessor
         if (channels.Count > 0 && numKeyframes > 0)
         {
             DebugLogger.LogEggImporter($"🔄 TRANSFORM: Creating animation curves for bone '{bonePath}'");
-            CreateAnimationCurvesForBone(clip, bonePath, channels, numKeyframes, fps);
+            CreateAnimationCurvesForBone(clip, bonePath, channels, numKeyframes, fps, bundleName);
         }
         else
         {
@@ -695,15 +695,19 @@ public class AnimationProcessor
         }
 
 
-    private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps)
+    private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps, string bundleName)
     {
-        // Skip body shape bones - these are controlled by BodyShapeApplier and shouldn't be animated
-        // ALL bones starting with "def_" are body shape bones and should NEVER be animated
-        string boneName = bonePath.Split('/').Last();
-        if (boneName.StartsWith("def_"))
+        // Skip body shape bones ONLY for human characters (fp_/mp_) if filtering is enabled
+        if (EggImporterSettings.Instance.filterDefBonesForHumans)
         {
-            DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' (all def_ bones are controlled by BodyShapeApplier)");
-            return;
+            string boneName = bonePath.Split('/').Last();
+            bool isHumanCharacter = bundleName.StartsWith("fp_") || bundleName.StartsWith("mp_");
+
+            if (boneName.StartsWith("def_") && isHumanCharacter)
+            {
+                DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' for human character '{bundleName}' (controlled by BodyShapeApplier)");
+                return;
+            }
         }
 
         // Fix bone path to match actual hierarchy created by GeometryProcessor

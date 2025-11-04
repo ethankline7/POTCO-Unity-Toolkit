@@ -225,7 +225,7 @@ public class EggImporter : ScriptedImporter
                     int bundleEnd = _parserUtils.FindMatchingBrace(lines, i);
                     if (bundleEnd != -1)
                     {
-                        _animationProcessor.ParseStandaloneAnimationBundle(lines, i + 1, bundleEnd, clip);
+                        _animationProcessor.ParseStandaloneAnimationBundle(lines, i + 1, bundleEnd, clip, bundleName);
 
                         var curveBindings = AnimationUtility.GetCurveBindings(clip);
                         if (curveBindings.Length > 0)
@@ -288,7 +288,7 @@ public class EggImporter : ScriptedImporter
                     int bundleEnd = _parserUtils.FindMatchingBrace(lines, i);
                     if (bundleEnd != -1)
                     {
-                        _animationProcessor.ParseBundleBonesAndAnimations(lines, i + 1, bundleEnd, _rootJoint, "", clip, _joints);
+                        _animationProcessor.ParseBundleBonesAndAnimations(lines, i + 1, bundleEnd, _rootJoint, "", clip, _joints, bundleName);
 
                         if (_joints.Count > 0 && _rootJoint == null)
                         {

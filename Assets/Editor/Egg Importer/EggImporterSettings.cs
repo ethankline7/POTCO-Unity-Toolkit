@@ -12,6 +12,8 @@ public class EggImporterSettings : ScriptableObject
     [Header("Animation Settings")]
     public bool skipAnimations = false;
     public bool skipSkeletalModels = false;
+    [Tooltip("Filter def_ bones for human characters (fp_/mp_) during animation import. Enabled by default to prevent body shape bones from being animated.")]
+    public bool filterDefBonesForHumans = true;
     
     [Header("Collision Import Settings")]
     public bool skipCollisions = true;
