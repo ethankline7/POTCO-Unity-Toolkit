@@ -320,7 +320,18 @@ public class GeometryProcessor
         var bones = new List<Transform>();
         var bindPoses = new List<Matrix4x4>();
 
-        CollectBonesAndBindPoses(rootJoint, bones, bindPoses, rootBoneObject.transform);
+        // Collect bones from ALL root joints (models can have multiple root joints)
+        if (rootJoint != null)
+        {
+            // Find all root joints (joints with no parent)
+            var rootJoints = joints.Values.Where(j => j.parent == null).ToList();
+            DebugLogger.LogEggImporter($"Found {rootJoints.Count} root joint(s) for skinning");
+
+            foreach (var root in rootJoints)
+            {
+                CollectBonesAndBindPoses(root, bones, bindPoses, rootBoneObject.transform);
+            }
+        }
 
         DebugLogger.LogEggImporter($"Collected {bones.Count} bones for skinned mesh");
 

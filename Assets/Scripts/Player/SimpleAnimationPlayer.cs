@@ -428,9 +428,32 @@ namespace Player
             string[] searchPaths = { "char", "models/char" };
 
             // Only auto-load if not manually assigned in Inspector
-            if (idleClip == null) idleClip = FindAndLoadClip("idle", phases, searchPaths);
-            if (walkClip == null) walkClip = FindAndLoadClip("walk", phases, searchPaths);
-            if (runClip == null) runClip = FindAndLoadClip("run", phases, searchPaths);
+            if (idleClip == null)
+            {
+                idleClip = FindAndLoadClip("idle", phases, searchPaths);
+            }
+            else
+            {
+                Debug.Log($"✅ Using manually assigned idle clip: {idleClip.name}");
+            }
+
+            if (walkClip == null)
+            {
+                walkClip = FindAndLoadClip("walk", phases, searchPaths);
+            }
+            else
+            {
+                Debug.Log($"✅ Using manually assigned walk clip: {walkClip.name}");
+            }
+
+            if (runClip == null)
+            {
+                runClip = FindAndLoadClip("run", phases, searchPaths);
+            }
+            else
+            {
+                Debug.Log($"✅ Using manually assigned run clip: {runClip.name}");
+            }
 
             // Load directional animations (try multiple naming conventions)
             if (walkBackClip == null)
@@ -478,8 +501,13 @@ namespace Player
             // Add clips to RuntimeAnimatorPlayer and set wrap modes
             if (idleClip != null)
             {
+                Debug.Log($"➕ Adding idle clip to RuntimeAnimatorPlayer: {idleClip.name}");
                 animComponent.AddClip(idleClip, "idle");
                 animComponent.SetWrapMode("idle", WrapMode.Loop);
+            }
+            else
+            {
+                Debug.LogError("❌ No idle clip available to add!");
             }
             if (walkClip != null)
             {

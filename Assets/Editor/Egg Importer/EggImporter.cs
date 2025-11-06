@@ -24,6 +24,7 @@ public class EggImporter : ScriptedImporter
     private Color[] _masterColors;
     private Dictionary<string, EggJoint> _joints;
     private EggJoint _rootJoint;
+    private List<EggJoint> _rootJoints; // Track ALL root joints, not just one
     private bool _hasSkeletalData = false;
     private GameObject _rootBoneObject;
 
@@ -75,7 +76,7 @@ public class EggImporter : ScriptedImporter
         // Track import statistics
         var startTime = EditorApplication.timeSinceStartup;
         bool importSuccessful = false;
-        
+
         DebugLogger.LogEggImporter("--- EGG IMPORTER: START ---");
 
         // Initialize processors
@@ -85,6 +86,7 @@ public class EggImporter : ScriptedImporter
         _geometryProcessor.ClearLODCache(); // Clear LOD cache for new file
         _materialHandler = new MaterialHandler();
         _parserUtils = new ParserUtilities();
+        _rootJoints = new List<EggJoint>(); // Initialize root joints list
         RecordTiming("Processor Initialization");
 
         var rootGO = new GameObject(Path.GetFileNameWithoutExtension(ctx.assetPath));
@@ -351,13 +353,26 @@ public class EggImporter : ScriptedImporter
         
         CreateMasterVertexBuffer(vertexPool);
         RecordTiming("Create Master Vertex Buffer");
-        if (_hasSkeletalData && _rootJoint != null)
+        if (_hasSkeletalData && _rootJoints != null && _rootJoints.Count > 0)
         {
             _rootBoneObject = new GameObject("Armature");
             _rootBoneObject.transform.SetParent(rootGO.transform, false);
             try
             {
-                CreateBoneHierarchy(_rootBoneObject.transform, _rootJoint);
+                // Create bone hierarchy for ALL root joints
+                DebugLogger.LogEggImporter($"Creating bone hierarchy for {_rootJoints.Count} root joint(s)");
+                foreach (var rootJoint in _rootJoints)
+                {
+                    DebugLogger.LogEggImporter($"Creating hierarchy for root joint: {rootJoint.name}");
+                    CreateBoneHierarchy(_rootBoneObject.transform, rootJoint);
+                }
+
+                // Keep _rootJoint set to first root for backward compatibility
+                if (_rootJoint == null && _rootJoints.Count > 0)
+                {
+                    _rootJoint = _rootJoints[0];
+                }
+
                 DebugBoneHierarchy(_rootBoneObject.transform);
                 RecordTiming("Create Bone Hierarchy");
             }
@@ -545,11 +560,35 @@ public class EggImporter : ScriptedImporter
         {
             if (lines[i].Trim().StartsWith("<Joint>"))
             {
+                // Extract joint name to check if already parsed (ParseJoint is recursive)
+                var parts = lines[i].Trim().Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 1)
+                {
+                    string jointName = parts[1];
+
+                    // Skip if this joint was already parsed as a child of another joint
+                    if (_joints.ContainsKey(jointName))
+                    {
+                        DebugLogger.LogEggImporter($"Skipping already-parsed joint: {jointName}");
+                        int jointEnd = _parserUtils.FindMatchingBrace(lines, i);
+                        if (jointEnd != -1)
+                        {
+                            i = jointEnd;
+                        }
+                        continue;
+                    }
+                }
+
                 var joint = _geometryProcessor.ParseJoint(lines, ref i, _joints, _parserUtils);
                 if (joint != null)
                 {
                     _joints[joint.name] = joint;
-                    if (joint.parent == null) _rootJoint = joint;
+                    if (joint.parent == null)
+                    {
+                        _rootJoint = joint; // Keep for backward compatibility
+                        _rootJoints.Add(joint); // Track ALL root joints
+                        DebugLogger.LogEggImporter($"Found root joint: {joint.name}");
+                    }
                     _hasSkeletalData = true;
                 }
             }
