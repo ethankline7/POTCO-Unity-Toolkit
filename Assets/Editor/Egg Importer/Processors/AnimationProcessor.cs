@@ -20,22 +20,9 @@ public class AnimationProcessor
     // Reusable StringBuilder for string concatenation
     private static readonly StringBuilder StringBuilderCache = new StringBuilder();
 
-    // Body shape bones that shouldn't be animated (controlled by BodyShapeApplier)
-    private static readonly HashSet<string> BodyShapeBones = new HashSet<string>
-    {
-        "def_spine02", "def_spine03", "def_spine04", "def_shoulders", "def_neck",
-        "def_left_clav", "def_left_shoulder", "def_left_elbow", "def_left_wrist",
-        "def_left_thumb01", "def_left_thumb02", "def_left_thumb03",
-        "def_left_finger01", "def_left_finger02", "def_left_index01", "def_left_index02",
-        "def_right_clav", "def_right_shoulder", "def_right_elbow", "def_right_wrist",
-        "def_right_thumb01", "def_right_thumb02", "def_right_thumb03",
-        "def_right_finger01", "def_right_finger02", "def_right_index01", "def_right_index02",
-        "tr_left_clav", "tr_left_thumb01", "tr_right_clav", "tr_right_thumb01",
-        "def_hips", "def_left_thigh", "def_left_knee", "def_left_ankle", "def_left_ball",
-        "def_right_thigh", "def_right_knee", "def_right_ankle", "def_right_ball",
-        "tr_sash01", "tr_left_thigh", "tr_right_thigh"
-    };
-    
+    // Note: Body shape bone filtering now uses simple string checks (def_ prefix and specific tr_ bones)
+    // instead of HashSet lookup for better performance (optimization: removed unused BodyShapeBones HashSet)
+
     public AnimationProcessor()
     {
         _parserUtils = new ParserUtilities();

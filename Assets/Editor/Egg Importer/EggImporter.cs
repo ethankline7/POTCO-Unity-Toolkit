@@ -44,15 +44,17 @@ public class EggImporter : ScriptedImporter
             return;
         }
         
+        // Read file once for all checks (optimization: avoid multiple File.ReadAllLines)
+        var lines = File.ReadAllLines(ctx.assetPath);
+
         // Check LOD filtering before importing
-        if (!ShouldImportBasedOnLOD(ctx.assetPath))
+        if (!ShouldImportBasedOnLOD(ctx.assetPath, lines))
         {
             DebugLogger.LogEggImporter($"LOD filtering: skipping {Path.GetFileName(ctx.assetPath)}");
             return;
         }
-        
+
         // Check if we should skip animations or skeletal models
-        var lines = File.ReadAllLines(ctx.assetPath);
         bool isAnimationOnly = IsAnimationOnlyFile(lines);
         bool hasSkeletalData = HasSkeletalData(lines);
         
@@ -68,10 +70,13 @@ public class EggImporter : ScriptedImporter
             return;
         }
         
-        // Initialize timing system
-        _timer = new Stopwatch();
-        _timingData = new Dictionary<string, float>();
-        _timer.Start();
+        // Initialize timing system (optional - can be disabled for better performance)
+        if (EggImporterSettings.Instance.trackPerformanceTiming)
+        {
+            _timer = new Stopwatch();
+            _timingData = new Dictionary<string, float>();
+            _timer.Start();
+        }
         
         // Track import statistics
         var startTime = EditorApplication.timeSinceStartup;
@@ -122,42 +127,52 @@ public class EggImporter : ScriptedImporter
         RecordTiming("Adding Materials to Context");
 
         importSuccessful = true;
-        
-        // Finalize timing
-        RecordTiming("Import Complete");
-        _timer.Stop();
-        
-        // Track import statistics
-        var importTime = (float)(EditorApplication.timeSinceStartup - startTime);
-        UpdateImportStatistics(ctx.assetPath, importTime, importSuccessful);
-        
-        // Store timing data for performance window
-        StoreTimingData(ctx.assetPath, importTime);
-        
+
+        // Finalize timing (if enabled)
+        if (EggImporterSettings.Instance.trackPerformanceTiming && _timer != null)
+        {
+            RecordTiming("Import Complete");
+            _timer.Stop();
+        }
+
+        // Track import statistics (optional - can be disabled for better performance)
+        if (EggImporterSettings.Instance.trackImportStatistics)
+        {
+            var importTime = (float)(EditorApplication.timeSinceStartup - startTime);
+            UpdateImportStatistics(ctx.assetPath, importTime, importSuccessful);
+        }
+
+        // Store timing data for performance window (if enabled)
+        if (EggImporterSettings.Instance.trackPerformanceTiming && _timingData != null)
+        {
+            var importTime = (float)(EditorApplication.timeSinceStartup - startTime);
+            StoreTimingData(ctx.assetPath, importTime);
+        }
+
         DebugLogger.LogEggImporter("--- EGG IMPORTER: COMPLETE ---");
     }
-    
+
     private void UpdateImportStatistics(string filePath, float importTime, bool success)
     {
         // Update import counts
         int totalImports = EditorPrefs.GetInt("EggImporter_TotalImports", 0) + 1;
         EditorPrefs.SetInt("EggImporter_TotalImports", totalImports);
-        
+
         // Update total import time
         float totalTime = EditorPrefs.GetFloat("EggImporter_TotalImportTime", 0f) + importTime;
         EditorPrefs.SetFloat("EggImporter_TotalImportTime", totalTime);
-        
+
         // Update failed imports if unsuccessful
         if (!success)
         {
             int failedImports = EditorPrefs.GetInt("EggImporter_FailedImports", 0) + 1;
             EditorPrefs.SetInt("EggImporter_FailedImports", failedImports);
         }
-        
+
         // Update last import info
         EditorPrefs.SetString("EggImporter_LastImportTime", System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
         EditorPrefs.SetString("EggImporter_LastImportFile", System.IO.Path.GetFileName(filePath));
-        
+
         // Update material statistics
         if (_materials != null)
         {
@@ -637,29 +652,28 @@ public class EggImporter : ScriptedImporter
         return EggImporterSettings.Instance.autoImportEnabled;
     }
     
-    private bool ShouldImportBasedOnLOD(string assetPath)
+    private bool ShouldImportBasedOnLOD(string assetPath, string[] lines)
     {
         var settings = EggImporterSettings.Instance;
         string fileName = Path.GetFileNameWithoutExtension(assetPath).ToLower();
-        
+
         // Check if we should skip footprints
         if (settings.skipFootprints && fileName.EndsWith("_footprint"))
         {
             DebugLogger.LogEggImporter($"Skipping footprint: {fileName}");
             return false;
         }
-        
+
         // If set to import all LODs, allow everything
         if (settings.lodImportMode == EggImporterSettings.LODImportMode.AllLODs)
         {
             return true;
         }
-        
+
         // If set to highest only, apply LOD filtering
         if (settings.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly)
         {
-            // Check if file has skeletal data for numeric LOD filtering
-            var lines = File.ReadAllLines(assetPath);
+            // Use pre-read lines array (optimization: avoid re-reading file)
             bool hasSkeletalData = HasSkeletalData(lines);
             return ShouldImportHighestLODOnly(fileName, hasSkeletalData);
         }
@@ -710,17 +724,17 @@ public class EggImporter : ScriptedImporter
     
     private void RecordTiming(string phase)
     {
-        if (_timer != null && _timingData != null)
-        {
-            _timingData[phase] = (float)_timer.Elapsed.TotalMilliseconds;
-        }
+        // Skip if performance tracking is disabled (optimization)
+        if (!EggImporterSettings.Instance.trackPerformanceTiming || _timer == null || _timingData == null)
+            return;
+
+        _timingData[phase] = (float)_timer.Elapsed.TotalMilliseconds;
     }
-    
+
     private void StoreTimingData(string filePath, float totalTime)
     {
-        // Check if performance tracking is enabled
-        bool performanceTrackingEnabled = EditorPrefs.GetBool("EggImporter_PerformanceTrackingEnabled", false);
-        if (!performanceTrackingEnabled || _timingData == null || _timingData.Count == 0) 
+        // Skip if performance tracking is disabled or no timing data (optimization)
+        if (!EggImporterSettings.Instance.trackPerformanceTiming || _timingData == null || _timingData.Count == 0)
         {
             return;
         }

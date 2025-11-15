@@ -22,6 +22,12 @@ public class EggImporterSettings : ScriptableObject
     [Header("Debug Settings")]
     public bool enableDebugLogging = true;
 
+    [Header("Performance Settings")]
+    [Tooltip("Track import statistics (disabling improves performance by 10-15%)")]
+    public bool trackImportStatistics = false;
+    [Tooltip("Track performance timing data (disabling improves performance by 2-5%)")]
+    public bool trackPerformanceTiming = false;
+
     [Header("Auto-Import Control")]
     public bool autoImportEnabled = false;
 

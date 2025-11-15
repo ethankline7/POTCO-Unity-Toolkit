@@ -30,9 +30,11 @@ public class GeometryProcessor
     private string _currentAssetPath = "";
 
     // Cache for best available LOD distance to avoid repeated file scans
+    // Use asset path as cache key instead of array reference (optimization)
     private float? _bestAvailableLODDistance = null;
-    private string[] _cachedLinesForLOD = null;
+    private string _cachedAssetPathForLOD = null;
     private int _bestNamedLODQuality = -2; // -2 = uninitialized, -1 = no named LODs found
+    private string _cachedAssetPathForNamedLOD = null;
 
     public GeometryProcessor()
     {
@@ -48,8 +50,9 @@ public class GeometryProcessor
     public void ClearLODCache()
     {
         _bestAvailableLODDistance = null;
-        _cachedLinesForLOD = null;
+        _cachedAssetPathForLOD = null;
         _bestNamedLODQuality = -2; // Reset for new file
+        _cachedAssetPathForNamedLOD = null;
     }
 
     public void CreateMeshForGameObject(GameObject go, Dictionary<string, List<int>> subMeshes, List<string> materialNames, AssetImportContext ctx,
@@ -919,10 +922,11 @@ public class GeometryProcessor
         int i = start;
         while (i < end)
         {
-            string line = lines[i].Trim();
-            if (line.StartsWith("<Group>"))
+            // Cache trimmed line (optimization: avoid repeated Trim calls)
+            string trimmedLine = lines[i].Trim();
+            if (trimmedLine.StartsWith("<Group>"))
             {
-                string groupName = _parserUtils.GetGroupName(line);
+                string groupName = _parserUtils.GetGroupName(trimmedLine);
 
                 // Cache the group end to avoid multiple expensive FindMatchingBrace calls
                 int groupEnd = _parserUtils.FindMatchingBrace(lines, i);
@@ -998,7 +1002,7 @@ public class GeometryProcessor
                 BuildHierarchyAndMapGeometry(lines, i + 1, groupEnd, newPath, hierarchyMap, geometryMap, childIsInCollisionContext);
                 i = groupEnd + 1;
             }
-            else if (line.StartsWith("<Transform>"))
+            else if (trimmedLine.StartsWith("<Transform>"))
             {
                 // Check if this group or its children will contain polygons by looking ahead in the EGG structure
                 bool containsGeometry = WillContainGeometry(lines, i, hierarchyMap, currentPath);
@@ -1026,7 +1030,7 @@ public class GeometryProcessor
                     i = transformEnd + 1;
                 }
             }
-            else if (line.StartsWith("<Polygon>"))
+            else if (trimmedLine.StartsWith("<Polygon>"))
             {
                 if (!geometryMap.ContainsKey(currentPath))
                 {
@@ -1071,30 +1075,33 @@ public class GeometryProcessor
         Vector3 position = Vector3.zero;
         Quaternion rotation = Quaternion.identity;
         Vector3 scale = Vector3.one;
-        
-        // Optimized parsing - direct loop without repeated operations
+
+        // Optimized parsing - cache trimmed strings and minimize string operations
         for (int j = start + 1; j < end; j++)
         {
             string line = lines[j];
-            if (line.Length > 10) // Quick length check to avoid Trim on short lines
-            {
-                line = line.Trim();
-                if (line.Length > 11 && line[0] == '<')
-                {
-                    if (line.StartsWith("<Translate>")) { position += _parserUtils.ParseVector3(line); }
-                    else if (line.StartsWith("<Rotate>")) { rotation *= _parserUtils.ParseAngleAxis(line); }
-                    else if (line.StartsWith("<Scale>")) { scale = Vector3.Scale(scale, _parserUtils.ParseVector3(line)); }
-                }
-            }
+            // Quick reject check before trimming (optimization)
+            if (line.Length <= 10 || line[0] != '<') continue;
+
+            string trimmedLine = line.Trim();
+            if (trimmedLine.Length <= 11) continue;
+
+            // Cache first char check (optimization)
+            char firstChar = trimmedLine[0];
+            if (firstChar != '<') continue;
+
+            if (trimmedLine.StartsWith("<Translate>")) { position += _parserUtils.ParseVector3(trimmedLine); }
+            else if (trimmedLine.StartsWith("<Rotate>")) { rotation *= _parserUtils.ParseAngleAxis(trimmedLine); }
+            else if (trimmedLine.StartsWith("<Scale>")) { scale = Vector3.Scale(scale, _parserUtils.ParseVector3(trimmedLine)); }
         }
-        
+
         // Apply coordinate system conversion
         Vector3 unityPosition = new Vector3(position.x, position.z, position.y);
         Quaternion unityRotation = new Quaternion(rotation.x, rotation.z, rotation.y, -rotation.w);
         Vector3 unityScale = new Vector3(scale.x, scale.z, scale.y);
-        
+
         DebugLogger.LogEggImporter($"📍 Setting transform for '{go.name}': pos={unityPosition}, rot={unityRotation.eulerAngles}, scale={unityScale}");
-        
+
         go.transform.localPosition = unityPosition;
         go.transform.localRotation = unityRotation;
         go.transform.localScale = unityScale;
@@ -1471,8 +1478,8 @@ public class GeometryProcessor
 
     private float GetBestAvailableLODDistance(string[] lines)
     {
-        // Use cached value if available and lines array hasn't changed
-        if (_bestAvailableLODDistance.HasValue && _cachedLinesForLOD == lines)
+        // Use cached value if available for this asset (optimization: use path as cache key)
+        if (_bestAvailableLODDistance.HasValue && _cachedAssetPathForLOD == _currentAssetPath)
         {
             return _bestAvailableLODDistance.Value;
         }
@@ -1510,9 +1517,9 @@ public class GeometryProcessor
 
         float result = foundAnyLOD ? bestDistance : 0.0f;
 
-        // Cache the result
+        // Cache the result using asset path as key (optimization)
         _bestAvailableLODDistance = result;
-        _cachedLinesForLOD = lines;
+        _cachedAssetPathForLOD = _currentAssetPath;
 
         if (foundAnyLOD)
         {
@@ -1756,10 +1763,12 @@ public class GeometryProcessor
         if (thisQuality == -1)
             return false;
 
-        // Find the best available named LOD in the file (if we haven't already)
-        if (_bestNamedLODQuality == -2) // -2 means uninitialized
+        // Find the best available named LOD in the file (if we haven't already for this asset)
+        // Optimization: use asset path as cache key
+        if (_bestNamedLODQuality == -2 || _cachedAssetPathForNamedLOD != _currentAssetPath)
         {
             _bestNamedLODQuality = FindBestNamedLODQuality(lines);
+            _cachedAssetPathForNamedLOD = _currentAssetPath;
         }
 
         // Import if this is the best available quality
