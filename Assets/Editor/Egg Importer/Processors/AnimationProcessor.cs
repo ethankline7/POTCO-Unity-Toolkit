@@ -20,9 +20,6 @@ public class AnimationProcessor
     // Reusable StringBuilder for string concatenation
     private static readonly StringBuilder StringBuilderCache = new StringBuilder();
 
-    // Note: Body shape bone filtering now uses simple string checks (def_ prefix and specific tr_ bones)
-    // instead of HashSet lookup for better performance (optimization: removed unused BodyShapeBones HashSet)
-
     // Cache settings to avoid repeated Resources.Load (optimization: 15-25% faster)
     private EggImporterSettings _cachedSettings = null;
 
@@ -697,22 +694,6 @@ public class AnimationProcessor
 
     private void CreateAnimationCurvesForBone(AnimationClip clip, string bonePath, Dictionary<string, List<float>> channels, int numKeyframes, float fps, string bundleName)
     {
-        // Skip body shape bones ONLY for human characters (fp/mp) if filtering is enabled
-        // Use cached settings (optimization) - fallback to Instance if null
-        bool filterEnabled = (_cachedSettings ?? EggImporterSettings.Instance).filterDefBonesForHumans;
-        string boneName = bonePath.Split('/').Last();
-        bool isDefBone = boneName.StartsWith("def_");
-        bool isClavBone = boneName == "tr_right_clav" || boneName == "tr_left_clav";
-        bool isHumanCharacter = bundleName.StartsWith("fp") || bundleName.StartsWith("mp");
-
-        DebugLogger.LogEggImporter($"🔍 FILTER CHECK: bone='{boneName}', bundleName='{bundleName}', isDefBone={isDefBone}, isClavBone={isClavBone}, isHuman={isHumanCharacter}, filterEnabled={filterEnabled}");
-
-        if (filterEnabled && (isDefBone || isClavBone) && isHumanCharacter)
-        {
-            DebugLogger.LogEggImporter($"⏭️ CURVES: Skipping body shape bone '{bonePath}' for human character '{bundleName}' (controlled by BodyShapeApplier)");
-            return;
-        }
-
         // Fix bone path to match actual hierarchy created by GeometryProcessor
         string correctedBonePath = CorrectBonePath(bonePath);
         DebugLogger.LogEggImporter($"📈 CURVES: Creating curves for bone '{bonePath}' -> corrected to '{correctedBonePath}' with {numKeyframes} keyframes at {fps} fps");

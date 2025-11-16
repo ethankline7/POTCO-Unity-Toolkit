@@ -240,9 +240,9 @@ public class EggImporter : ScriptedImporter
                 // Extract bundle name using Span
                 int firstSpace = line.IndexOf(' ');
                 var parts = firstSpace > 0 ? line.Slice(firstSpace + 1).ToString().Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries) : new string[0];
-                if (parts.Length > 1)
+                if (parts.Length > 0)
                 {
-                    string bundleName = parts[1];
+                    string bundleName = parts[0];
                     DebugLogger.LogEggImporter($"🎬 STANDALONE: Found animation bundle: '{bundleName}'");
 
                     var clip = new AnimationClip { name = eggFileName }; // Use .egg filename instead of bundle name
