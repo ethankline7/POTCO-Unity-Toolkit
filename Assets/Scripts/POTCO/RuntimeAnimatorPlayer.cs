@@ -189,6 +189,12 @@ namespace POTCO
                 crossfadeCoroutine = null;
             }
 
+            // Reset animator to bind pose to ensure clean state
+            if (animator != null)
+            {
+                animator.Rebind();
+            }
+
             // Set all weights to 0 except the target clip
             foreach (var kvp in clipIndices)
             {
@@ -262,6 +268,12 @@ namespace POTCO
         private System.Collections.IEnumerator CrossFadeCoroutine(string toClipName, float duration)
         {
             int toIndex = clipIndices[toClipName];
+
+            // Reset animator to bind pose to ensure clean state
+            if (animator != null)
+            {
+                animator.Rebind();
+            }
 
             // CRITICAL FIX: Don't use currentClipIndex (it's outdated during crossfades!)
             // Instead, find the clip with the highest weight RIGHT NOW
