@@ -26,9 +26,9 @@ namespace POTCO
 
         [Header("Detection")]
         [Tooltip("Distance to notice player (turn to face)")]
-        [SerializeField] private float noticeDistance = 5f;
+        [SerializeField] private float noticeDistance = 8f;
         [Tooltip("Distance to greet player (play greeting animation)")]
-        [SerializeField] private float greetDistance = 3f;
+        [SerializeField] private float greetDistance = 4f;
         [Tooltip("Angle cone for noticing player (degrees from forward)")]
         [SerializeField] private float noticeConeAngle = 120f;
 
@@ -405,12 +405,11 @@ namespace POTCO
             }
 
             // Turn to face player
-            // Model child has 180° local rotation, so parent must face AWAY from target for model to face TOWARD target
             Vector3 toPlayer = (playerTransform.position - transform.position);
             toPlayer.y = 0;
             if (toPlayer != Vector3.zero)
             {
-                Quaternion targetRot = Quaternion.LookRotation(toPlayer) * Quaternion.Euler(0f, 180f, 0f);
+                Quaternion targetRot = Quaternion.LookRotation(toPlayer);
 
                 // Calculate turn direction before rotating
                 float angleDifference = Quaternion.Angle(transform.rotation, targetRot);
@@ -463,12 +462,11 @@ namespace POTCO
             }
 
             // Continue facing player during greeting
-            // Model child has 180° local rotation, so parent must face AWAY from target for model to face TOWARD target
             Vector3 toPlayer = (playerTransform.position - transform.position);
             toPlayer.y = 0;
             if (toPlayer != Vector3.zero)
             {
-                Quaternion targetRot = Quaternion.LookRotation(toPlayer) * Quaternion.Euler(0f, 180f, 0f);
+                Quaternion targetRot = Quaternion.LookRotation(toPlayer);
 
                 // Calculate turn direction before rotating
                 float angleDifference = Quaternion.Angle(transform.rotation, targetRot);
@@ -504,9 +502,8 @@ namespace POTCO
             if (distanceToPlayer > noticeDistance) return false;
 
             // Check angle cone
-            // Model faces OPPOSITE of parent's forward (due to 180° offset), so check angle from -forward
             Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
-            float angle = Vector3.Angle(-transform.forward, toPlayer);
+            float angle = Vector3.Angle(transform.forward, toPlayer);
             return angle < noticeConeAngle;
         }
         #endregion
@@ -521,8 +518,7 @@ namespace POTCO
             if (direction != Vector3.zero)
             {
                 // Rotate toward target
-                // Model child has 180° local rotation, so parent must face AWAY from target for model to face TOWARD target
-                Quaternion targetRot = Quaternion.LookRotation(direction) * Quaternion.Euler(0f, 180f, 0f);
+                Quaternion targetRot = Quaternion.LookRotation(direction);
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, turnSpeed * Time.deltaTime);
 
                 // Move forward
@@ -665,7 +661,7 @@ namespace POTCO
 
             // Notice cone
             Gizmos.color = Color.yellow;
-            Vector3 forward = -transform.forward; // Model faces opposite of parent's forward
+            Vector3 forward = transform.forward;
             Vector3 rightBound = Quaternion.Euler(0, noticeConeAngle, 0) * forward;
             Vector3 leftBound = Quaternion.Euler(0, -noticeConeAngle, 0) * forward;
             Gizmos.DrawRay(transform.position, rightBound * noticeDistance);

@@ -702,6 +702,10 @@ namespace WorldDataImporter.Processors
 
                     instance.name = System.IO.Path.GetFileNameWithoutExtension(modelPath);
 
+                    // Apply 180° rotation offset to match player orientation (POTCO models face backwards)
+                    instance.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                    DebugLogger.LogNPCImport($"🔄 Applied 180° rotation offset to custom NPC model");
+
                     // Debug: Check position values
                     DebugLogger.LogNPCImport($"🔍 Spawn Check (Custom): gridPos={objectData.gridPos}, hasPos={objectData.hasPos}, currentPos={currentGO.transform.localPosition}");
 
@@ -798,6 +802,10 @@ namespace WorldDataImporter.Processors
                     }
 
                     instance.name = pirateDna.name;
+
+                    // Apply 180° rotation offset to match player orientation (POTCO models face backwards)
+                    instance.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                    DebugLogger.LogNPCImport($"🔄 Applied 180° rotation offset to DNA-based NPC model");
 
                     // Load body shapes for both genders
                     var bodyShapes = new Dictionary<string, CharacterOG.Models.BodyShapeDef>();
