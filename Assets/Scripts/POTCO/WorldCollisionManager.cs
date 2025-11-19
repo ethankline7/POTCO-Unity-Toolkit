@@ -107,6 +107,15 @@ namespace POTCO
 
             foreach (ObjectListInfo objectInfo in objectListInfos)
             {
+                // OPTIMIZATION: Skip NPCs completely!
+                // Checks for NPCController or CharacterController on the root object
+                if (objectInfo.GetComponent<NPCController>() != null ||
+                    objectInfo.GetComponent<CharacterController>() != null)
+                {
+                    continue;
+                }
+
+                // Check root
                 if (objectInfo.GetComponent<Collider>() == null)
                 {
                     MeshFilter meshFilter = objectInfo.GetComponent<MeshFilter>();
@@ -119,10 +128,14 @@ namespace POTCO
                     }
                     else
                     {
-                        // Try child mesh filters
+                        // Check children
                         MeshFilter[] childMeshFilters = objectInfo.GetComponentsInChildren<MeshFilter>();
                         foreach (MeshFilter childMeshFilter in childMeshFilters)
                         {
+                            // Double check: Don't add collider if this child belongs to an NPC hierarchy
+                            if (childMeshFilter.GetComponentInParent<NPCController>() != null)
+                                continue;
+
                             if (childMeshFilter.GetComponent<Collider>() == null && childMeshFilter.sharedMesh != null)
                             {
                                 MeshCollider meshCollider = childMeshFilter.gameObject.AddComponent<MeshCollider>();
@@ -135,7 +148,7 @@ namespace POTCO
                 }
             }
 
-            Debug.Log($"✅ Added {colliderCount} mesh colliders to world props");
+            Debug.Log($"✅ Added {colliderCount} mesh colliders to world props (Skipped NPCs)");
         }
 
         /// <summary>

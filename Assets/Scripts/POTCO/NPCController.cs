@@ -32,6 +32,9 @@ namespace POTCO
         [Tooltip("Angle cone for noticing player (degrees from forward)")]
         [SerializeField] private float noticeConeAngle = 120f;
 
+        // Hysteresis buffer for notice state to prevent flickering
+        private const float noticeExitBuffer = 1.2f; // 20% buffer
+
         [Header("Movement")]
         [SerializeField] private float walkSpeed = 5f;
         [SerializeField] private float turnSpeed = 90f;
@@ -383,8 +386,12 @@ namespace POTCO
             velocity.x = 0;
             velocity.z = 0;
 
-            // Check if player left detection range
-            if (playerTransform == null || !ShouldNoticePlayer())
+            // OPTIMIZATION: Hysteresis check
+            // Only stop noticing if player is significantly outside the range (noticeDistance * buffer)
+            // This prevents state flickering at the boundary
+            if (playerTransform == null ||
+                Vector3.Distance(transform.position, playerTransform.position) > (noticeDistance * noticeExitBuffer) ||
+                !IsPlayerInAngle())
             {
                 ChangeState(NPCState.LandRoam);
                 return;
@@ -501,7 +508,12 @@ namespace POTCO
             float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
             if (distanceToPlayer > noticeDistance) return false;
 
-            // Check angle cone
+            return IsPlayerInAngle();
+        }
+
+        private bool IsPlayerInAngle()
+        {
+            if (playerTransform == null) return false;
             Vector3 toPlayer = (playerTransform.position - transform.position).normalized;
             float angle = Vector3.Angle(transform.forward, toPlayer);
             return angle < noticeConeAngle;
