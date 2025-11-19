@@ -276,8 +276,6 @@
             <Table> def_hips {
               <Xfm$Anim_S$> xform {
                 <Scalar> fps { 24 }
-                <S$Anim> i { <V> { 1.89999997615814 } }
-                <S$Anim> j { <V> { 1.89999997615814 } }
               }
             }
             <Table> zz_tr_left_thigh {
@@ -292,7 +290,6 @@
               <Table> tr_left_thigh {
                 <Xfm$Anim_S$> xform {
                   <Scalar> fps { 24 }
-                  <S$Anim> y { <V> { 0.200000002980232 } }
                 }
                 <Table> zz_left_thigh {
                   <Xfm$Anim_S$> xform {
@@ -452,8 +449,6 @@
                   <Table> def_left_thigh {
                     <Xfm$Anim_S$> xform {
                       <Scalar> fps { 24 }
-                      <S$Anim> j { <V> { 1.89999997615814 } }
-                      <S$Anim> k { <V> { 1.5 } }
                     }
                   }
                   <Table> zz_left_knee {
@@ -516,8 +511,6 @@
                     <Table> def_left_knee {
                       <Xfm$Anim_S$> xform {
                         <Scalar> fps { 24 }
-                        <S$Anim> j { <V> { 1.60000002384186 } }
-                        <S$Anim> k { <V> { 1.5 } }
                       }
                     }
                     <Table> zz_left_ankle {
@@ -689,7 +682,6 @@
                       <Table> def_left_ankle {
                         <Xfm$Anim_S$> xform {
                           <Scalar> fps { 24 }
-                          <S$Anim> k { <V> { 1.37999999523163 } }
                         }
                       }
                       <Table> zz_left_ball {
@@ -935,8 +927,6 @@
                         <Table> def_left_ball {
                           <Xfm$Anim_S$> xform {
                             <Scalar> fps { 24 }
-                            <S$Anim> j { <V> { 1.39999997615814 } }
-                            <S$Anim> k { <V> { 1.44000005722046 } }
                           }
                         }
                       }
@@ -957,7 +947,6 @@
               <Table> tr_right_thigh {
                 <Xfm$Anim_S$> xform {
                   <Scalar> fps { 24 }
-                  <S$Anim> y { <V> { -0.200000002980232 } }
                 }
                 <Table> zz_right_thigh {
                   <Xfm$Anim_S$> xform {
@@ -1118,8 +1107,6 @@
                   <Table> def_right_thigh {
                     <Xfm$Anim_S$> xform {
                       <Scalar> fps { 24 }
-                      <S$Anim> j { <V> { 1.89999997615814 } }
-                      <S$Anim> k { <V> { 1.5 } }
                     }
                   }
                   <Table> zz_right_knee {
@@ -1182,8 +1169,6 @@
                     <Table> def_right_knee {
                       <Xfm$Anim_S$> xform {
                         <Scalar> fps { 24 }
-                        <S$Anim> j { <V> { 1.60000002384186 } }
-                        <S$Anim> k { <V> { 1.5 } }
                       }
                     }
                     <Table> zz_right_ankle {
@@ -1355,7 +1340,6 @@
                       <Table> def_right_ankle {
                         <Xfm$Anim_S$> xform {
                           <Scalar> fps { 24 }
-                          <S$Anim> k { <V> { 1.37999999523163 } }
                         }
                       }
                       <Table> zz_right_ball {
@@ -1601,8 +1585,6 @@
                         <Table> def_right_ball {
                           <Xfm$Anim_S$> xform {
                             <Scalar> fps { 24 }
-                            <S$Anim> j { <V> { 1.39999997615814 } }
-                            <S$Anim> k { <V> { 1.44000005722046 } }
                           }
                         }
                       }
@@ -1623,9 +1605,6 @@
               <Table> tr_sash01 {
                 <Xfm$Anim_S$> xform {
                   <Scalar> fps { 24 }
-                  <S$Anim> x { <V> { 0.100000001490116 } }
-                  <S$Anim> y { <V> { 0.0799999982118607 } }
-                  <S$Anim> z { <V> { 0.330000013113022 } }
                 }
                 <Table> zz_sash01 {
                   <Xfm$Anim_S$> xform {
@@ -1950,8 +1929,6 @@
               <Table> def_spine02 {
                 <Xfm$Anim_S$> xform {
                   <Scalar> fps { 24 }
-                  <S$Anim> j { <V> { 1.89999997615814 } }
-                  <S$Anim> k { <V> { 1.89999997615814 } }
                 }
               }
               <Table> zz_spine03 {
@@ -2121,8 +2098,6 @@
                 <Table> def_spine03 {
                   <Xfm$Anim_S$> xform {
                     <Scalar> fps { 24 }
-                    <S$Anim> j { <V> { 1.70000004768372 } }
-                    <S$Anim> k { <V> { 1.60000002384186 } }
                   }
                 }
                 <Table> zz_spine04 {
@@ -2292,8 +2267,6 @@
                   <Table> def_spine04 {
                     <Xfm$Anim_S$> xform {
                       <Scalar> fps { 24 }
-                      <S$Anim> j { <V> { 1.5 } }
-                      <S$Anim> k { <V> { 1.29999995231628 } }
                     }
                   }
                   <Table> zz_shoulders {
@@ -2473,8 +2446,6 @@
                     <Table> def_shoulders {
                       <Xfm$Anim_S$> xform {
                         <Scalar> fps { 24 }
-                        <S$Anim> j { <V> { 1.20000004768372 } }
-                        <S$Anim> k { <V> { 1.20000004768372 } }
                       }
                     }
                     <Table> zz_neck {
@@ -9761,8 +9732,6 @@
                       <Table> def_neck {
                         <Xfm$Anim_S$> xform {
                           <Scalar> fps { 24 }
-                          <S$Anim> j { <V> { 2 } }
-                          <S$Anim> k { <V> { 1.10000002384186 } }
                         }
                       }
                     }
@@ -9779,7 +9748,6 @@
                       <Table> tr_left_clav {
                         <Xfm$Anim_S$> xform {
                           <Scalar> fps { 24 }
-                          <S$Anim> x { <V> { 0.119999997317791 } }
                         }
                         <Table> zz_left_clav {
                           <Xfm$Anim_S$> xform {
@@ -9975,8 +9943,6 @@
                           <Table> def_left_clav {
                             <Xfm$Anim_S$> xform {
                               <Scalar> fps { 24 }
-                              <S$Anim> j { <V> { 1.39999997615814 } }
-                              <S$Anim> k { <V> { 1.39999997615814 } }
                             }
                           }
                           <Table> zz_left_shoulder {
@@ -10178,13 +10144,6 @@
                             <Table> def_left_shoulder {
                               <Xfm$Anim_S$> xform {
                                 <Scalar> fps { 24 }
-                                <S$Anim> j { <V> { 1.89999997615814 } }
-                                <S$Anim> k { <V> { 1.89999997615814 } }
-                                <S$Anim> h { <V> { 0.205296993255615 } }
-                                <S$Anim> p { <V> { -3.7220299243927 } }
-                                <S$Anim> r { <V> { 0.28677299618721 } }
-                                <S$Anim> y { <V> { -0.00312273995950818 } }
-                                <S$Anim> z { <V> { 0.00440840981900692 } }
                               }
                             }
                             <Table> zz_left_elbow {
@@ -10655,12 +10614,6 @@
                               <Table> def_left_elbow {
                                 <Xfm$Anim_S$> xform {
                                   <Scalar> fps { 24 }
-                                  <S$Anim> j { <V> { 2 } }
-                                  <S$Anim> k { <V> { 1.62000000476837 } }
-                                  <S$Anim> h { <V> { 0.0165571998804808 } }
-                                  <S$Anim> p { <V> { -3.73305010795593 } }
-                                  <S$Anim> r { <V> { 0.00121041003149003 } }
-                                  <S$Anim> y { <V> { -0.000259986991295591 } }
                                 }
                                 <Table> def_left_forearm {
                                   <Xfm$Anim_S$> xform {
@@ -11222,7 +11175,6 @@
                                 <Table> def_left_wrist {
                                   <Xfm$Anim_S$> xform {
                                     <Scalar> fps { 24 }
-                                    <S$Anim> j { <V> { 1.29999995231628 } }
                                   }
                                 }
                                 <Table> weapon_left {
@@ -11504,7 +11456,6 @@
                                   <Table> def_left_finger01 {
                                     <Xfm$Anim_S$> xform {
                                       <Scalar> fps { 24 }
-                                      <S$Anim> j { <V> { 1.20000004768372 } }
                                     }
                                   }
                                   <Table> zz_left_finger02 {
@@ -11583,7 +11534,6 @@
                                     <Table> def_left_finger02 {
                                       <Xfm$Anim_S$> xform {
                                         <Scalar> fps { 24 }
-                                        <S$Anim> j { <V> { 1.14999997615814 } }
                                       }
                                     }
                                   }
@@ -11836,7 +11786,6 @@
                                   <Table> def_left_index01 {
                                     <Xfm$Anim_S$> xform {
                                       <Scalar> fps { 24 }
-                                      <S$Anim> j { <V> { 1.75 } }
                                     }
                                   }
                                   <Table> zz_left_index02 {
@@ -11913,7 +11862,6 @@
                                     <Table> def_left_index02 {
                                       <Xfm$Anim_S$> xform {
                                         <Scalar> fps { 24 }
-                                        <S$Anim> j { <V> { 1.60000002384186 } }
                                       }
                                     }
                                   }
@@ -11931,7 +11879,6 @@
                                   <Table> tr_left_thumb01 {
                                     <Xfm$Anim_S$> xform {
                                       <Scalar> fps { 24 }
-                                      <S$Anim> y { <V> { -0.0700000002980232 } }
                                     }
                                     <Table> zz_left_thumb01 {
                                       <Xfm$Anim_S$> xform {
@@ -12893,7 +12840,6 @@
                       <Table> tr_right_clav {
                         <Xfm$Anim_S$> xform {
                           <Scalar> fps { 24 }
-                          <S$Anim> x { <V> { 0.119999997317791 } }
                         }
                         <Table> zz_right_clav {
                           <Xfm$Anim_S$> xform {
@@ -13060,8 +13006,6 @@
                           <Table> def_right_clav {
                             <Xfm$Anim_S$> xform {
                               <Scalar> fps { 24 }
-                              <S$Anim> j { <V> { 1.39999997615814 } }
-                              <S$Anim> k { <V> { 1.39999997615814 } }
                             }
                           }
                           <Table> zz_right_shoulder {
@@ -13265,8 +13209,6 @@
                             <Table> def_right_shoulder {
                               <Xfm$Anim_S$> xform {
                                 <Scalar> fps { 24 }
-                                <S$Anim> j { <V> { 1.89999997615814 } }
-                                <S$Anim> k { <V> { 1.89999997615814 } }
                               }
                             }
                             <Table> zz_right_elbow {
@@ -13507,8 +13449,6 @@
                               <Table> def_right_elbow {
                                 <Xfm$Anim_S$> xform {
                                   <Scalar> fps { 24 }
-                                  <S$Anim> j { <V> { 2 } }
-                                  <S$Anim> k { <V> { 1.62000000476837 } }
                                 }
                                 <Table> def_right_forearm {
                                   <Xfm$Anim_S$> xform {
@@ -13971,7 +13911,6 @@
                                 <Table> def_right_wrist {
                                   <Xfm$Anim_S$> xform {
                                     <Scalar> fps { 24 }
-                                    <S$Anim> j { <V> { 1.29999995231628 } }
                                   }
                                 }
                                 <Table> weapon_right {
@@ -14233,7 +14172,6 @@
                                   <Table> def_right_finger01 {
                                     <Xfm$Anim_S$> xform {
                                       <Scalar> fps { 24 }
-                                      <S$Anim> j { <V> { 1.20000004768372 } }
                                     }
                                   }
                                   <Table> zz_right_finger02 {
@@ -14314,7 +14252,6 @@
                                     <Table> def_right_finger02 {
                                       <Xfm$Anim_S$> xform {
                                         <Scalar> fps { 24 }
-                                        <S$Anim> j { <V> { 1.14999997615814 } }
                                       }
                                     }
                                   }
@@ -14397,7 +14334,6 @@
                                   <Table> def_right_index01 {
                                     <Xfm$Anim_S$> xform {
                                       <Scalar> fps { 24 }
-                                      <S$Anim> j { <V> { 1.75 } }
                                     }
                                   }
                                   <Table> zz_right_index02 {
@@ -14475,7 +14411,6 @@
                                     <Table> def_right_index02 {
                                       <Xfm$Anim_S$> xform {
                                         <Scalar> fps { 24 }
-                                        <S$Anim> j { <V> { 1.60000002384186 } }
                                       }
                                     }
                                   }
@@ -14493,7 +14428,6 @@
                                   <Table> tr_right_thumb01 {
                                     <Xfm$Anim_S$> xform {
                                       <Scalar> fps { 24 }
-                                      <S$Anim> y { <V> { 0.0700000002980232 } }
                                     }
                                     <Table> zz_right_thumb01 {
                                       <Xfm$Anim_S$> xform {
