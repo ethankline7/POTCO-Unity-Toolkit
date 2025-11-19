@@ -13,6 +13,9 @@ namespace CharacterOG.Runtime.Systems
 {
     public class DnaApplier
     {
+        // Static cache for gender-specific hide lists
+        private static Dictionary<string, List<string>> s_genderHideCache = new Dictionary<string, List<string>>();
+
         private BodyShapeApplier bodyShapeApplier;
         private FacialMorphApplier facialMorphApplier;
         private CharacterAssembler assembler;
@@ -248,76 +251,55 @@ namespace CharacterOG.Runtime.Systems
 
         private void HideAllClothing()
         {
-            // STEP 1: Explicitly disable ALL clothing, hair, beard, mustache, and jewelry meshes (except eyebrows)
-            int clothingDisabled = 0;
-            int hairDisabled = 0;
-            int beardDisabled = 0;
-            int mustacheDisabled = 0;
-            int jewelryDisabled = 0;
+            // Check if we have a cached list of meshes to hide for this gender
+            string genderKey = currentDna.gender;
 
-            foreach (var name in rendererCache.AllNames())
+            if (s_genderHideCache.TryGetValue(genderKey, out List<string> hideList))
             {
-                if (name.StartsWith("clothing_layer"))
+                // FAST PATH: Just iterate the known list
+                foreach (string name in hideList)
                 {
                     rendererCache.EnableExact(name, false);
-                    clothingDisabled++;
-                }
-                else if (name.StartsWith("hair_") && !name.StartsWith("hair_eyebrow_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    hairDisabled++;
-                }
-                else if (name.StartsWith("beard_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    beardDisabled++;
-                }
-                else if (name.StartsWith("mustache_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    mustacheDisabled++;
-                }
-                else if (name.StartsWith("acc_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    jewelryDisabled++;
                 }
             }
+            else
+            {
+                // SLOW PATH: Build the cache (Runs once per gender per session)
+                hideList = new List<string>();
+                var allNames = rendererCache.AllNames(); // Get collection once
 
-            Debug.Log($"DnaApplier: Disabled {clothingDisabled} clothing, {hairDisabled} hair, {beardDisabled} beard, {mustacheDisabled} mustache, {jewelryDisabled} jewelry meshes");
+                foreach (var name in allNames)
+                {
+                    if (name.StartsWith("clothing_layer") ||
+                       (name.StartsWith("hair_") && !name.StartsWith("hair_eyebrow_")) ||
+                        name.StartsWith("beard_") ||
+                        name.StartsWith("mustache_") ||
+                        name.StartsWith("acc_"))
+                    {
+                        rendererCache.EnableExact(name, false);
+                        hideList.Add(name); // Add to cache
+                    }
+                }
 
-            // STEP 2: Clear all slots (this will disable all clothing groups via CharacterAssembler)
+                s_genderHideCache[genderKey] = hideList;
+                Debug.Log($"[DnaApplier] Built hide cache for {genderKey}: {hideList.Count} meshes");
+            }
+
+            // STEP 2: Clear all slots
             assembler.ClearAllSlots();
 
-            // STEP 3: Show all body parts (will be hidden later based on equipped clothing)
+            // STEP 3: Show all body parts
             var bodyParts = ClothingCatalog.GetBodyIndexToGroup(currentDna.gender);
             foreach (var name in bodyParts)
             {
                 rendererCache.EnableExact(name, true);
             }
 
-            // STEP 4: Enable eyebrows (PirateMale.py line 1852: self.eyeBrows.unstash())
-            var leftEyebrowRenderers = rendererCache.GetExact("hair_eyebrow_left");
-            var rightEyebrowRenderers = rendererCache.GetExact("hair_eyebrow_right");
-
-            Debug.Log($"[DnaApplier] Eyebrow check: Found {leftEyebrowRenderers.Count} left and {rightEyebrowRenderers.Count} right eyebrow renderers");
-
-            // Check for any eyebrow-related meshes in the cache
-            var allNames = rendererCache.AllNames();
-            var eyebrowNames = allNames.Where(n => n.ToLower().Contains("eyebrow") || n.ToLower().Contains("brow")).ToList();
-            if (eyebrowNames.Count > 0)
-            {
-                Debug.Log($"[DnaApplier] Found {eyebrowNames.Count} eyebrow-related meshes: {string.Join(", ", eyebrowNames)}");
-            }
-            else
-            {
-                Debug.LogWarning("[DnaApplier] No eyebrow meshes found in character model!");
-            }
-
+            // STEP 4: Enable eyebrows
             rendererCache.EnableExact("hair_eyebrow_left", true);
             rendererCache.EnableExact("hair_eyebrow_right", true);
 
-            // STEP 5: Hide gh_master_face (zombie PVP face)
+            // STEP 5: Hide zombie face
             rendererCache.EnableExact("gh_master_face", false);
 
             Debug.Log("DnaApplier: Cleared all clothing slots, showed all body parts, enabled eyebrows, hid zombie face");

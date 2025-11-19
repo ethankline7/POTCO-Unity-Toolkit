@@ -13,6 +13,9 @@ namespace POTCO
     [RequireComponent(typeof(RuntimeAnimatorPlayer))]
     public class NPCAnimationPlayer : MonoBehaviour
     {
+        // Static animation cache - shared across ALL NPCs
+        private static Dictionary<string, AnimationClip> s_globalClipCache = new Dictionary<string, AnimationClip>();
+
         [Header("Animation Transitions")]
         [SerializeField] private float transitionDuration = 0.15f;
 
@@ -452,7 +455,20 @@ namespace POTCO
 
         private AnimationClip FindAndLoadClip(string animName, string[] phases, string[] searchPaths, string customModelPrefix = null)
         {
-            // PRIORITY 1: Try with custom model prefix (e.g., "js_idle")
+            // GENERATE CACHE KEYS
+            // We need unique keys for custom vs generic animations
+            string customKey = !string.IsNullOrEmpty(customModelPrefix) ? $"CUSTOM_{customModelPrefix}_{animName}" : null;
+            string genderKey = $"{genderPrefix}{animName}";
+            string genericKey = animName;
+
+            // CHECK CACHE FIRST (Instant return)
+            if (customKey != null && s_globalClipCache.TryGetValue(customKey, out var cachedCustom)) return cachedCustom;
+            if (s_globalClipCache.TryGetValue(genderKey, out var cachedGender)) return cachedGender;
+            if (s_globalClipCache.TryGetValue(genericKey, out var cachedGeneric)) return cachedGeneric;
+
+            // --- EXPENSIVE SEARCH LOGIC (Run only once per animation type) ---
+
+            // PRIORITY 1: Custom Model
             if (!string.IsNullOrEmpty(customModelPrefix))
             {
                 string customPrefixedName = $"{customModelPrefix}_{animName}";
@@ -464,14 +480,15 @@ namespace POTCO
                         AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
                         if (clip != null)
                         {
-                            DebugLogger.LogNPCAnimation($"✅ Loaded custom model anim: {fullPath}");
+                            DebugLogger.LogNPCAnimation($"✅ [CACHE MISS] Loaded custom model anim: {fullPath}");
+                            s_globalClipCache[customKey] = clip; // Cache it!
                             return clip;
                         }
                     }
                 }
             }
 
-            // PRIORITY 2: Try with gender prefix (e.g., "mp_idle")
+            // PRIORITY 2: Gender Prefix
             string genderPrefixedName = genderPrefix + animName;
             foreach (string phase in phases)
             {
@@ -481,13 +498,14 @@ namespace POTCO
                     AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
                     if (clip != null)
                     {
-                        DebugLogger.LogNPCAnimation($"✅ Loaded NPC anim: {fullPath}");
+                        DebugLogger.LogNPCAnimation($"✅ [CACHE MISS] Loaded NPC anim: {fullPath}");
+                        s_globalClipCache[genderKey] = clip; // Cache it!
                         return clip;
                     }
                 }
             }
 
-            // PRIORITY 3: Try without prefix as fallback
+            // PRIORITY 3: No Prefix
             foreach (string phase in phases)
             {
                 foreach (string path in searchPaths)
@@ -496,14 +514,14 @@ namespace POTCO
                     AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
                     if (clip != null)
                     {
-                        DebugLogger.LogNPCAnimation($"✅ Loaded NPC anim (no prefix): {fullPath}");
+                        DebugLogger.LogNPCAnimation($"✅ [CACHE MISS] Loaded NPC anim (no prefix): {fullPath}");
+                        s_globalClipCache[genericKey] = clip; // Cache it!
                         return clip;
                     }
                 }
             }
 
-            string prefixInfo = !string.IsNullOrEmpty(customModelPrefix) ? $"{customModelPrefix}_, " : "";
-            DebugLogger.LogWarningNPCAnimation($"⚠️ Could not find NPC animation: {prefixInfo}{genderPrefixedName} or {animName}");
+            DebugLogger.LogWarningNPCAnimation($"⚠️ Could not find NPC animation: {animName}");
             return null;
         }
 
