@@ -650,8 +650,36 @@ public class GeometryProcessor
             {
                 var vert = new EggVertex();
                 vert.vertexPoolName = currentVertexPoolName; // Assign vertex to current pool
-                var posParts = lines[++i].Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                vert.position = new Vector3(float.Parse(posParts[0], CultureInfo.InvariantCulture), float.Parse(posParts[2], CultureInfo.InvariantCulture), float.Parse(posParts[1], CultureInfo.InvariantCulture));
+
+                // OPTIMIZATION: Parse vertex position using Span to avoid Split allocations
+                ReadOnlySpan<char> posLine = lines[++i].AsSpan().Trim();
+                float x = 0, y = 0, z = 0;
+                int posCount = 0;
+                int start = 0;
+
+                while (start < posLine.Length && posCount < 3)
+                {
+                    // Skip whitespace
+                    while (start < posLine.Length && char.IsWhiteSpace(posLine[start])) start++;
+                    if (start >= posLine.Length) break;
+
+                    // Find end of number
+                    int end = start;
+                    while (end < posLine.Length && !char.IsWhiteSpace(posLine[end])) end++;
+
+                    // Parse float
+                    if (float.TryParse(posLine.Slice(start, end - start), NumberStyles.Float, CultureInfo.InvariantCulture, out float val))
+                    {
+                        if (posCount == 0) x = val;
+                        else if (posCount == 1) y = val;
+                        else if (posCount == 2) z = val;
+                        posCount++;
+                    }
+                    start = end;
+                }
+
+                // Apply Panda3D to Unity coordinate conversion: swap Y and Z
+                vert.position = new Vector3(x, z, y);
                 int vertexEnd = parserUtils.FindMatchingBrace(lines, i - 1);
                 while (i < vertexEnd)
                 {
@@ -870,27 +898,51 @@ public class GeometryProcessor
                     }
                 }
                 
-                var vRefParts = valuesString.Split(SpaceSeparator, StringSplitOptions.RemoveEmptyEntries).Where(s => int.TryParse(s, out _)).ToArray();
-                if (vRefParts.Length >= 3)
+                // OPTIMIZATION: Zero-allocation integer parsing using Span instead of Split
+                ReadOnlySpan<char> valuesSpan = valuesString.AsSpan();
+                int localV0 = -1, localV1 = -1, localV2 = -1, localV3 = -1;
+                int count = 0;
+                int currentStart = 0;
+
+                while (currentStart < valuesSpan.Length && count < 4)
+                {
+                    // Skip whitespace
+                    while (currentStart < valuesSpan.Length && char.IsWhiteSpace(valuesSpan[currentStart])) currentStart++;
+                    if (currentStart >= valuesSpan.Length) break;
+
+                    // Find end of number
+                    int currentEnd = currentStart;
+                    while (currentEnd < valuesSpan.Length && !char.IsWhiteSpace(valuesSpan[currentEnd])) currentEnd++;
+
+                    // Parse integer
+                    if (int.TryParse(valuesSpan.Slice(currentStart, currentEnd - currentStart), out int val))
+                    {
+                        if (count == 0) localV0 = val;
+                        else if (count == 1) localV1 = val;
+                        else if (count == 2) localV2 = val;
+                        else if (count == 3) localV3 = val;
+                        count++;
+                    }
+                    currentStart = currentEnd;
+                }
+
+                if (count >= 3)
                 {
                     // Map local vertex indices to global indices using vertex pool mapping
                     string poolName = string.IsNullOrEmpty(referencedVertexPool) ? "default" : referencedVertexPool;
-                    
+
                     if (vertexPoolMappings.ContainsKey(poolName))
                     {
                         var poolMapping = vertexPoolMappings[poolName];
-                        
-                        int localV0 = int.Parse(vRefParts[0]); int localV1 = int.Parse(vRefParts[1]); int localV2 = int.Parse(vRefParts[2]);
-                        
-                        if (poolMapping.TryGetValue(localV0, out int globalV0) && 
-                            poolMapping.TryGetValue(localV1, out int globalV1) && 
+
+                        if (poolMapping.TryGetValue(localV0, out int globalV0) &&
+                            poolMapping.TryGetValue(localV1, out int globalV1) &&
                             poolMapping.TryGetValue(localV2, out int globalV2))
                         {
                             subMeshes[polygonTextureRef].Add(globalV0); subMeshes[polygonTextureRef].Add(globalV2); subMeshes[polygonTextureRef].Add(globalV1);
-                            
-                            if (vRefParts.Length > 3)
+
+                            if (count > 3) // Quad
                             {
-                                int localV3 = int.Parse(vRefParts[3]);
                                 if (poolMapping.TryGetValue(localV3, out int globalV3))
                                 {
                                     subMeshes[polygonTextureRef].Add(globalV0); subMeshes[polygonTextureRef].Add(globalV3); subMeshes[polygonTextureRef].Add(globalV2);
