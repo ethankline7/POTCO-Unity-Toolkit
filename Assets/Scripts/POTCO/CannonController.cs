@@ -51,7 +51,7 @@ namespace POTCO
         [Tooltip("Cannonball prefab to spawn")]
         public GameObject cannonballPrefab;
         [Tooltip("Initial velocity of cannonball")]
-        public float muzzleVelocity = 50f;
+        public float muzzleVelocity = 100f;
         [Tooltip("Cooldown between shots (seconds)")]
         public float fireCooldown = 2f;
 

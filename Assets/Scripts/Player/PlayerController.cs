@@ -1,8 +1,3 @@
-/// <summary>
-/// Player movement controller with CharacterController-based locomotion
-/// Drives the Animator with Speed, MoveX, MoveY parameters
-/// Design targets: responsive feel, coyote time, swimming support
-/// </summary>
 using UnityEngine;
 using System.Collections.Generic;
 
@@ -22,9 +17,11 @@ namespace Player
         [SerializeField] private float deceleration = 64.5f;
 
         [Header("Jump & Gravity")]
-        [SerializeField] private float gravity = 8.73f;
-        [SerializeField] private float jumpVelocity = 7.64f;
-        [SerializeField] private float coyoteTime = 0.1f;
+        [SerializeField] private float gravity = 20.0f;
+        [SerializeField] private float jumpVelocity = 10.0f;
+        [SerializeField] private float coyoteTime = 0.15f;
+        [Tooltip("Downward force to keep player glued to slopes")]
+        [SerializeField] private float stickToGroundForce = 10f;
 
         [Header("Swimming")]
         [SerializeField] private float swimSpeed = 3.0f;
@@ -37,11 +34,13 @@ namespace Player
         [SerializeField] private float groundDistance = 0.4f;
         [SerializeField] private LayerMask groundMask = -1;
         [Tooltip("Maximum height of obstacles the character can step over")]
-        [SerializeField] private float stepOffset = 0.5f;
+        [SerializeField] private float stepOffset = 3.73f;
         [Tooltip("Skin width for collision detection (prevents jittering)")]
         [SerializeField] private float skinWidth = 0.08f;
         [Tooltip("Minimum falling velocity to trigger air/falling state")]
         [SerializeField] private float fallingThreshold = 0.5f;
+        [Tooltip("Max slope angle (degrees) the player can walk up")]
+        [SerializeField] private float maxSlopeAngle = 85f;
 
         [Header("Model Setup")]
         [Tooltip("POTCO models often face backwards. Set to 180 to flip model facing. Applied once at start.")]
@@ -51,13 +50,12 @@ namespace Player
 
         [Header("Rotation")]
         [Tooltip("Rotation speed when character aligns with camera (free-look mode)")]
-        [SerializeField] private float strafeRotationSpeed = 8f;
+        [SerializeField] private float strafeRotationSpeed = 12f;
         [Tooltip("Rotation speed when character turns with A/D keys (normal mode)")]
-        [SerializeField] private float turnRotationSpeed = 90.1f; // Degrees per second
+        [SerializeField] private float turnRotationSpeed = 120f;
 
         [Header("Debug")]
         [SerializeField] private bool showDebugGizmos = true;
-        [SerializeField] private bool debugAnimator = false;
 
         private CharacterController controller;
         private PlayerCamera playerCamera;
@@ -66,214 +64,168 @@ namespace Player
         private float currentSpeed;
         private bool isGrounded;
         private float lastGroundedTime;
+        private float lastJumpTime;
         private bool isSwimming;
 
         // Input
         private Vector2 moveInput;
         private bool jumpPressed;
         private bool runToggle = true;
-        private float turnInput; // A/D turning when not free-looking
-        private float strafeInput; // Q/E strafing
+        private float turnInput;
+        private float strafeInput;
 
         // Moving platform support
         private Transform currentPlatform;
         private Vector3 lastPlatformPosition;
         private Quaternion lastPlatformRotation;
-        private List<Collider> ignoredShipColliders = new List<Collider>();
-
-        // Debug
-        private float lastDebugTime;
+        
+        // Slope handling
+        private Vector3 groundNormal = Vector3.up;
 
         private void Awake()
         {
             controller = GetComponent<CharacterController>();
 
-            // Configure CharacterController collision settings
+            // Configure CharacterController settings
             controller.stepOffset = stepOffset;
             controller.skinWidth = skinWidth;
-            controller.minMoveDistance = 0f; // CRITICAL: Set to 0 to prevent falling through world in builds
-            controller.enabled = true; // Ensure controller is enabled
+            // Small epsilon to prevent micro-stutter/getting stuck
+            controller.minMoveDistance = 0.001f; 
+            controller.slopeLimit = maxSlopeAngle;
+            controller.enabled = true;
 
-
-            Debug.Log($"✅ CharacterController configured - Step Offset: {stepOffset}, Skin Width: {skinWidth}");
-
-            // Auto-attach VisZoneSensor if not present
+            // Auto-attach dependencies if missing
             if (GetComponent<POTCO.VisZones.VisZoneSensor>() == null)
-            {
                 gameObject.AddComponent<POTCO.VisZones.VisZoneSensor>();
-                Debug.Log("✅ Auto-attached VisZoneSensor to player");
-            }
 
-            // Auto-attach HideLevelGeometry if not present (but don't run it yet)
             if (GetComponent<POTCO.HideLevelGeometry>() == null)
-            {
                 gameObject.AddComponent<POTCO.HideLevelGeometry>();
-                Debug.Log("✅ Auto-attached HideLevelGeometry to player");
-            }
         }
 
         private void Start()
         {
-            // Find PlayerCamera
             playerCamera = Camera.main?.GetComponent<PlayerCamera>();
-            if (playerCamera == null)
-            {
-                Debug.LogWarning("⚠️ PlayerCamera not found. Camera-based controls may not work.");
-            }
-
-            // Hide level geometry AFTER VisZone system has initialized
+            
             POTCO.HideLevelGeometry hideLevelGeo = GetComponent<POTCO.HideLevelGeometry>();
-            if (hideLevelGeo != null)
-            {
-                hideLevelGeo.HideObjects();
-                Debug.Log("✅ HideLevelGeometry executed after VisZone initialization");
-            }
+            if (hideLevelGeo != null) hideLevelGeo.HideObjects();
 
-            // Setup model hierarchy with rotation offset (proper fix)
             if (autoSetupModelHierarchy && Mathf.Abs(modelRotationOffset) > 0.1f)
-            {
                 SetupModelHierarchy();
-            }
 
-            // Setup ground check
             SetupGroundCheck();
 
-            // Auto-add FreeCameraToggle component
             if (GetComponent<FreeCameraToggle>() == null)
-            {
-                FreeCameraToggle freeCamToggle = gameObject.AddComponent<FreeCameraToggle>();
-                Debug.Log("✅ FreeCameraToggle component added automatically - Press Tab to toggle free camera");
-            }
+                gameObject.AddComponent<FreeCameraToggle>();
         }
 
         private void Update()
         {
             ProcessInput();
+            UpdateGroundState();
             ProcessMovement();
             ProcessSwimming();
+        }
+
+        private void LateUpdate()
+        {
             HandleMovingPlatform();
         }
 
         private void ProcessInput()
         {
-            // Get movement input (WASD / Arrow Keys)
             moveInput.x = Input.GetAxisRaw("Horizontal");
             moveInput.y = Input.GetAxisRaw("Vertical");
 
-            // Strafe input (Q/E keys)
             strafeInput = 0f;
-            if (Input.GetKey(KeyCode.Q))
+            if (Input.GetKey(KeyCode.Q)) strafeInput = -1f;
+            else if (Input.GetKey(KeyCode.E)) strafeInput = 1f;
+
+            if (Input.GetButtonDown("Jump")) jumpPressed = true;
+            if (Input.GetKeyDown(KeyCode.LeftShift)) runToggle = !runToggle;
+        }
+
+        private void UpdateGroundState()
+        {
+            // Disable ground check briefly after jumping so we don't snap back to ground
+            if (Time.time - lastJumpTime < 0.2f)
             {
-                strafeInput = -1f; // Strafe left
-            }
-            else if (Input.GetKey(KeyCode.E))
-            {
-                strafeInput = 1f; // Strafe right
+                isGrounded = false;
+                groundNormal = Vector3.up;
+                return;
             }
 
-            // Jump input
-            if (Input.GetButtonDown("Jump"))
-            {
-                jumpPressed = true;
-            }
+            // Use SphereCast for better ground detection on slopes and edges
+            float radius = controller.radius * 0.9f;
+            float dist = (controller.height / 2f) - radius + groundDistance;
+            
+            groundNormal = Vector3.up;
 
-            // Run toggle (Left Shift)
-            if (Input.GetKeyDown(KeyCode.LeftShift))
+            if (Physics.SphereCast(transform.position + controller.center, radius, Vector3.down, out RaycastHit hit, dist, groundMask))
             {
-                runToggle = !runToggle;
+                groundNormal = hit.normal;
+                float slopeAngle = Vector3.Angle(Vector3.up, groundNormal);
+                
+                // Only consider grounded if the slope is walkable
+                if (slopeAngle <= controller.slopeLimit)
+                {
+                    isGrounded = true;
+                    lastGroundedTime = Time.time;
+                }
+                else
+                {
+                    isGrounded = false;
+                }
+            }
+            else
+            {
+                isGrounded = false;
             }
         }
 
         private void ProcessMovement()
         {
-            isGrounded = controller.isGrounded;
-
-            // Coyote time
-            if (isGrounded)
-            {
-                lastGroundedTime = Time.time;
-            }
-
             bool canJump = (Time.time - lastGroundedTime) < coyoteTime;
-
-            // Check if camera is in free-look mode
             bool isFreeLooking = playerCamera != null && playerCamera.IsFreeLooking;
 
-            // Calculate target speed based on actual movement input
+            // 1. Calculate Target Speed
             float targetSpeed = 0f;
             if (isFreeLooking)
             {
-                // Free-look: any WASD input = movement
                 if (moveInput.magnitude > 0.1f)
-                {
-                    // Check if moving backward (S key)
-                    bool movingBackward = moveInput.y < -0.1f;
-                    if (movingBackward)
-                    {
-                        targetSpeed = runToggle ? runBackSpeed : walkBackSpeed;
-                    }
-                    else
-                    {
-                        targetSpeed = runToggle ? runSpeed : walkSpeed;
-                    }
-                }
+                    targetSpeed = (moveInput.y < -0.1f) ? (runToggle ? runBackSpeed : walkBackSpeed) : (runToggle ? runSpeed : walkSpeed);
             }
             else
             {
-                // Normal mode: W/S for forward/backward, A/D for turning, Q/E for strafing
                 if (Mathf.Abs(moveInput.y) > 0.1f || Mathf.Abs(strafeInput) > 0.1f)
-                {
-                    // Check if moving backward (S key)
-                    bool movingBackward = moveInput.y < -0.1f;
-                    if (movingBackward)
-                    {
-                        targetSpeed = runToggle ? runBackSpeed : walkBackSpeed;
-                    }
-                    else
-                    {
-                        targetSpeed = runToggle ? runSpeed : walkSpeed;
-                    }
-                }
+                    targetSpeed = (moveInput.y < -0.1f) ? (runToggle ? runBackSpeed : walkBackSpeed) : (runToggle ? runSpeed : walkSpeed);
             }
 
-            // Smooth acceleration/deceleration
             float accelRate = targetSpeed > 0.1f ? acceleration : deceleration;
             currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, accelRate * Time.deltaTime);
 
+            // 2. Calculate Direction
             if (isFreeLooking)
             {
-                // FREE-LOOK MODE (Right-click held): Strafing movement
                 Transform cameraTransform = Camera.main != null ? Camera.main.transform : transform;
                 Vector3 forward = cameraTransform.forward;
                 Vector3 right = cameraTransform.right;
+                forward.y = 0f; right.y = 0f;
+                forward.Normalize(); right.Normalize();
 
-                forward.y = 0f;
-                right.y = 0f;
-                forward.Normalize();
-                right.Normalize();
-
-                // Calculate move direction based on input (WASD strafing)
                 Vector3 inputDirection = new Vector3(moveInput.x, 0f, moveInput.y).normalized;
                 if (inputDirection.magnitude > 0.1f)
                 {
                     moveDirection = (forward * inputDirection.z + right * inputDirection.x).normalized;
-
-                    // Only rotate character when MOVING during free-look
-                    // Add 180° rotation because model is rotated 180° inside
                     Quaternion targetRotation = Quaternion.LookRotation(forward) * Quaternion.Euler(0f, 180f, 0f);
                     transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, strafeRotationSpeed * Time.deltaTime);
                 }
                 else
                 {
                     moveDirection = Vector3.zero;
-                    // When standing still in free-look, player doesn't rotate (camera orbits freely)
                 }
             }
             else
             {
-                // NORMAL MODE (No right-click): A/D turns character, W/S moves forward/backward, Q/E strafes
-
-                // A/D keys turn the character (only if not strafing with Q/E)
                 turnInput = moveInput.x;
                 if (Mathf.Abs(turnInput) > 0.1f)
                 {
@@ -281,78 +233,68 @@ namespace Player
                     transform.Rotate(Vector3.up, turnAmount, Space.World);
                 }
 
-                // Calculate movement direction
-                Vector3 forward = -transform.forward; // Inverted because model is rotated 180° inside
-                Vector3 right = -transform.right; // Inverted for same reason
-
-                // W/S keys for forward/backward
+                Vector3 forward = -transform.forward;
+                Vector3 right = -transform.right;
                 float forwardInput = moveInput.y;
 
-                // Q/E keys for strafe left/right
-                if (Mathf.Abs(strafeInput) > 0.1f)
+                if (Mathf.Abs(strafeInput) > 0.1f) moveDirection = right * strafeInput;
+                else if (Mathf.Abs(forwardInput) > 0.1f) moveDirection = forward * Mathf.Sign(forwardInput);
+                else moveDirection = Vector3.zero;
+            }
+
+            // 3. Slope Projection (Walk smooth on slopes)
+            if (isGrounded && groundNormal != Vector3.up)
+            {
+                moveDirection = Vector3.ProjectOnPlane(moveDirection, groundNormal).normalized;
+            }
+
+            Vector3 planarVelocity = moveDirection * currentSpeed;
+
+            // 4. Gravity & Jumping
+            if (!isSwimming)
+            {
+                if (isGrounded)
                 {
-                    // Strafing with Q/E
-                    moveDirection = right * strafeInput;
-                }
-                else if (Mathf.Abs(forwardInput) > 0.1f)
-                {
-                    // Moving forward/backward with W/S
-                    moveDirection = forward * Mathf.Sign(forwardInput);
+                    // Apply continuous downward force to stick to slopes
+                    velocity.y = -stickToGroundForce;
+
+                    if (jumpPressed && canJump)
+                    {
+                        velocity.y = jumpVelocity;
+                        isGrounded = false;
+                        lastGroundedTime = 0f;
+                        lastJumpTime = Time.time; // Prevents ground snap-back
+                    }
                 }
                 else
                 {
-                    moveDirection = Vector3.zero;
+                    velocity.y -= gravity * Time.deltaTime;
+                    
+                    // Step down logic: if falling slightly (walking down stairs), snap down
+                    if (velocity.y < 0 && (Time.time - lastGroundedTime) < 0.15f && (Time.time - lastJumpTime) > 0.2f)
+                    {
+                        velocity.y -= stickToGroundForce * 2f * Time.deltaTime;
+                    }
                 }
-            }
-
-            // Apply movement
-            Vector3 planarVelocity = moveDirection * currentSpeed;
-
-            // Gravity and jumping
-            if (!isSwimming)
-            {
-                if (isGrounded && velocity.y < 0)
-                {
-                    velocity.y = -2f; // Small downward force to keep grounded
-                }
-
-                if (jumpPressed && canJump)
-                {
-                    velocity.y = jumpVelocity;
-                }
-
-                velocity.y -= gravity * Time.deltaTime;
             }
 
             jumpPressed = false;
-
-            // Apply velocity
             controller.Move((planarVelocity + velocity) * Time.deltaTime);
         }
 
         private void ProcessSwimming()
         {
-            // Check if in water (simple sphere check)
             isSwimming = Physics.CheckSphere(transform.position + Vector3.up * 1.5f, 0.5f, waterLayer);
 
             if (isSwimming)
             {
-                // Reduce gravity in water
                 velocity.y = Mathf.MoveTowards(velocity.y, 0f, swimGravity * Time.deltaTime);
 
-                // Allow vertical movement
                 if (moveInput.magnitude > 0.1f)
                 {
                     Vector3 swimDirection = moveDirection;
-                    if (Input.GetKey(KeyCode.Space))
-                    {
-                        swimDirection.y = 1f; // Swim up
-                    }
-                    else if (Input.GetKey(KeyCode.LeftControl))
-                    {
-                        swimDirection.y = -1f; // Swim down
-                    }
-
+                    if (Input.GetKey(KeyCode.Space)) swimDirection.y = 1f;
+                    else if (Input.GetKey(KeyCode.LeftControl)) swimDirection.y = -1f;
                     velocity = swimDirection.normalized * swimSpeed;
                 }
                 else
@@ -362,31 +304,73 @@ namespace Player
             }
         }
 
-        // Public API for external systems
+        private void HandleMovingPlatform()
+        {
+            RaycastHit hit;
+            Transform newPlatform = null;
+
+            // Check for moving platform under player
+            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, groundDistance + 1.0f, groundMask))
+            {
+                newPlatform = hit.transform;
+            }
+
+            if (newPlatform != currentPlatform)
+            {
+                currentPlatform = newPlatform;
+                if (currentPlatform != null)
+                {
+                    lastPlatformPosition = currentPlatform.position;
+                    lastPlatformRotation = currentPlatform.rotation;
+                    
+                    // Ensure we can walk on potentially steep ship decks
+                    if (controller.slopeLimit < maxSlopeAngle)
+                        controller.slopeLimit = maxSlopeAngle;
+                }
+            }
+
+            // Apply platform movement to player
+            if (currentPlatform != null)
+            {
+                Vector3 platformMoveDelta = currentPlatform.position - lastPlatformPosition;
+                Quaternion rotationDelta = currentPlatform.rotation * Quaternion.Inverse(lastPlatformRotation);
+
+                // Move player with platform
+                controller.Move(platformMoveDelta);
+
+                // Rotate player position around platform pivot
+                Vector3 offsetFromPlatform = transform.position - currentPlatform.position;
+                Vector3 rotatedOffset = rotationDelta * offsetFromPlatform;
+                Vector3 rotationMoveDelta = rotatedOffset - offsetFromPlatform;
+                controller.Move(rotationMoveDelta);
+
+                // Rotate player facing
+                Vector3 eulerDelta = rotationDelta.eulerAngles;
+                transform.Rotate(Vector3.up, eulerDelta.y, Space.World);
+
+                lastPlatformPosition = currentPlatform.position;
+                lastPlatformRotation = currentPlatform.rotation;
+            }
+        }
+
+        // Public API
         public bool IsGrounded => isGrounded;
         public bool IsSwimming => isSwimming;
         public float CurrentSpeed => currentSpeed;
         public Vector3 Velocity => controller.velocity;
-        public Vector2 MoveInput => moveInput; // For animation system to detect direction
-        public float TurnInput => turnInput; // For turning animations
-        public float StrafeInput => strafeInput; // For Q/E strafe animations
+        public Vector2 MoveInput => moveInput;
+        public float TurnInput => turnInput;
+        public float StrafeInput => strafeInput;
         public bool IsFreeLooking => playerCamera != null && playerCamera.IsFreeLooking;
-        public bool IsRunning => runToggle; // For animation system to know if running
-
-        /// <summary>
-        /// Returns true if player is actually falling (not just slightly off ground)
-        /// Uses fallingThreshold to prevent glitchy air animations from tiny bumps
-        /// </summary>
+        public bool IsRunning => runToggle;
         public bool IsFalling => !isGrounded && velocity.y < -fallingThreshold;
 
         private void SetupModelHierarchy()
         {
-            // Apply rotation offset directly to each child (no Model wrapper needed)
             foreach (Transform child in transform)
             {
                 if (child.name != "GroundCheck" && child.name != "Armature")
                 {
-                    // Get current euler angles and set Y rotation to the offset
                     Vector3 currentRotation = child.localEulerAngles;
                     child.localRotation = Quaternion.Euler(currentRotation.x, modelRotationOffset, currentRotation.z);
                 }
@@ -401,136 +385,19 @@ namespace Player
                 groundCheckObj.transform.SetParent(transform);
                 groundCheckObj.transform.localPosition = new Vector3(0, -1f, 0);
                 groundCheck = groundCheckObj.transform;
-                Debug.Log("✅ Created GroundCheck transform for platform detection");
             }
         }
 
-        private void HandleMovingPlatform()
-        {
-            // Detect platform under player
-            RaycastHit hit;
-            Transform newPlatform = null;
-
-            if (groundCheck != null && Physics.Raycast(groundCheck.position, Vector3.down, out hit, groundDistance + 0.1f, groundMask))
-            {
-                // Check if the hit object or its parents have a ShipController (it's a moving ship)
-                POTCO.ShipController shipController = hit.collider.GetComponentInParent<POTCO.ShipController>();
-                if (shipController != null)
-                {
-                    newPlatform = shipController.transform;
-                }
-            }
-
-            // Platform changed
-            if (newPlatform != currentPlatform)
-            {
-                // Restore collision with previous platform's colliders
-                if (currentPlatform != null && ignoredShipColliders.Count > 0)
-                {
-                    foreach (Collider shipCollider in ignoredShipColliders)
-                    {
-                        if (shipCollider != null)
-                        {
-                            Physics.IgnoreCollision(controller, shipCollider, false);
-                        }
-                    }
-                    ignoredShipColliders.Clear();
-                    Debug.Log("🚶 Left moving platform - restored collision");
-                }
-
-                currentPlatform = newPlatform;
-
-                if (currentPlatform != null)
-                {
-                    lastPlatformPosition = currentPlatform.position;
-                    lastPlatformRotation = currentPlatform.rotation;
-
-                    // Ignore collision with ship colliders to prevent glitching
-                    Collider[] shipColliders = currentPlatform.GetComponentsInChildren<Collider>();
-                    foreach (Collider shipCollider in shipColliders)
-                    {
-                        if (shipCollider != null && shipCollider != controller)
-                        {
-                            Physics.IgnoreCollision(controller, shipCollider, true);
-                            ignoredShipColliders.Add(shipCollider);
-                        }
-                    }
-
-                    Debug.Log($"🚢 Stepped onto moving platform: {currentPlatform.name} - ignoring {ignoredShipColliders.Count} colliders");
-                }
-            }
-
-            // Move with platform
-            if (currentPlatform != null && isGrounded)
-            {
-                // Calculate platform movement delta
-                Vector3 platformMoveDelta = currentPlatform.position - lastPlatformPosition;
-
-                // Calculate rotation delta
-                Quaternion rotationDelta = currentPlatform.rotation * Quaternion.Inverse(lastPlatformRotation);
-
-                // Apply platform movement
-                controller.Move(platformMoveDelta);
-
-                // Apply rotation around platform center
-                Vector3 offsetFromPlatform = transform.position - currentPlatform.position;
-                Vector3 rotatedOffset = rotationDelta * offsetFromPlatform;
-                Vector3 rotationMoveDelta = rotatedOffset - offsetFromPlatform;
-                controller.Move(rotationMoveDelta);
-
-                // Rotate player with platform (only Y-axis to keep upright)
-                Vector3 eulerDelta = rotationDelta.eulerAngles;
-                transform.Rotate(Vector3.up, eulerDelta.y, Space.World);
-
-                // Store current platform transform for next frame
-                lastPlatformPosition = currentPlatform.position;
-                lastPlatformRotation = currentPlatform.rotation;
-            }
-        }
-
-        // Debug visualization
         private void OnDrawGizmos()
         {
             if (!showDebugGizmos) return;
 
-            // Draw movement direction
-            if (moveDirection.magnitude > 0.1f)
-            {
-                Gizmos.color = Color.green;
-                Gizmos.DrawRay(transform.position + Vector3.up, moveDirection * 2f);
-                Gizmos.DrawWireSphere(transform.position + Vector3.up + moveDirection * 2f, 0.2f);
-            }
-
-            // Draw forward direction
-            Gizmos.color = Color.blue;
-            Gizmos.DrawRay(transform.position + Vector3.up, transform.forward * 1.5f);
-
-            // Draw input direction
-            if (moveInput.magnitude > 0.1f)
-            {
-                Vector3 inputDir = new Vector3(moveInput.x, 0f, moveInput.y).normalized;
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawRay(transform.position + Vector3.up * 0.5f, inputDir * 1f);
-            }
-
-            // Draw grounded check
             Gizmos.color = isGrounded ? Color.green : Color.red;
-            Gizmos.DrawWireSphere(transform.position, 0.3f);
+            if (controller != null)
+                Gizmos.DrawWireSphere(transform.position + Vector3.up * controller.radius, controller.radius * 0.9f);
 
-            // Draw ground check sphere
             if (groundCheck != null)
-            {
-                Gizmos.color = isGrounded ? Color.green : Color.red;
                 Gizmos.DrawWireSphere(groundCheck.position, groundDistance);
-            }
-
-            // Draw platform connection
-            if (currentPlatform != null && isGrounded)
-            {
-                Gizmos.color = Color.cyan;
-                Gizmos.DrawLine(transform.position, currentPlatform.position);
-                Gizmos.DrawWireSphere(currentPlatform.position, 0.5f);
-            }
         }
     }
 }
