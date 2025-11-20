@@ -17,6 +17,12 @@ namespace POTCO.Editor
         private const string DEBUG_NPC_IMPORT_KEY = "POTCO_Debug_NPCImport";
         private const string DEBUG_NPC_CONTROLLER_KEY = "POTCO_Debug_NPCController";
         private const string DEBUG_NPC_ANIMATION_KEY = "POTCO_Debug_NPCAnimation";
+        private const string DEBUG_ANIMAL_ANIMATION_KEY = "POTCO_Debug_AnimalAnimation";
+        private const string DEBUG_RUNTIME_ANIMATOR_KEY = "POTCO_Debug_RuntimeAnimator";
+        private const string DEBUG_PLAYER_ANIMATION_KEY = "POTCO_Debug_PlayerAnimation";
+        private const string DEBUG_SHIP_CONTROLLER_KEY = "POTCO_Debug_ShipController";
+        private const string DEBUG_OCEAN_MANAGER_KEY = "POTCO_Debug_OceanManager";
+        private const string DEBUG_LEVEL_GEOMETRY_KEY = "POTCO_Debug_LevelGeometry";
 
         // Debug settings properties that persist between Unity sessions
         public static bool debugWorldSceneImporter
@@ -72,6 +78,42 @@ namespace POTCO.Editor
             set => EditorPrefs.SetBool(DEBUG_NPC_ANIMATION_KEY, value);
         }
 
+        public static bool debugAnimalAnimation
+        {
+            get => EditorPrefs.GetBool(DEBUG_ANIMAL_ANIMATION_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_ANIMAL_ANIMATION_KEY, value);
+        }
+
+        public static bool debugRuntimeAnimator
+        {
+            get => EditorPrefs.GetBool(DEBUG_RUNTIME_ANIMATOR_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_RUNTIME_ANIMATOR_KEY, value);
+        }
+
+        public static bool debugPlayerAnimation
+        {
+            get => EditorPrefs.GetBool(DEBUG_PLAYER_ANIMATION_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_PLAYER_ANIMATION_KEY, value);
+        }
+
+        public static bool debugShipController
+        {
+            get => EditorPrefs.GetBool(DEBUG_SHIP_CONTROLLER_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_SHIP_CONTROLLER_KEY, value);
+        }
+
+        public static bool debugOceanManager
+        {
+            get => EditorPrefs.GetBool(DEBUG_OCEAN_MANAGER_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_OCEAN_MANAGER_KEY, value);
+        }
+
+        public static bool debugLevelGeometry
+        {
+            get => EditorPrefs.GetBool(DEBUG_LEVEL_GEOMETRY_KEY, false);
+            set => EditorPrefs.SetBool(DEBUG_LEVEL_GEOMETRY_KEY, value);
+        }
+
         /// <summary>
         /// Enable all debug logging
         /// </summary>
@@ -85,6 +127,12 @@ namespace POTCO.Editor
             debugNPCImport = true;
             debugNPCController = true;
             debugNPCAnimation = true;
+            debugAnimalAnimation = true;
+            debugRuntimeAnimator = true;
+            debugPlayerAnimation = true;
+            debugShipController = true;
+            debugOceanManager = true;
+            debugLevelGeometry = true;
 
             DebugLogger.LogAlways("🔍 All POTCO debug logging enabled");
         }
@@ -102,6 +150,12 @@ namespace POTCO.Editor
             debugNPCImport = false;
             debugNPCController = false;
             debugNPCAnimation = false;
+            debugAnimalAnimation = false;
+            debugRuntimeAnimator = false;
+            debugPlayerAnimation = false;
+            debugShipController = false;
+            debugOceanManager = false;
+            debugLevelGeometry = false;
 
             DebugLogger.LogAlways("🔇 All POTCO debug logging disabled");
         }
@@ -119,6 +173,12 @@ namespace POTCO.Editor
             EditorPrefs.DeleteKey(DEBUG_NPC_IMPORT_KEY);
             EditorPrefs.DeleteKey(DEBUG_NPC_CONTROLLER_KEY);
             EditorPrefs.DeleteKey(DEBUG_NPC_ANIMATION_KEY);
+            EditorPrefs.DeleteKey(DEBUG_ANIMAL_ANIMATION_KEY);
+            EditorPrefs.DeleteKey(DEBUG_RUNTIME_ANIMATOR_KEY);
+            EditorPrefs.DeleteKey(DEBUG_PLAYER_ANIMATION_KEY);
+            EditorPrefs.DeleteKey(DEBUG_SHIP_CONTROLLER_KEY);
+            EditorPrefs.DeleteKey(DEBUG_OCEAN_MANAGER_KEY);
+            EditorPrefs.DeleteKey(DEBUG_LEVEL_GEOMETRY_KEY);
 
             // Apply AutoObjectListDetection change
             AutoObjectListDetection.SetDebugLogging(false);

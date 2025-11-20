@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace POTCO.Ocean
 {
@@ -30,6 +31,7 @@ namespace POTCO.Ocean
         private GameObject[,] patches;
         private Vector2Int currentGridCenter = Vector2Int.zero;
         private int frameCounter = 0;
+        private Queue<GameObject> patchPool = new Queue<GameObject>();
 
         void Start()
         {
@@ -144,9 +146,12 @@ namespace POTCO.Ocean
                     }
                     else
                     {
-                        // Destroy patches that moved out of grid
+                        // Recycle patches that moved out of grid
                         if (patches[x, z] != null)
-                            Destroy(patches[x, z]);
+                        {
+                            patches[x, z].SetActive(false);
+                            patchPool.Enqueue(patches[x, z]);
+                        }
                     }
                 }
             }
@@ -184,7 +189,20 @@ namespace POTCO.Ocean
         {
             if (waterPatchPrefab == null) return;
 
-            GameObject patch = Instantiate(waterPatchPrefab, transform);
+            GameObject patch;
+
+            // OPTIMIZATION: Check pool first
+            if (patchPool.Count > 0)
+            {
+                patch = patchPool.Dequeue();
+                patch.SetActive(true);
+            }
+            else
+            {
+                // Pool empty, create new
+                patch = Instantiate(waterPatchPrefab, transform);
+            }
+
             patch.name = $"WaterPatch_{worldX}_{worldZ}";
 
             Vector3 position = new Vector3(

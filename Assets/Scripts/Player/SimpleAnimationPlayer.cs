@@ -6,6 +6,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using POTCO;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -868,7 +869,7 @@ namespace Player
 
         private void PlayAnimation(string animName)
         {
-            Debug.Log($"[SimpleAnimationPlayer] PlayAnimation called: {animName} on {gameObject.name}");
+            DebugLogger.LogPlayerAnimation($"[SimpleAnimationPlayer] PlayAnimation called: {animName} on {gameObject.name}");
 
             if (!animComponent.HasClip(animName))
             {

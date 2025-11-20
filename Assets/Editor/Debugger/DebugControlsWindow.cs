@@ -107,6 +107,60 @@ namespace POTCO.Editor
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Logs NPC animation playback, gender detection, and animation loading (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
 
+            GUILayout.Space(3);
+
+            // Animal Animation Runtime
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugAnimalAnimation = EditorGUILayout.Toggle("Animal Animation (Runtime)", DebugSettings.debugAnimalAnimation);
+            if (DebugSettings.debugAnimalAnimation) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs animal animation playback, state changes, and movement detection (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
+
+            GUILayout.Space(3);
+
+            // RuntimeAnimatorPlayer
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugRuntimeAnimator = EditorGUILayout.Toggle("RuntimeAnimatorPlayer (Runtime)", DebugSettings.debugRuntimeAnimator);
+            if (DebugSettings.debugRuntimeAnimator) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs Playables API animation system, crossfades, and clip management (VERY HEAVY)", EditorStyles.miniLabel);
+
+            GUILayout.Space(3);
+
+            // Player Animation
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugPlayerAnimation = EditorGUILayout.Toggle("Player Animation (Runtime)", DebugSettings.debugPlayerAnimation);
+            if (DebugSettings.debugPlayerAnimation) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs player animation playback and state changes (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
+
+            GUILayout.Space(3);
+
+            // Ship Controller
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugShipController = EditorGUILayout.Toggle("Ship Controller (Runtime)", DebugSettings.debugShipController);
+            if (DebugSettings.debugShipController) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs ship wheel interaction distance checks and sailing controls (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
+
+            GUILayout.Space(3);
+
+            // Ocean Manager
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugOceanManager = EditorGUILayout.Toggle("Ocean Manager (Runtime)", DebugSettings.debugOceanManager);
+            if (DebugSettings.debugOceanManager) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs ocean color transitions and time-of-day updates (PERFORMANCE HEAVY)", EditorStyles.miniLabel);
+
+            GUILayout.Space(3);
+
+            // Level Geometry
+            EditorGUILayout.BeginHorizontal();
+            DebugSettings.debugLevelGeometry = EditorGUILayout.Toggle("Level Geometry (Runtime)", DebugSettings.debugLevelGeometry);
+            if (DebugSettings.debugLevelGeometry) EditorGUILayout.LabelField("🔍", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Logs collision mesh hiding on level load", EditorStyles.miniLabel);
+
             GUILayout.Space(10);
             
             // Control buttons

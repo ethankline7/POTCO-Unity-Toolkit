@@ -338,7 +338,7 @@ namespace POTCO
             // Debug distance check every few frames
             if (Time.frameCount % 60 == 0)
             {
-                Debug.Log($"Distance to wheel: {distance:F2} (interaction range: {interactionDistance})");
+                DebugLogger.LogShipController($"Distance to wheel: {distance:F2} (interaction range: {interactionDistance})");
             }
 
             if (distance <= interactionDistance)

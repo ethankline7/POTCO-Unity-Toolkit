@@ -57,6 +57,9 @@ namespace POTCO
 
         #region Private Variables
 
+        // Static animation cache - shared across ALL ships
+        private static Dictionary<string, AnimationClip> s_shipAnimCache = new Dictionary<string, AnimationClip>();
+
         // Mast animation data
         private class MastAnimationData
         {
@@ -359,7 +362,13 @@ namespace POTCO
 
         private AnimationClip LoadAnimationFromResources(string path)
         {
-            Debug.Log($"[ANIM LOAD]   Attempting to load: {path}");
+            // OPTIMIZATION: Check cache first
+            if (s_shipAnimCache.TryGetValue(path, out AnimationClip cached))
+            {
+                return cached;
+            }
+
+            Debug.Log($"[ANIM LOAD] Attempting to load: {path}");
 
             // If path doesn't start with phase_, search all phases
             if (!path.StartsWith("phase_"))
@@ -372,6 +381,7 @@ namespace POTCO
                     if (foundClip != null)
                     {
                         Debug.Log($"[ANIM LOAD]   ✓ Found in {phase}");
+                        s_shipAnimCache[path] = foundClip; // Cache it!
                         return foundClip;
                     }
                 }
@@ -380,7 +390,12 @@ namespace POTCO
             }
             else
             {
-                return LoadAnimationFromResourcesDirect(path);
+                AnimationClip clip = LoadAnimationFromResourcesDirect(path);
+                if (clip != null)
+                {
+                    s_shipAnimCache[path] = clip; // Cache it!
+                }
+                return clip;
             }
         }
 

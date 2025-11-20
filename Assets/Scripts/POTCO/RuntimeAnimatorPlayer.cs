@@ -64,7 +64,7 @@ namespace POTCO
 
             isInitialized = true;
 
-            Debug.Log($"✅ RuntimeAnimatorPlayer initialized on {gameObject.name}");
+            DebugLogger.LogRuntimeAnimator($"✅ RuntimeAnimatorPlayer initialized on {gameObject.name}");
         }
 
         /// <summary>
@@ -101,7 +101,7 @@ namespace POTCO
             clipPlayables[name] = clipPlayable;
             clipIndices[name] = inputIndex;
 
-            Debug.Log($"   Added clip '{name}' to RuntimeAnimatorPlayer at index {inputIndex}");
+            DebugLogger.LogRuntimeAnimator($"   Added clip '{name}' to RuntimeAnimatorPlayer at index {inputIndex}");
         }
 
         /// <summary>
@@ -217,7 +217,7 @@ namespace POTCO
             currentClipName = clipName;
             currentClipIndex = clipIndices[clipName];
 
-            Debug.Log($"▶️ Playing '{clipName}' on {gameObject.name}");
+            DebugLogger.LogRuntimeAnimator($"▶️ Playing '{clipName}' on {gameObject.name}");
         }
 
         /// <summary>
@@ -411,7 +411,7 @@ namespace POTCO
 
             crossfadeCoroutine = null;
 
-            Debug.Log($"✅ Crossfade complete: {fromClipName} → {toClipName} on {gameObject.name}");
+            DebugLogger.LogRuntimeAnimator($"✅ Crossfade complete: {fromClipName} → {toClipName} on {gameObject.name}");
         }
 
         /// <summary>

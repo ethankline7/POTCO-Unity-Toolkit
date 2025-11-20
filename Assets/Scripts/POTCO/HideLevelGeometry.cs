@@ -26,7 +26,7 @@ namespace POTCO
             noMaterialMeshesHidden = 0;
             barrierMeshesHidden = 0;
 
-            Debug.Log("[HideLevelGeometry] Starting hide process...");
+            DebugLogger.LogLevelGeometry("[HideLevelGeometry] Starting hide process...");
 
             // Get ALL GameObjects in scene (including inactive ones)
             GameObject[] allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
@@ -48,7 +48,7 @@ namespace POTCO
                 if (objName.Contains("pir_m_prp_lev_"))
                 {
                     levelGeometryFound++;
-                    Debug.Log($"[HideLevelGeometry] Found level geometry: {obj.name} at path: {GetGameObjectPath(obj)}");
+                    DebugLogger.LogLevelGeometry($"[HideLevelGeometry] Found level geometry: {obj.name} at path: {GetGameObjectPath(obj)}");
                     HideMeshOnly(obj);
                     levelGeometryHidden++;
                 }
@@ -57,7 +57,7 @@ namespace POTCO
                 else if (objName.Contains("_barrier") && !objName.Contains("natural_barrier"))
                 {
                     barrierObjectsFound++;
-                    Debug.Log($"[HideLevelGeometry] Found barrier object: {obj.name} at path: {GetGameObjectPath(obj)}");
+                    DebugLogger.LogLevelGeometry($"[HideLevelGeometry] Found barrier object: {obj.name} at path: {GetGameObjectPath(obj)}");
                     HideMeshOnly(obj);
                     barrierMeshesHidden++;
                 }
@@ -68,12 +68,12 @@ namespace POTCO
                     // Skip if this is a SpawnNode itself (renamed from smiley to SpawnNode_creature)
                     if (obj.GetComponent<SpawnNode>() != null)
                     {
-                        Debug.Log($"[HideLevelGeometry] Skipping SpawnNode: {obj.name}");
+                        DebugLogger.LogLevelGeometry($"[HideLevelGeometry] Skipping SpawnNode: {obj.name}");
                         continue;
                     }
 
                     mapObjectsFound++;
-                    Debug.Log($"[HideLevelGeometry] Found map/water object: {obj.name}");
+                    DebugLogger.LogLevelGeometry($"[HideLevelGeometry] Found map/water object: {obj.name}");
                     obj.SetActive(false);
                     mapObjectsHidden++;
                 }
@@ -88,7 +88,7 @@ namespace POTCO
 
                         if (hasNoMaterial)
                         {
-                            Debug.Log($"[HideLevelGeometry] Found mesh with no material: {obj.name} at path: {GetGameObjectPath(obj)}");
+                            DebugLogger.LogLevelGeometry($"[HideLevelGeometry] Found mesh with no material: {obj.name} at path: {GetGameObjectPath(obj)}");
                             renderer.enabled = false;
                             // Add marker component so VisZones know not to re-enable this
                             if (renderer.GetComponent<VisZones.PermanentlyHiddenRenderer>() == null)
@@ -101,17 +101,17 @@ namespace POTCO
                 }
             }
 
-            Debug.Log($"[HideLevelGeometry] Search results:");
-            Debug.Log($"  - Level geometry found: {levelGeometryFound}");
-            Debug.Log($"  - Barrier objects found: {barrierObjectsFound}");
-            Debug.Log($"  - Map/water objects found: {mapObjectsFound}");
+            DebugLogger.LogLevelGeometry($"[HideLevelGeometry] Search results:");
+            DebugLogger.LogLevelGeometry($"  - Level geometry found: {levelGeometryFound}");
+            DebugLogger.LogLevelGeometry($"  - Barrier objects found: {barrierObjectsFound}");
+            DebugLogger.LogLevelGeometry($"  - Map/water objects found: {mapObjectsFound}");
 
-            Debug.Log($"[HideLevelGeometry] COMPLETE:");
-            Debug.Log($"  - Scanned: {scannedCount} scene objects");
-            Debug.Log($"  - Level geometry hidden: {levelGeometryHidden} objects ({renderersDisabled} renderers)");
-            Debug.Log($"  - Barrier meshes hidden: {barrierMeshesHidden} objects (collisions kept)");
-            Debug.Log($"  - Map/water objects disabled: {mapObjectsHidden} objects (completely hidden)");
-            Debug.Log($"  - Meshes with no material hidden: {noMaterialMeshesHidden} objects");
+            DebugLogger.LogLevelGeometry($"[HideLevelGeometry] COMPLETE:");
+            DebugLogger.LogLevelGeometry($"  - Scanned: {scannedCount} scene objects");
+            DebugLogger.LogLevelGeometry($"  - Level geometry hidden: {levelGeometryHidden} objects ({renderersDisabled} renderers)");
+            DebugLogger.LogLevelGeometry($"  - Barrier meshes hidden: {barrierMeshesHidden} objects (collisions kept)");
+            DebugLogger.LogLevelGeometry($"  - Map/water objects disabled: {mapObjectsHidden} objects (completely hidden)");
+            DebugLogger.LogLevelGeometry($"  - Meshes with no material hidden: {noMaterialMeshesHidden} objects");
         }
 
         /// <summary>
@@ -143,7 +143,7 @@ namespace POTCO
             Renderer renderer = obj.GetComponent<Renderer>();
             if (renderer != null)
             {
-                Debug.Log($"[HideLevelGeometry]   - Disabling renderer on: {obj.name}");
+                DebugLogger.LogLevelGeometry($"[HideLevelGeometry]   - Disabling renderer on: {obj.name}");
                 renderer.enabled = false;
                 // Add marker component so VisZones know not to re-enable this
                 if (renderer.GetComponent<VisZones.PermanentlyHiddenRenderer>() == null)
@@ -156,7 +156,7 @@ namespace POTCO
 
             // Disable all child renderers
             Renderer[] childRenderers = obj.GetComponentsInChildren<Renderer>(true);
-            Debug.Log($"[HideLevelGeometry]   - Found {childRenderers.Length} total renderers in children");
+            DebugLogger.LogLevelGeometry($"[HideLevelGeometry]   - Found {childRenderers.Length} total renderers in children");
 
             foreach (Renderer childRenderer in childRenderers)
             {
@@ -166,7 +166,7 @@ namespace POTCO
                     SpawnNode spawnNode = childRenderer.GetComponentInParent<SpawnNode>();
                     if (spawnNode != null)
                     {
-                        Debug.Log($"[HideLevelGeometry]   - SKIPPING renderer on: {childRenderer.gameObject.name} (belongs to SpawnNode)");
+                        DebugLogger.LogLevelGeometry($"[HideLevelGeometry]   - SKIPPING renderer on: {childRenderer.gameObject.name} (belongs to SpawnNode)");
                         continue;
                     }
 
@@ -176,11 +176,11 @@ namespace POTCO
 
                     if (hasNoMaterial)
                     {
-                        Debug.Log($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name} has no material, hiding it");
+                        DebugLogger.LogLevelGeometry($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name} has no material, hiding it");
                     }
                     else
                     {
-                        Debug.Log($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name}, enabled: {childRenderer.enabled}");
+                        DebugLogger.LogLevelGeometry($"[HideLevelGeometry]   - Child renderer on: {childRenderer.gameObject.name}, enabled: {childRenderer.enabled}");
                     }
 
                     childRenderer.enabled = false;
@@ -194,7 +194,7 @@ namespace POTCO
                 }
             }
 
-            Debug.Log($"[HideLevelGeometry]   - TOTAL disabled on {obj.name}: {renderersOnThisObject} renderers");
+            DebugLogger.LogLevelGeometry($"[HideLevelGeometry]   - TOTAL disabled on {obj.name}: {renderersOnThisObject} renderers");
         }
     }
 }

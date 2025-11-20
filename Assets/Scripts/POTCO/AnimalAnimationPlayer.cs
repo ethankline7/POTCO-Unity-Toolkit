@@ -35,6 +35,10 @@ namespace POTCO
         [Range(0.0f, 1.0f)]
         public float defaultBlendTime = 0.2f;
 
+        [Header("Model Setup")]
+        [Tooltip("POTCO models face backwards - set to 180 to flip")]
+        public float modelRotationOffset = 180f;
+
         private RuntimeAnimatorPlayer animComponent;
         private CharacterController characterController;
         private AnimationStateSequence activeSequence;
@@ -61,6 +65,12 @@ namespace POTCO
 
         void Start()
         {
+            // Fix POTCO models facing backwards (same as NPCController)
+            if (Mathf.Abs(modelRotationOffset) > 0.1f)
+            {
+                SetupModelHierarchy();
+            }
+
             animComponent = GetComponent<RuntimeAnimatorPlayer>();
             if (animComponent == null)
             {
@@ -74,17 +84,84 @@ namespace POTCO
 
             if (characterController != null)
             {
-                Debug.Log($"🐾 [AnimalAnimationPlayer] Found CharacterController on parent: {characterController.gameObject.name}");
+                DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] Found CharacterController on parent: {characterController.gameObject.name}");
             }
             else
             {
-                Debug.LogWarning($"⚠️ [AnimalAnimationPlayer] CharacterController NOT FOUND on {gameObject.name} or parents!");
+                DebugLogger.LogWarningAnimalAnimation($"⚠️ [AnimalAnimationPlayer] CharacterController NOT FOUND on {gameObject.name} or parents!");
             }
 
-            Debug.Log($"[AnimalAnimationPlayer] RuntimeAnimatorPlayer initialized on {gameObject.name}");
+            DebugLogger.LogAnimalAnimation($"[AnimalAnimationPlayer] RuntimeAnimatorPlayer initialized on {gameObject.name}");
+
+            // Load animation clips from Resources
+            LoadAnimationClips();
 
             // Start with idle animation
             PlayAnimationByName("idle");
+        }
+
+        /// <summary>
+        /// Fix POTCO models facing backwards by rotating children 180 degrees
+        /// Same logic as NPCController.SetupModelHierarchy()
+        /// </summary>
+        private void SetupModelHierarchy()
+        {
+            // Apply rotation offset directly to each child
+            // Parent keeps original rotation from world data
+            foreach (Transform child in transform)
+            {
+                child.localRotation = Quaternion.Euler(0f, modelRotationOffset, 0f);
+            }
+
+            DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] Applied {modelRotationOffset}° rotation to model children on {gameObject.name}");
+        }
+
+        /// <summary>
+        /// Load animation clips from Resources and add them to RuntimeAnimatorPlayer
+        /// </summary>
+        private void LoadAnimationClips()
+        {
+            string[] phases = { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
+            string[] searchPaths = { "char", "models/char" };
+
+            DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] Loading animations with prefix: {animationPrefix}");
+
+            // Load common animal animations
+            LoadAndAddClip("idle", phases, searchPaths);
+            LoadAndAddClip("walk", phases, searchPaths);
+            LoadAndAddClip("run", phases, searchPaths);
+            LoadAndAddClip("sleep", phases, searchPaths);
+            LoadAndAddClip("eat", phases, searchPaths);
+            LoadAndAddClip("rooting", phases, searchPaths);
+            LoadAndAddClip("idle_stand", phases, searchPaths);
+            LoadAndAddClip("idle_sitting", phases, searchPaths);
+        }
+
+        /// <summary>
+        /// Find and load an animation clip, then add it to RuntimeAnimatorPlayer
+        /// </summary>
+        private void LoadAndAddClip(string animName, string[] phases, string[] searchPaths)
+        {
+            string prefixedName = string.IsNullOrEmpty(animationPrefix) ? animName : $"{animationPrefix}_{animName}";
+
+            // Try each phase and search path combination
+            foreach (string phase in phases)
+            {
+                foreach (string path in searchPaths)
+                {
+                    string fullPath = $"{phase}/{path}/{prefixedName}";
+                    AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
+                    if (clip != null)
+                    {
+                        animComponent.AddClip(clip, prefixedName);
+                        animComponent.SetWrapMode(prefixedName, WrapMode.Loop);
+                        DebugLogger.LogAnimalAnimation($"✅ [AnimalAnimationPlayer] Loaded and added '{prefixedName}' from {fullPath}");
+                        return;
+                    }
+                }
+            }
+
+            DebugLogger.LogAnimalAnimation($"ℹ️ [AnimalAnimationPlayer] Animation '{prefixedName}' not found in any phase folder");
         }
 
         void Update()
@@ -102,25 +179,25 @@ namespace POTCO
                 // Log every 60 frames to avoid spam
                 if (Time.frameCount % 60 == 0)
                 {
-                    Debug.Log($"🐾 [AnimalAnimationPlayer] {gameObject.name} - Velocity: {velocityMag:F3}, IsMoving: {isMoving}");
+                    DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] {gameObject.name} - Velocity: {velocityMag:F3}, IsMoving: {isMoving}");
                 }
             }
             else if (Time.frameCount % 120 == 0) // Log less frequently if no controller
             {
-                Debug.LogWarning($"⚠️ [AnimalAnimationPlayer] {gameObject.name} - CharacterController is NULL, cannot detect movement!");
+                DebugLogger.LogWarningAnimalAnimation($"⚠️ [AnimalAnimationPlayer] {gameObject.name} - CharacterController is NULL, cannot detect movement!");
             }
 
             // Play appropriate animation based on movement
             if (isMoving && !wasMoving)
             {
                 // Started moving - play walk
-                Debug.Log($"🐾 [AnimalAnimationPlayer] {gameObject.name} STARTED MOVING - playing walk");
+                DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] {gameObject.name} STARTED MOVING - playing walk");
                 PlayAnimationByName("walk");
             }
             else if (!isMoving && wasMoving)
             {
                 // Stopped moving - play idle
-                Debug.Log($"🐾 [AnimalAnimationPlayer] {gameObject.name} STOPPED MOVING - playing idle");
+                DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] {gameObject.name} STOPPED MOVING - playing idle");
                 PlayAnimationByName("idle");
             }
         }
@@ -136,6 +213,30 @@ namespace POTCO
             if (lastPlayedAnim == fullAnimName && animComponent.IsPlaying(fullAnimName))
                 return;
 
+            // Try fallback animation names if the requested one doesn't exist
+            string animToPlay = fullAnimName;
+            if (!animComponent.HasClip(fullAnimName))
+            {
+                // Try alternate animation names (e.g., pig_idle -> pig_idle_stand)
+                string[] alternates = GetAlternateAnimationNames(animName);
+                bool found = false;
+                foreach (string alt in alternates)
+                {
+                    if (animComponent.HasClip(alt))
+                    {
+                        animToPlay = alt;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    DebugLogger.LogWarningAnimalAnimation($"[AnimalAnimationPlayer] Animation '{fullAnimName}' not found on {gameObject.name}");
+                    return;
+                }
+            }
+
             // Determine blend time based on transition type
             float blendTime = defaultBlendTime;
             if (lastPlayedAnim.Contains("idle") && animName == "walk")
@@ -147,16 +248,36 @@ namespace POTCO
                 blendTime = walkToIdleBlendTime;
             }
 
-            if (animComponent.HasClip(fullAnimName))
+            animComponent.CrossFade(animToPlay, blendTime);
+            lastPlayedAnim = animToPlay;
+            DebugLogger.LogAnimalAnimation($"🐾 [AnimalAnimationPlayer] Playing '{animToPlay}' on {gameObject.name} (blend: {blendTime:F2}s)");
+        }
+
+        /// <summary>
+        /// Get alternate animation names to try as fallbacks
+        /// </summary>
+        private string[] GetAlternateAnimationNames(string baseAnimName)
+        {
+            string prefix = string.IsNullOrEmpty(animationPrefix) ? "" : $"{animationPrefix}_";
+
+            if (baseAnimName == "idle")
             {
-                animComponent.CrossFade(fullAnimName, blendTime);
-                lastPlayedAnim = fullAnimName;
-                Debug.Log($"🐾 [AnimalAnimationPlayer] Playing '{fullAnimName}' on {gameObject.name} (blend: {blendTime:F2}s)");
+                return new string[]
+                {
+                    $"{prefix}idle_stand",
+                    $"{prefix}idle_sitting",
+                    $"{prefix}sleep"
+                };
             }
-            else
+            else if (baseAnimName == "walk")
             {
-                Debug.LogWarning($"[AnimalAnimationPlayer] Animation '{fullAnimName}' not found on {gameObject.name}");
+                return new string[]
+                {
+                    $"{prefix}run"
+                };
             }
+
+            return new string[0];
         }
 
         /// <summary>

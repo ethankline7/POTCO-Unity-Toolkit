@@ -136,7 +136,7 @@ namespace POTCO.Ocean
                 // Debug log every few seconds
                 if (Time.frameCount % 120 == 0)
                 {
-                    Debug.Log($"OceanManager: Time={skyboxManager.timeOfDay:F1}, Target Color={targetWaterColor}, Current Color={currentWaterColor}");
+                    DebugLogger.LogOceanManager($"OceanManager: Time={skyboxManager.timeOfDay:F1}, Target Color={targetWaterColor}, Current Color={currentWaterColor}");
                 }
             }
             else

@@ -72,6 +72,7 @@ namespace POTCO
         private float currentYaw = 0f;
         private float currentPitch = 0f;
         private float lastFireTime = -999f;
+        private float playerSearchTimer = 0f;
 
         private void Start()
         {
@@ -224,6 +225,10 @@ namespace POTCO
             // Find player if not cached
             if (playerTransform == null)
             {
+                // OPTIMIZATION: Only search once every 2 seconds
+                if (Time.time < playerSearchTimer) return;
+                playerSearchTimer = Time.time + 2.0f;
+
                 playerTransform = FindPlayer();
                 if (playerTransform == null) return;
             }
