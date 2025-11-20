@@ -95,6 +95,9 @@ namespace POTCO
         private bool spawnPositionInitialized = false;
         private float spawnInitTimer = 0f;
         private const float spawnInitDelay = 0.5f; // Wait 0.5 seconds for creature to settle on ground
+
+        // Layer mask cache
+        private int patrolLayerMask;
         #endregion
 
         #region Initialization
@@ -117,6 +120,9 @@ namespace POTCO
             stateEnterTime = Time.time;
             spawnInitTimer = 0f;
             spawnPositionInitialized = false;
+
+            // OPTIMIZATION: Cache mask once
+            patrolLayerMask = LayerMask.GetMask("Default", "Collision", "Wall");
 
             // Don't set spawnPosition yet - wait for creature to settle on ground first
             // This prevents spawning in mid-air and picking unreachable waypoints
@@ -553,7 +559,7 @@ namespace POTCO
 
                 // Check 1: Is the destination point itself inside a collider?
                 Vector3 destinationCheck = candidatePoint + new Vector3(0, characterRadius, 0);
-                if (Physics.CheckSphere(destinationCheck, characterRadius * 0.5f, LayerMask.GetMask("Default", "Collision", "Wall")))
+                if (Physics.CheckSphere(destinationCheck, characterRadius * 0.5f, patrolLayerMask))
                 {
                     DebugLogger.LogNPCController($"[{gameObject.name}] Patrol point {i+1} inside collision, retrying...");
                     continue;
@@ -572,7 +578,7 @@ namespace POTCO
                 Vector3 rayStart = transform.position + new Vector3(0, characterRadius, 0);
 
                 // SphereCast to check if path is clear
-                if (!Physics.SphereCast(rayStart, characterRadius * 0.8f, direction, out RaycastHit hit, distance, LayerMask.GetMask("Default", "Collision", "Wall")))
+                if (!Physics.SphereCast(rayStart, characterRadius * 0.8f, direction, out RaycastHit hit, distance, patrolLayerMask))
                 {
                     // Path is clear - return this point
                     return candidatePoint;

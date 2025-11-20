@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 using System.IO;
+using System;
 
 namespace POTCO
 {
@@ -12,13 +12,6 @@ namespace POTCO
     {
         private static Dictionary<string, CustomAnimData> animSetDatabase;
         private static bool isInitialized = false;
-
-        // Regex patterns for parsing
-        private static readonly Regex animSetKeyRegex = new Regex(@"^\s*'([^']+)':\s*{");
-        private static readonly Regex propertyRegex = new Regex(@"^\s*'(\w+)':\s*\[");
-        private static readonly Regex stringValueRegex = new Regex(@"'([^']+)'");
-        private static readonly Regex closeBracketRegex = new Regex(@"^\s*\]");
-        private static readonly Regex closeBraceRegex = new Regex(@"^\s*}");
 
         /// <summary>
         /// Parse CustomAnims.py and build the database
@@ -50,96 +43,103 @@ namespace POTCO
 
         private static void ParseCustomAnimsFile(string filePath)
         {
-            string[] lines = File.ReadAllLines(filePath);
+            // OPTIMIZATION: Use ReadLines to stream instead of ReadAllLines to avoid loading huge array
+            var lines = File.ReadLines(filePath);
 
             CustomAnimData currentAnimSet = null;
             string currentProperty = null;
             bool inInteractAnims = false;
 
-            for (int i = 0; i < lines.Length; i++)
+            foreach (string line in lines) // Streaming iteration
             {
-                string line = lines[i];
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                // Optimized Span-based check
+                ReadOnlySpan<char> span = line.AsSpan().Trim();
 
                 // Check for INTERACT_ANIMS start
-                if (line.Contains("INTERACT_ANIMS = {"))
+                if (!inInteractAnims)
                 {
-                    inInteractAnims = true;
+                    if (span.StartsWith("INTERACT_ANIMS".AsSpan(), StringComparison.Ordinal))
+                        inInteractAnims = true;
                     continue;
                 }
 
                 // Check for INTERACT_ANIMS end
-                if (inInteractAnims && line.StartsWith("}"))
+                if (span.Length > 0 && span[0] == '}')
                 {
-                    // Save last animset
-                    if (currentAnimSet != null)
-                    {
-                        animSetDatabase[currentAnimSet.animSetName] = currentAnimSet;
-                    }
+                    if (currentAnimSet != null) animSetDatabase[currentAnimSet.animSetName] = currentAnimSet;
                     break;
                 }
 
-                if (!inInteractAnims) continue;
-
-                // Check for AnimSet key (e.g., 'bar_wipe': {)
-                Match animSetMatch = animSetKeyRegex.Match(line);
-                if (animSetMatch.Success)
+                // Check for AnimSet key: 'bar_wipe': {
+                if (span.Length > 0 && span[0] == '\'' && span.EndsWith("': {".AsSpan(), StringComparison.Ordinal))
                 {
-                    // Save previous animset
-                    if (currentAnimSet != null)
-                    {
-                        animSetDatabase[currentAnimSet.animSetName] = currentAnimSet;
-                    }
+                    if (currentAnimSet != null) animSetDatabase[currentAnimSet.animSetName] = currentAnimSet;
 
                     currentAnimSet = new CustomAnimData();
-                    currentAnimSet.animSetName = animSetMatch.Groups[1].Value;
+                    // Fast substring extraction
+                    int endQuote = span.Slice(1).IndexOf('\'');
+                    if (endQuote > 0)
+                        currentAnimSet.animSetName = span.Slice(1, endQuote).ToString();
+
                     currentProperty = null;
                     continue;
                 }
 
-                // Check for property start (e.g., 'idles': [)
-                Match propertyMatch = propertyRegex.Match(line);
-                if (propertyMatch.Success)
+                // Check for property: 'idles': [
+                if (span.Length > 0 && span[0] == '\'' && span.Contains("': [".AsSpan(), StringComparison.Ordinal))
                 {
-                    currentProperty = propertyMatch.Groups[1].Value;
-
-                    // Check if entire array is on one line
-                    if (line.Contains("]"))
+                    int endQuote = span.Slice(1).IndexOf('\'');
+                    if (endQuote > 0)
                     {
-                        ParsePropertyLine(currentAnimSet, currentProperty, line);
-                        currentProperty = null;
+                        currentProperty = span.Slice(1, endQuote).ToString();
+
+                        // Check for inline array: 'idles': ['anim'],
+                        if (span.Contains("]".AsSpan(), StringComparison.Ordinal))
+                        {
+                            ParsePropertySpan(currentAnimSet, currentProperty, span);
+                            currentProperty = null;
+                        }
                     }
                     continue;
                 }
 
-                // Parse property values (animation names)
+                // Parse values in multi-line array
                 if (currentProperty != null && currentAnimSet != null)
                 {
-                    // Check for closing bracket
-                    if (closeBracketRegex.IsMatch(line))
+                    if (span.StartsWith("]".AsSpan(), StringComparison.Ordinal))
                     {
                         currentProperty = null;
                         continue;
                     }
-
-                    // Extract string values
-                    MatchCollection matches = stringValueRegex.Matches(line);
-                    foreach (Match match in matches)
-                    {
-                        string value = match.Groups[1].Value;
-                        AddValueToProperty(currentAnimSet, currentProperty, value);
-                    }
+                    ParsePropertySpan(currentAnimSet, currentProperty, span);
                 }
             }
         }
 
-        private static void ParsePropertyLine(CustomAnimData animSet, string property, string line)
+        // New Optimized Helper
+        private static void ParsePropertySpan(CustomAnimData animSet, string property, ReadOnlySpan<char> lineSpan)
         {
-            // Extract all string values from the line
-            MatchCollection matches = stringValueRegex.Matches(line);
-            foreach (Match match in matches)
+            // Manually find single-quoted strings without Regex
+            int startQuote = -1;
+
+            for (int i = 0; i < lineSpan.Length; i++)
             {
-                string value = match.Groups[1].Value;
-                AddValueToProperty(animSet, property, value);
+                if (lineSpan[i] == '\'')
+                {
+                    if (startQuote == -1)
+                    {
+                        startQuote = i;
+                    }
+                    else
+                    {
+                        // Found matching quote
+                        var valueSpan = lineSpan.Slice(startQuote + 1, i - startQuote - 1);
+                        AddValueToProperty(animSet, property, valueSpan.ToString());
+                        startQuote = -1;
+                    }
+                }
             }
         }
 

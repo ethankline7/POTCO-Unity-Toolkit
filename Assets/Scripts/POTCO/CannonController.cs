@@ -55,6 +55,30 @@ namespace POTCO
         [Tooltip("Cooldown between shots (seconds)")]
         public float fireCooldown = 2f;
 
+        [Header("Projectile Customization")]
+        [Tooltip("Cannonball damage")]
+        public float cannonballDamage = 50f;
+        [Tooltip("Explosion radius")]
+        public float explosionRadius = 2f;
+        [Tooltip("Cannonball lifetime (seconds)")]
+        public float cannonballLifetime = 10f;
+        [Tooltip("Trail duration (seconds)")]
+        public float trailDuration = 0.75f;
+        [Tooltip("Trail start width")]
+        public float trailStartWidth = 0.8f;
+        [Tooltip("Trail end width")]
+        public float trailEndWidth = 0.2f;
+        [Tooltip("Trail start color")]
+        public Color trailStartColor = new Color(0.5f, 0.7f, 1f, 1f);
+        [Tooltip("Trail end color")]
+        public Color trailEndColor = new Color(0.9f, 0.95f, 1f, 0f);
+        [Tooltip("Light intensity")]
+        public float lightIntensity = 3f;
+        [Tooltip("Light range")]
+        public float lightRange = 15f;
+        [Tooltip("Light color")]
+        public Color lightColor = new Color(1f, 0.6f, 0.2f);
+
         // Internal state
         private bool isControlling = false;
         private Transform playerTransform;
@@ -73,6 +97,10 @@ namespace POTCO
         private float currentPitch = 0f;
         private float lastFireTime = -999f;
         private float playerSearchTimer = 0f;
+
+        // Visibility state
+        private System.Collections.Generic.List<Renderer> hiddenPlayerRenderers = new System.Collections.Generic.List<Renderer>();
+        private System.Collections.Generic.List<Renderer> hiddenSailRenderers = new System.Collections.Generic.List<Renderer>();
 
         private void Start()
         {
@@ -302,6 +330,35 @@ namespace POTCO
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
 
+            // Hide player character model (only hide currently visible renderers)
+            hiddenPlayerRenderers.Clear();
+            Renderer[] allPlayerRenderers = playerTransform.GetComponentsInChildren<Renderer>();
+            foreach (Renderer renderer in allPlayerRenderers)
+            {
+                if (renderer.enabled)
+                {
+                    renderer.enabled = false;
+                    hiddenPlayerRenderers.Add(renderer);
+                }
+            }
+
+            // Hide sails (only on this specific ship, not all ships in scene)
+            hiddenSailRenderers.Clear();
+            Transform shipTransform = transform.root; // The ship this cannon is attached to
+            Renderer[] allShipRenderers = shipTransform.GetComponentsInChildren<Renderer>();
+            foreach (Renderer renderer in allShipRenderers)
+            {
+                if (renderer.enabled && renderer.name.ToLower().Contains("sail"))
+                {
+                    // Verify this renderer is actually part of this ship's hierarchy
+                    if (renderer.transform.IsChildOf(shipTransform))
+                    {
+                        renderer.enabled = false;
+                        hiddenSailRenderers.Add(renderer);
+                    }
+                }
+            }
+
             Debug.Log($"✅ Entered cannon control mode - FOV: {cannonFOV}, Yaw limits: [{minH}, {maxH}], Pitch limits: [{minP}, {maxP}]");
         }
 
@@ -373,6 +430,63 @@ namespace POTCO
                 projectile = cannonball.AddComponent<CannonProjectile>();
             }
 
+            // Apply customization settings
+            projectile.damage = cannonballDamage;
+            projectile.explosionRadius = explosionRadius;
+            projectile.lifetime = cannonballLifetime;
+
+            // Add trail on a separate child object to avoid physics issues
+            GameObject trailObject = new GameObject("Trail");
+            trailObject.transform.SetParent(cannonball.transform);
+            trailObject.transform.localPosition = Vector3.zero;
+            trailObject.transform.localRotation = Quaternion.identity;
+
+            TrailRenderer trail = trailObject.AddComponent<TrailRenderer>();
+            trail.time = trailDuration;
+            trail.startWidth = trailStartWidth;
+            trail.endWidth = trailEndWidth;
+            trail.material = new Material(Shader.Find("Sprites/Default"));
+            trail.startColor = trailStartColor;
+            trail.endColor = trailEndColor;
+            trail.numCornerVertices = 5;
+            trail.numCapVertices = 5;
+            trail.alignment = LineAlignment.TransformZ; // Keep trail facing forward regardless of rotation
+
+            // Add glowing light for visibility
+            Light pointLight = cannonball.AddComponent<Light>();
+            pointLight.type = LightType.Point;
+            pointLight.color = lightColor;
+            pointLight.intensity = lightIntensity;
+            pointLight.range = lightRange;
+            pointLight.shadows = LightShadows.None;
+
+            // Make material emissive if possible
+            Renderer renderer = cannonball.GetComponent<Renderer>();
+            if (renderer != null && renderer.material != null)
+            {
+                renderer.material.EnableKeyword("_EMISSION");
+                renderer.material.SetColor("_EmissionColor", lightColor * 2f);
+            }
+
+            // CRITICAL FIX: Ignore collision with the ship
+            Collider cannonballCollider = cannonball.GetComponent<Collider>();
+            if (cannonballCollider == null) cannonballCollider = cannonball.AddComponent<SphereCollider>();
+
+            // Get the root object (The Ship this cannon is attached to)
+            Transform shipRoot = transform.root;
+
+            // Find ALL colliders on the ship (deck, hull, masts, rails, etc.)
+            Collider[] shipColliders = shipRoot.GetComponentsInChildren<Collider>(true);
+
+            foreach (Collider shipCollider in shipColliders)
+            {
+                // Don't ignore the cannonball itself
+                if (shipCollider != null && shipCollider != cannonballCollider)
+                {
+                    Physics.IgnoreCollision(cannonballCollider, shipCollider);
+                }
+            }
+
             // Play effects (TODO: Add muzzle flash and sound)
             Debug.Log($"🔥 Fired cannon! H: {fireH:F1}°, P: {fireP:F1}°");
 
@@ -439,6 +553,26 @@ namespace POTCO
             // Unlock cursor
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+
+            // Show player character model again (only re-enable what we hid)
+            foreach (Renderer renderer in hiddenPlayerRenderers)
+            {
+                if (renderer != null)
+                {
+                    renderer.enabled = true;
+                }
+            }
+            hiddenPlayerRenderers.Clear();
+
+            // Show sails again (only re-enable what we hid)
+            foreach (Renderer renderer in hiddenSailRenderers)
+            {
+                if (renderer != null)
+                {
+                    renderer.enabled = true;
+                }
+            }
+            hiddenSailRenderers.Clear();
 
             Debug.Log("✅ Exited cannon control mode");
         }

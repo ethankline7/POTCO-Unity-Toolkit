@@ -104,13 +104,6 @@ namespace POTCO
 
         private void DestroySelf(bool wasImpact)
         {
-            // Disable trail if exists (so it fades naturally)
-            if (trail != null)
-            {
-                trail.transform.SetParent(null);
-                trail.autodestruct = true;
-            }
-
             Destroy(gameObject);
         }
 
