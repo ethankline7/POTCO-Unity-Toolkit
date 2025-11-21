@@ -21,7 +21,7 @@ namespace Player
         [SerializeField] private float jumpVelocity = 10.0f;
         [SerializeField] private float coyoteTime = 0.15f;
         [Tooltip("Downward force to keep player glued to slopes")]
-        [SerializeField] private float stickToGroundForce = 10f;
+        [SerializeField] private float stickToGroundForce = 5f;
 
         [Header("Collision Setup")]
         [Tooltip("Ground check transform for platform detection")]
@@ -49,15 +49,25 @@ namespace Player
         [Tooltip("Rotation speed when character turns with A/D keys (normal mode)")]
         [SerializeField] private float turnRotationSpeed = 120f;
 
+        [Header("Swimming")]
+        [SerializeField] private float swimSpeed = 10f;
+        [SerializeField] private float swimDepthThreshold = -0.08f;
+        [Tooltip("Height offset from water surface while swimming (keeps head above water). Lower value = Higher position.")]
+        [SerializeField] private float swimLevelOffset = 1.4f;
+        [Tooltip("Gravity force applied while swimming. Default is 0 for neutral buoyancy.")]
+        [SerializeField] private float swimGravity = 0f;
+
         [Header("Debug")]
         [SerializeField] private bool showDebugGizmos = true;
 
         private CharacterController controller;
         private PlayerCamera playerCamera;
-        private Vector3 velocity;
+        private POTCO.Ocean.OceanManager oceanManager;
+        private float verticalVelocity; // Replaces Vector3 velocity to strictly manage vertical motion
         private Vector3 moveDirection;
         private float currentSpeed;
         private bool isGrounded;
+        private bool isSwimming;
         private float lastGroundedTime;
         private float lastJumpTime;
 
@@ -99,7 +109,13 @@ namespace Player
         private void Start()
         {
             playerCamera = Camera.main?.GetComponent<PlayerCamera>();
+            oceanManager = FindObjectOfType<POTCO.Ocean.OceanManager>();
             
+            // Mask out Water layer (4) from ground mask to prevent walking on water
+            groundMask &= ~(1 << 4);
+            int waterLayer = LayerMask.NameToLayer("Water");
+            if (waterLayer != -1) groundMask &= ~(1 << waterLayer);
+
             POTCO.HideLevelGeometry hideLevelGeo = GetComponent<POTCO.HideLevelGeometry>();
             if (hideLevelGeo != null) hideLevelGeo.HideObjects();
 
@@ -116,7 +132,90 @@ namespace Player
         {
             ProcessInput();
             UpdateGroundState();
+            UpdateSwimmingState();
             ProcessMovement();
+        }
+
+        private float lastSwimExitTime;
+
+        private void UpdateSwimmingState()
+        {
+            if (oceanManager == null)
+            {
+                // Lazy load OceanManager if it wasn't found in Start (e.g. auto-spawned later)
+                // Check every 60 frames to avoid expensive FindObjectOfType every frame
+                if (Time.frameCount % 60 == 0)
+                {
+                    oceanManager = FindObjectOfType<POTCO.Ocean.OceanManager>();
+                    if (oceanManager != null) Debug.Log("🌊 PlayerController found OceanManager!");
+                }
+                
+                if (oceanManager == null) return;
+            }
+
+            // Prevent re-entering swim state immediately after exiting (0.5s cooldown)
+            if (Time.time - lastSwimExitTime < 0.5f) return;
+
+            float waterLevel = oceanManager.GetWaterHeightAt(transform.position);
+            float playerY = transform.position.y;
+            
+            // Debug logs (thottled)
+            if (Time.frameCount % 60 == 0 && showDebugGizmos)
+            {
+                // Debug.Log($"🌊 Water Level: {waterLevel:F2}, Player Y: {playerY:F2}, Swim Threshold: {swimDepthThreshold}, IsSwimming: {isSwimming}");
+            }
+
+            if (!isSwimming)
+            {
+                // Enter swimming if below threshold
+                if (playerY < waterLevel - swimDepthThreshold)
+                {
+                    Debug.Log("🌊 Entering Swim State!");
+                    isSwimming = true;
+                    isGrounded = false;
+                    verticalVelocity = 0f; // Kill all vertical momentum immediately
+                }
+            }
+            else
+            {
+                // Exit swimming logic
+                // 1. Must be high enough (close to surface or out of water)
+                // 2. Must find ACTUAL ground beneath us to step out onto
+                bool isHighEnough = playerY > waterLevel - swimDepthThreshold + 0.1f;
+                
+                if (isHighEnough)
+                {
+                    // RaycastAll to find ground even if player collider is hit first
+                    // Reduced distance to 1.1f (just below feet)
+                    // Ignore Triggers explicitly
+                    RaycastHit[] hits = Physics.RaycastAll(transform.position + Vector3.up * 0.5f, Vector3.down, 1.1f, groundMask, QueryTriggerInteraction.Ignore);
+                    bool foundValidGround = false;
+
+                    foreach (var hit in hits)
+                    {
+                        // Ignore self and children
+                        if (hit.collider.gameObject == gameObject || hit.collider.transform.IsChildOf(transform))
+                            continue;
+                            
+                        // Ignore water objects explicitly by name (safety net)
+                        string hitName = hit.collider.name.ToLower();
+                        if (hitName.Contains("water") || hitName.Contains("ocean") || hitName.Contains("sea") || hitName.Contains("patch"))
+                            continue;
+
+                        // Found actual ground
+                        Debug.Log($"🌊 Exiting Swim State! Found ground: {hit.collider.name}");
+                        foundValidGround = true;
+                        break;
+                    }
+
+                    if (foundValidGround)
+                    {
+                         isSwimming = false;
+                         verticalVelocity = 4f; // Small hop out
+                         lastSwimExitTime = Time.time; // Set cooldown
+                    }
+                }
+            }
         }
 
         private void LateUpdate()
@@ -139,6 +238,14 @@ namespace Player
 
         private void UpdateGroundState()
         {
+            // If swimming, we are never grounded (unless touching bottom, which we handle in Swim logic)
+            if (isSwimming)
+            {
+                isGrounded = false;
+                groundNormal = Vector3.up;
+                return;
+            }
+
             // Disable ground check briefly after jumping so we don't snap back to ground
             if (Time.time - lastJumpTime < 0.2f)
             {
@@ -166,12 +273,22 @@ namespace Player
                 }
                 else
                 {
-                    isGrounded = false;
+                    // Slope too steep, but are we solidly on it?
+                    // Fallback to built-in check
+                    isGrounded = controller.isGrounded;
+                    if (isGrounded) lastGroundedTime = Time.time;
                 }
             }
             else
             {
-                isGrounded = false;
+                // SphereCast missed (maybe on edge or weird mesh)
+                // Trust the CharacterController's own collision flags
+                isGrounded = controller.isGrounded;
+                if (isGrounded) 
+                {
+                     lastGroundedTime = Time.time;
+                     groundNormal = Vector3.up; // Fallback normal
+                }
             }
         }
 
@@ -236,23 +353,59 @@ namespace Player
             }
 
             // 3. Slope Projection (Walk smooth on slopes)
-            if (isGrounded && groundNormal != Vector3.up)
+            if (isGrounded && groundNormal != Vector3.up && !isSwimming)
             {
                 moveDirection = Vector3.ProjectOnPlane(moveDirection, groundNormal).normalized;
             }
 
-            // Disable planar movement from this function if swimming (handled in ProcessSwimming)
+            // Handle Swimming Physics
+            if (isSwimming)
+            {
+                isGrounded = false;
+
+                float waterLevel = oceanManager != null ? oceanManager.GetWaterHeightAt(transform.position) : transform.position.y + swimLevelOffset;
+                float targetY = waterLevel - swimLevelOffset;
+                float currentY = transform.position.y;
+                
+                // Calculate desired vertical behavior
+                float targetVerticalSpeed = 0f;
+
+                // 1. Buoyancy: If below target depth, rise up
+                if (currentY < targetY)
+                {
+                    float depth = targetY - currentY;
+                    // Stronger buoyancy the deeper we are, capped at max speed
+                    targetVerticalSpeed = Mathf.Clamp(depth * 5f, 0f, 5f);
+                }
+                
+                // 2. Swim Up Input (Space) overrides buoyancy speed if higher
+                if (Input.GetButton("Jump"))
+                {
+                    targetVerticalSpeed = Mathf.Max(targetVerticalSpeed, 5f);
+                }
+
+                // 3. Apply Swim Gravity (subtract from upward speed)
+                targetVerticalSpeed -= swimGravity;
+
+                // Apply smoothed velocity change
+                verticalVelocity = Mathf.Lerp(verticalVelocity, targetVerticalSpeed, Time.deltaTime * 5f);
+
+                // Move
+                controller.Move((moveDirection * currentSpeed + new Vector3(0, verticalVelocity, 0)) * Time.deltaTime);
+                return;
+            }
+
             Vector3 planarVelocity = moveDirection * currentSpeed;
 
             // 4. Gravity & Jumping
             if (isGrounded)
             {
                 // Apply continuous downward force to stick to slopes
-                velocity.y = -stickToGroundForce;
+                verticalVelocity = -stickToGroundForce;
 
                 if (jumpPressed && canJump)
                 {
-                    velocity.y = jumpVelocity;
+                    verticalVelocity = jumpVelocity;
                     isGrounded = false;
                     lastGroundedTime = 0f;
                     lastJumpTime = Time.time; // Prevents ground snap-back
@@ -260,17 +413,20 @@ namespace Player
             }
             else
             {
-                velocity.y -= gravity * Time.deltaTime;
+                verticalVelocity -= gravity * Time.deltaTime;
                 
                 // Step down logic: if falling slightly (walking down stairs), snap down
-                if (velocity.y < 0 && (Time.time - lastGroundedTime) < 0.15f && (Time.time - lastJumpTime) > 0.2f)
+                if (verticalVelocity < 0 && (Time.time - lastGroundedTime) < 0.15f && (Time.time - lastJumpTime) > 0.2f)
                 {
-                    velocity.y -= stickToGroundForce * 2f * Time.deltaTime;
+                    verticalVelocity -= stickToGroundForce * 2f * Time.deltaTime;
                 }
             }
+            
+            // Terminal velocity clamp (prevents infinite accumulation fall speed)
+            verticalVelocity = Mathf.Max(verticalVelocity, -50f);
 
             jumpPressed = false;
-            controller.Move((planarVelocity + velocity) * Time.deltaTime);
+            controller.Move((planarVelocity + new Vector3(0, verticalVelocity, 0)) * Time.deltaTime);
         }
 
         private void HandleMovingPlatform()
@@ -324,14 +480,15 @@ namespace Player
 
         // Public API
         public bool IsGrounded => isGrounded;
+        public bool IsSwimming => isSwimming;
         public float CurrentSpeed => currentSpeed;
-        public Vector3 Velocity => controller.velocity;
+        public Vector3 Velocity => controller.velocity; // Return actual controller velocity for accurate reading
         public Vector2 MoveInput => moveInput;
         public float TurnInput => turnInput;
         public float StrafeInput => strafeInput;
         public bool IsFreeLooking => playerCamera != null && playerCamera.IsFreeLooking;
         public bool IsRunning => runToggle;
-        public bool IsFalling => !isGrounded && velocity.y < -fallingThreshold;
+        public bool IsFalling => !isGrounded && verticalVelocity < -fallingThreshold;
 
         private void SetupModelHierarchy()
         {

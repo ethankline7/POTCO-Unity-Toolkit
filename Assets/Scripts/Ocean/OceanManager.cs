@@ -146,14 +146,6 @@ namespace POTCO.Ocean
             {
                 if (renderer == null) continue;
 
-                // 0. CRITICAL: Remove any solid collider on the mesh itself
-                // This prevents the player from "walking" on the water surface
-                Collider solidCollider = renderer.GetComponent<Collider>();
-                if (solidCollider != null)
-                {
-                    DestroyImmediate(solidCollider);
-                }
-
                 // 1. Clean up existing physics volume if present (from previous run)
                 Transform existingChild = renderer.transform.Find("WaterPhysicsVolume");
                 if (existingChild != null)
@@ -221,6 +213,16 @@ namespace POTCO.Ocean
                     oceanRenderers[i].SetPropertyBlock(_propBlock);
                 }
             }
+        }
+
+        /// <summary>
+        /// Get the water height at a specific world position.
+        /// Currently assumes a flat ocean plane at the object's Y position.
+        /// Future improvements could add wave height sampling.
+        /// </summary>
+        public float GetWaterHeightAt(Vector3 position)
+        {
+            return transform.position.y;
         }
 
         /// <summary>

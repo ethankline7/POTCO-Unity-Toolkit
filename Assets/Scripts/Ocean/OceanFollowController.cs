@@ -110,6 +110,35 @@ namespace POTCO.Ocean
                 renderer.material = oceanMaterial;
                 Debug.Log($"OceanFollowController: Applied ocean material to {renderer.gameObject.name}");
 
+                // Add MeshCollider specifically to 'patchgeometry' if found
+                Transform patchGeo = oceanPatch.transform.Find("patchgeometry");
+                
+                // If not found directly, search recursively
+                if (patchGeo == null)
+                {
+                    foreach(Transform t in oceanPatch.GetComponentsInChildren<Transform>())
+                    {
+                        if (t.name == "patchgeometry") 
+                        {
+                            patchGeo = t;
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback to renderer's object if patchgeometry name not found (but usually it is)
+                if (patchGeo == null) patchGeo = renderer.transform;
+
+                if (patchGeo != null)
+                {
+                    // Add MeshCollider if missing
+                    if (patchGeo.GetComponent<MeshCollider>() == null)
+                    {
+                        patchGeo.gameObject.AddComponent<MeshCollider>();
+                        Debug.Log($"OceanFollowController: Added MeshCollider to {patchGeo.name}");
+                    }
+                }
+
                 // Use the material instance from the renderer (not the original)
                 oceanMaterial = renderer.material;
             }

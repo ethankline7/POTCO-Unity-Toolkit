@@ -53,6 +53,13 @@ namespace Player
         [SerializeField] private AnimationClip spinRightClip; // Female turn animation
         [SerializeField] private AnimationClip jumpClip;
 
+        [Header("Swimming Clips")]
+        [SerializeField] private AnimationClip swimIdleClip;
+        [SerializeField] private AnimationClip swimWalkClip;
+        [SerializeField] private AnimationClip swimBackClip;
+        [SerializeField] private AnimationClip swimLeftClip;
+        [SerializeField] private AnimationClip swimRightClip;
+
         private POTCO.RuntimeAnimatorPlayer animComponent;
         private PlayerController playerController;
         private POTCO.NPCController npcController;
@@ -119,6 +126,7 @@ namespace Player
             public bool IsFreeLooking { get; set; }
             public bool IsRunning { get; set; }
             public bool IsFalling { get; set; }
+            public bool IsSwimming { get; set; }
         }
 
         /// <summary>
@@ -140,13 +148,15 @@ namespace Player
                     StrafeInput = playerController.StrafeInput,
                     IsFreeLooking = playerController.IsFreeLooking,
                     IsRunning = playerController.IsRunning,
-                    IsFalling = playerController.IsFalling
+                    IsFalling = playerController.IsFalling,
+                    IsSwimming = playerController.IsSwimming
                 };
             }
 
             // Check NPCController (normal NPC mode)
             if (npcController != null && npcController.enabled)
             {
+                // NPC Controller doesn't have swimming yet, default to false
                 return new ControllerAdapter
                 {
                     IsGrounded = npcController.IsGrounded,
@@ -157,7 +167,8 @@ namespace Player
                     StrafeInput = npcController.StrafeInput,
                     IsFreeLooking = npcController.IsFreeLooking,
                     IsRunning = npcController.IsRunning,
-                    IsFalling = npcController.IsFalling
+                    IsFalling = npcController.IsFalling,
+                    IsSwimming = false 
                 };
             }
 
@@ -493,6 +504,13 @@ namespace Player
 
             if (jumpClip == null) jumpClip = FindAndLoadClip("jump", phases, searchPaths);
 
+            // Swimming
+            if (swimIdleClip == null) swimIdleClip = FindAndLoadClip("tread_water", phases, searchPaths);
+            if (swimWalkClip == null) swimWalkClip = FindAndLoadClip("swim", phases, searchPaths);
+            if (swimBackClip == null) swimBackClip = FindAndLoadClip("swim_back", phases, searchPaths);
+            if (swimLeftClip == null) swimLeftClip = FindAndLoadClip("swim_left", phases, searchPaths);
+            if (swimRightClip == null) swimRightClip = FindAndLoadClip("swim_right", phases, searchPaths);
+
             // Add clips to RuntimeAnimatorPlayer and set wrap modes
             if (idleClip != null)
             {
@@ -558,13 +576,11 @@ namespace Player
             {
                 animComponent.AddClip(turnLeftClip, "turn_left");
                 animComponent.SetWrapMode("turn_left", WrapMode.Loop);
-                // Note: Speed control not available in Playables API - handled differently
             }
             if (turnRightClip != null)
             {
                 animComponent.AddClip(turnRightClip, "turn_right");
                 animComponent.SetWrapMode("turn_right", WrapMode.Loop);
-                // Note: Speed control not available in Playables API - handled differently
             }
             if (spinLeftClip != null)
             {
@@ -580,6 +596,33 @@ namespace Player
             {
                 animComponent.AddClip(jumpClip, "jump");
                 animComponent.SetWrapMode("jump", WrapMode.ClampForever);
+            }
+
+            // Swimming Registration
+            if (swimIdleClip != null)
+            {
+                animComponent.AddClip(swimIdleClip, "swim_idle");
+                animComponent.SetWrapMode("swim_idle", WrapMode.Loop);
+            }
+            if (swimWalkClip != null)
+            {
+                animComponent.AddClip(swimWalkClip, "swim_walk");
+                animComponent.SetWrapMode("swim_walk", WrapMode.Loop);
+            }
+            if (swimBackClip != null)
+            {
+                animComponent.AddClip(swimBackClip, "swim_back");
+                animComponent.SetWrapMode("swim_back", WrapMode.Loop);
+            }
+            if (swimLeftClip != null)
+            {
+                animComponent.AddClip(swimLeftClip, "swim_left");
+                animComponent.SetWrapMode("swim_left", WrapMode.Loop);
+            }
+            if (swimRightClip != null)
+            {
+                animComponent.AddClip(swimRightClip, "swim_right");
+                animComponent.SetWrapMode("swim_right", WrapMode.Loop);
             }
 
             // Check if we have minimum required animations
@@ -646,7 +689,26 @@ namespace Player
             string targetAnim = "idle";
 
             // Determine which animation to play based on controller state
-            if (controller.IsGrounded)
+            if (controller.IsSwimming)
+            {
+                Vector2 input = controller.MoveInput;
+                float strafeInput = controller.StrafeInput;
+
+                // Check if moving
+                if (input.magnitude > 0.1f || Mathf.Abs(strafeInput) > 0.1f)
+                {
+                     if (input.y > 0.1f) targetAnim = swimWalkClip != null ? "swim_walk" : "swim_idle";
+                     else if (input.y < -0.1f) targetAnim = swimBackClip != null ? "swim_back" : "swim_walk";
+                     else if (input.x < -0.1f || strafeInput < -0.1f) targetAnim = swimLeftClip != null ? "swim_left" : "swim_walk";
+                     else if (input.x > 0.1f || strafeInput > 0.1f) targetAnim = swimRightClip != null ? "swim_right" : "swim_walk";
+                     else targetAnim = "swim_walk";
+                }
+                else
+                {
+                    targetAnim = "swim_idle";
+                }
+            }
+            else if (controller.IsGrounded)
             {
                 float speed = controller.CurrentSpeed;
                 Vector2 input = controller.MoveInput;
