@@ -23,11 +23,6 @@ namespace Player
         [Tooltip("Downward force to keep player glued to slopes")]
         [SerializeField] private float stickToGroundForce = 10f;
 
-        [Header("Swimming")]
-        [SerializeField] private float swimSpeed = 3.0f;
-        [SerializeField] private float swimGravity = 2f;
-        [SerializeField] private LayerMask waterLayer;
-
         [Header("Collision Setup")]
         [Tooltip("Ground check transform for platform detection")]
         [SerializeField] private Transform groundCheck;
@@ -65,7 +60,6 @@ namespace Player
         private bool isGrounded;
         private float lastGroundedTime;
         private float lastJumpTime;
-        private bool isSwimming;
 
         // Input
         private Vector2 moveInput;
@@ -123,7 +117,6 @@ namespace Player
             ProcessInput();
             UpdateGroundState();
             ProcessMovement();
-            ProcessSwimming();
         }
 
         private void LateUpdate()
@@ -248,60 +241,36 @@ namespace Player
                 moveDirection = Vector3.ProjectOnPlane(moveDirection, groundNormal).normalized;
             }
 
+            // Disable planar movement from this function if swimming (handled in ProcessSwimming)
             Vector3 planarVelocity = moveDirection * currentSpeed;
 
             // 4. Gravity & Jumping
-            if (!isSwimming)
+            if (isGrounded)
             {
-                if (isGrounded)
-                {
-                    // Apply continuous downward force to stick to slopes
-                    velocity.y = -stickToGroundForce;
+                // Apply continuous downward force to stick to slopes
+                velocity.y = -stickToGroundForce;
 
-                    if (jumpPressed && canJump)
-                    {
-                        velocity.y = jumpVelocity;
-                        isGrounded = false;
-                        lastGroundedTime = 0f;
-                        lastJumpTime = Time.time; // Prevents ground snap-back
-                    }
-                }
-                else
+                if (jumpPressed && canJump)
                 {
-                    velocity.y -= gravity * Time.deltaTime;
-                    
-                    // Step down logic: if falling slightly (walking down stairs), snap down
-                    if (velocity.y < 0 && (Time.time - lastGroundedTime) < 0.15f && (Time.time - lastJumpTime) > 0.2f)
-                    {
-                        velocity.y -= stickToGroundForce * 2f * Time.deltaTime;
-                    }
+                    velocity.y = jumpVelocity;
+                    isGrounded = false;
+                    lastGroundedTime = 0f;
+                    lastJumpTime = Time.time; // Prevents ground snap-back
+                }
+            }
+            else
+            {
+                velocity.y -= gravity * Time.deltaTime;
+                
+                // Step down logic: if falling slightly (walking down stairs), snap down
+                if (velocity.y < 0 && (Time.time - lastGroundedTime) < 0.15f && (Time.time - lastJumpTime) > 0.2f)
+                {
+                    velocity.y -= stickToGroundForce * 2f * Time.deltaTime;
                 }
             }
 
             jumpPressed = false;
             controller.Move((planarVelocity + velocity) * Time.deltaTime);
-        }
-
-        private void ProcessSwimming()
-        {
-            isSwimming = Physics.CheckSphere(transform.position + Vector3.up * 1.5f, 0.5f, waterLayer);
-
-            if (isSwimming)
-            {
-                velocity.y = Mathf.MoveTowards(velocity.y, 0f, swimGravity * Time.deltaTime);
-
-                if (moveInput.magnitude > 0.1f)
-                {
-                    Vector3 swimDirection = moveDirection;
-                    if (Input.GetKey(KeyCode.Space)) swimDirection.y = 1f;
-                    else if (Input.GetKey(KeyCode.LeftControl)) swimDirection.y = -1f;
-                    velocity = swimDirection.normalized * swimSpeed;
-                }
-                else
-                {
-                    velocity = Vector3.MoveTowards(velocity, Vector3.zero, deceleration * Time.deltaTime);
-                }
-            }
         }
 
         private void HandleMovingPlatform()
@@ -355,7 +324,6 @@ namespace Player
 
         // Public API
         public bool IsGrounded => isGrounded;
-        public bool IsSwimming => isSwimming;
         public float CurrentSpeed => currentSpeed;
         public Vector3 Velocity => controller.velocity;
         public Vector2 MoveInput => moveInput;

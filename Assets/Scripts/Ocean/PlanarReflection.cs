@@ -24,14 +24,14 @@ namespace POTCO.Ocean
 
         [Header("Reflection Settings")]
         [Tooltip("Use screen resolution for reflection (better quality, worse performance)")]
-        public bool useScreenResolution = true;
+        public bool useScreenResolution = false;
 
         [Tooltip("Resolution of reflection texture (only used if not using screen resolution)")]
         public int textureSize = 256;
 
         [Tooltip("Update reflection every N frames (0 = every frame)")]
         [Range(0, 10)]
-        public int updateInterval = 0;
+        public int updateInterval = 2;
 
         [Tooltip("Layers to render in reflection")]
         public LayerMask reflectionLayers = -1;

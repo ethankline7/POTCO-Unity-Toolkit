@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace POTCO.Ocean
 {
@@ -62,12 +63,16 @@ namespace POTCO.Ocean
             new Wave { amplitude = 0.1f, wavelength = 2.5f, speed = 0.5f, directionDegrees = 75f }
         };
 
-        private Material[] allOceanMaterials;
+        private MeshRenderer[] oceanRenderers;
         private Color currentWaterColor;
         private Color targetWaterColor;
+        private static MaterialPropertyBlock _propBlock;
 
         void Start()
         {
+            if (_propBlock == null)
+                _propBlock = new MaterialPropertyBlock();
+
             CollectAllOceanMaterials();
 
             // Find SkyboxManager if not assigned
@@ -85,33 +90,76 @@ namespace POTCO.Ocean
             if (enableTimeBasedColor && skyboxManager != null)
             {
                 currentWaterColor = CalculateWaterColorForTime(skyboxManager.timeOfDay);
-                Debug.Log($"OceanManager: Time-based color enabled. Initial time: {skyboxManager.timeOfDay:F1}, Color: {currentWaterColor}");
             }
             else
             {
                 currentWaterColor = waterColor;
-                Debug.Log($"OceanManager: Using manual water color: {waterColor}");
             }
         }
 
         void CollectAllOceanMaterials()
         {
-            // Find all renderers in children (for OceanGrid patches)
-            MeshRenderer[] renderers = GetComponentsInChildren<MeshRenderer>();
+            List<MeshRenderer> waterMeshes = new List<MeshRenderer>();
+            
+            // Find ALL renderers in the scene (needed for static world water like 'patchgeometry')
+            MeshRenderer[] allRenderers = FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
+            
+            foreach (var r in allRenderers)
+            {
+                if (r == null || r.sharedMaterial == null) continue;
 
-            if (renderers.Length > 0)
-            {
-                allOceanMaterials = new Material[renderers.Length];
-                for (int i = 0; i < renderers.Length; i++)
+                // Check if it matches our water material
+                bool isWater = false;
+                
+                if (waterMaterial != null && r.sharedMaterial == waterMaterial)
                 {
-                    allOceanMaterials[i] = renderers[i].material; // Get material instance
+                    isWater = true;
                 }
-                Debug.Log($"OceanManager: Collected {allOceanMaterials.Length} ocean material instances");
+                else
+                {
+                    // Fallback name check
+                    string matName = r.sharedMaterial.name.ToLower();
+                    if (matName.Contains("ocean") || matName.Contains("water") || matName.Contains("sea"))
+                    {
+                        isWater = true;
+                    }
+                }
+
+                if (isWater)
+                {
+                    waterMeshes.Add(r);
+                }
             }
-            else if (waterMaterial != null)
+
+            oceanRenderers = waterMeshes.ToArray();
+            
+            if (oceanRenderers.Length > 0)
             {
-                // Fallback: use the single material reference
-                allOceanMaterials = new Material[] { waterMaterial };
+                Debug.Log($"OceanManager: Collected {oceanRenderers.Length} ocean renderers globally");
+                CleanupWaterPhysics();
+            }
+        }
+
+        void CleanupWaterPhysics()
+        {
+            foreach (var renderer in oceanRenderers)
+            {
+                if (renderer == null) continue;
+
+                // 0. CRITICAL: Remove any solid collider on the mesh itself
+                // This prevents the player from "walking" on the water surface
+                Collider solidCollider = renderer.GetComponent<Collider>();
+                if (solidCollider != null)
+                {
+                    DestroyImmediate(solidCollider);
+                }
+
+                // 1. Clean up existing physics volume if present (from previous run)
+                Transform existingChild = renderer.transform.Find("WaterPhysicsVolume");
+                if (existingChild != null)
+                {
+                    DestroyImmediate(existingChild.gameObject);
+                }
             }
         }
 
@@ -132,51 +180,26 @@ namespace POTCO.Ocean
 
                 // Smoothly transition to target color
                 currentWaterColor = Color.Lerp(currentWaterColor, targetWaterColor, Time.deltaTime * colorTransitionSpeed);
-
-                // Debug log every few seconds
-                if (Time.frameCount % 120 == 0)
-                {
-                    DebugLogger.LogOceanManager($"OceanManager: Time={skyboxManager.timeOfDay:F1}, Target Color={targetWaterColor}, Current Color={currentWaterColor}");
-                }
             }
             else
             {
                 // Use manual water color
                 currentWaterColor = waterColor;
-
-                // Debug log if time-based is disabled
-                if (Time.frameCount % 300 == 0)
-                {
-                    Debug.Log($"OceanManager: Time-based disabled. enableTimeBasedColor={enableTimeBasedColor}, skyboxManager={(skyboxManager != null ? "found" : "null")}");
-                }
             }
 
-            // Update all ocean materials (for grid-based systems)
-            if (allOceanMaterials != null && allOceanMaterials.Length > 0)
-            {
-                foreach (Material mat in allOceanMaterials)
-                {
-                    if (mat == null) continue;
-                    UpdateMaterial(mat);
-                }
-            }
-            else if (waterMaterial != null)
-            {
-                // Fallback: update single material
-                UpdateMaterial(waterMaterial);
-            }
+            UpdateMaterialProperties();
         }
 
-        void UpdateMaterial(Material mat)
+        void UpdateMaterialProperties()
         {
-            // Set UV animation parameters
-            mat.SetVector("_UVScale", uvScale);
-            mat.SetVector("_UVSpeedA", uvSpeedA);
-            mat.SetVector("_UVSpeedB", uvSpeedB);
-            mat.SetFloat("_TimeSec", Time.time);
+            if (oceanRenderers == null || oceanRenderers.Length == 0) return;
 
-            // Use time-based color if enabled, otherwise use manual color
-            mat.SetColor("_WaterColor", currentWaterColor);
+            // Update the property block once
+            _propBlock.SetVector("_UVScale", uvScale);
+            _propBlock.SetVector("_UVSpeedA", uvSpeedA);
+            _propBlock.SetVector("_UVSpeedB", uvSpeedB);
+            _propBlock.SetFloat("_TimeSec", Time.time);
+            _propBlock.SetColor("_WaterColor", currentWaterColor);
 
             // Set wave parameters
             for (int i = 0; i < waves.Length && i < 4; i++)
@@ -186,8 +209,17 @@ namespace POTCO.Ocean
                 Vector2 direction = new Vector2(Mathf.Cos(dirRad), Mathf.Sin(dirRad));
 
                 // Pack wave data: (amplitude, wavelength, speed, unused)
-                mat.SetVector($"_Wave{i}", new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
-                mat.SetVector($"_WaveDir{i}", new Vector4(direction.x, direction.y, 0f, 0f));
+                _propBlock.SetVector($"_Wave{i}", new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
+                _propBlock.SetVector($"_WaveDir{i}", new Vector4(direction.x, direction.y, 0f, 0f));
+            }
+
+            // Apply to all renderers
+            for (int i = 0; i < oceanRenderers.Length; i++)
+            {
+                if (oceanRenderers[i] != null)
+                {
+                    oceanRenderers[i].SetPropertyBlock(_propBlock);
+                }
             }
         }
 

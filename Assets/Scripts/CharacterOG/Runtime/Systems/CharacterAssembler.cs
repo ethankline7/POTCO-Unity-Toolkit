@@ -269,6 +269,15 @@ namespace CharacterOG.Runtime.Systems
             }
         }
 
+        /// <summary>
+        /// Permanently remove unused meshes to save memory/CPU.
+        /// Only use for static NPCs!
+        /// </summary>
+        public void OptimizeForStatic()
+        {
+            rendererCache.StripHidden();
+        }
+
         /// <summary>Get diagnostic info</summary>
         public string GetDiagnosticInfo()
         {

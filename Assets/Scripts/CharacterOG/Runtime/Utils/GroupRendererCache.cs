@@ -41,14 +41,60 @@ namespace CharacterOG.Runtime.Utils
             if (!byName.TryGetValue(name, out var list))
             {
                 // Log when exact name is NOT found (indicates pattern resolution issue)
-                Debug.LogWarning($"[GroupRendererCache] Exact name '{name}' not found in cache (tried to set {(on ? "ON" : "OFF")})");
+                // Debug.LogWarning($"[GroupRendererCache] Exact name '{name}' not found in cache (tried to set {(on ? "ON" : "OFF")})");
                 return;
             }
             foreach (var r in list)
             {
                 if (r != null)
-                    r.enabled = on;
+                {
+                    // OPTIMIZATION: Use SetActive instead of enabled to remove from Transform hierarchy update loop
+                    // This saves massive performance when 100s of items are hidden
+                    r.gameObject.SetActive(on);
+                }
             }
+        }
+
+        /// <summary>
+        /// DESTROYS all currently hidden GameObjects tracked by this cache.
+        /// WARNING: One-way operation! Only use for static NPCs that will never change clothes.
+        /// Frees memory and cleans up hierarchy.
+        /// </summary>
+        public void StripHidden()
+        {
+            int destroyedCount = 0;
+            List<string> keysToRemove = new List<string>();
+
+            foreach (var kvp in byName)
+            {
+                var list = kvp.Value;
+                // Check if all renderers in this group are disabled/inactive
+                // We assume if the group is hidden, we can destroy it
+                // Note: If a group has mixed active/inactive, we only destroy the inactive ones
+                
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    var r = list[i];
+                    if (r != null && !r.gameObject.activeSelf)
+                    {
+                        Object.Destroy(r.gameObject);
+                        list.RemoveAt(i);
+                        destroyedCount++;
+                    }
+                }
+
+                if (list.Count == 0)
+                {
+                    keysToRemove.Add(kvp.Key);
+                }
+            }
+
+            foreach (var key in keysToRemove)
+            {
+                byName.Remove(key);
+            }
+
+            Debug.Log($"[GroupRendererCache] Stripped {destroyedCount} hidden clothing meshes from {rootObject.name}");
         }
 
         /// <summary>Enable/disable multiple exact group names</summary>

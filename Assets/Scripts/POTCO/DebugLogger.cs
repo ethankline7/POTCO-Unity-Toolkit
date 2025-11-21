@@ -1,4 +1,6 @@
 using UnityEngine;
+using System.Diagnostics;
+using Debug = UnityEngine.Debug; // Disambiguate Debug
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -24,6 +26,7 @@ namespace POTCO
         /// <summary>
         /// Log message for NPC Controller (runtime AI, pathfinding, states)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogNPCController(string message)
         {
             #if UNITY_EDITOR
@@ -37,6 +40,7 @@ namespace POTCO
         /// <summary>
         /// Log warning for NPC Controller
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogWarningNPCController(string message)
         {
             #if UNITY_EDITOR
@@ -50,6 +54,7 @@ namespace POTCO
         /// <summary>
         /// Log error for NPC Controller
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogErrorNPCController(string message)
         {
             #if UNITY_EDITOR
@@ -63,6 +68,7 @@ namespace POTCO
         /// <summary>
         /// Log message for NPC Animation (runtime animation playback, gender detection)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogNPCAnimation(string message)
         {
             #if UNITY_EDITOR
@@ -76,6 +82,7 @@ namespace POTCO
         /// <summary>
         /// Log warning for NPC Animation
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogWarningNPCAnimation(string message)
         {
             #if UNITY_EDITOR
@@ -89,6 +96,7 @@ namespace POTCO
         /// <summary>
         /// Log error for NPC Animation
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogErrorNPCAnimation(string message)
         {
             #if UNITY_EDITOR
@@ -102,6 +110,7 @@ namespace POTCO
         /// <summary>
         /// Log message for NPC Import
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogNPCImport(string message)
         {
             #if UNITY_EDITOR
@@ -115,6 +124,7 @@ namespace POTCO
         /// <summary>
         /// Log warning for NPC Import
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogWarningNPCImport(string message)
         {
             #if UNITY_EDITOR
@@ -128,6 +138,7 @@ namespace POTCO
         /// <summary>
         /// Log error for NPC Import
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogErrorNPCImport(string message)
         {
             #if UNITY_EDITOR
@@ -141,6 +152,7 @@ namespace POTCO
         /// <summary>
         /// Log message for Animal Animation (runtime animal animation playback)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogAnimalAnimation(string message)
         {
             #if UNITY_EDITOR
@@ -154,6 +166,7 @@ namespace POTCO
         /// <summary>
         /// Log warning for Animal Animation
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogWarningAnimalAnimation(string message)
         {
             #if UNITY_EDITOR
@@ -167,6 +180,7 @@ namespace POTCO
         /// <summary>
         /// Log message for RuntimeAnimatorPlayer (Playables API animation system)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogRuntimeAnimator(string message)
         {
             #if UNITY_EDITOR
@@ -180,6 +194,7 @@ namespace POTCO
         /// <summary>
         /// Log message for Player Animation (SimpleAnimationPlayer)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogPlayerAnimation(string message)
         {
             #if UNITY_EDITOR
@@ -193,6 +208,7 @@ namespace POTCO
         /// <summary>
         /// Log message for Ship Controller (wheel interaction, sailing)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogShipController(string message)
         {
             #if UNITY_EDITOR
@@ -206,6 +222,7 @@ namespace POTCO
         /// <summary>
         /// Log message for Ocean Manager (water color, time of day)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogOceanManager(string message)
         {
             #if UNITY_EDITOR
@@ -219,6 +236,7 @@ namespace POTCO
         /// <summary>
         /// Log message for Level Geometry (hiding collision meshes)
         /// </summary>
+        [Conditional("UNITY_EDITOR")]
         public static void LogLevelGeometry(string message)
         {
             #if UNITY_EDITOR

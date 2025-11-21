@@ -54,6 +54,12 @@ namespace POTCO
         [Tooltip("Enable for static POTCO models, disable for custom DNA characters")]
         [SerializeField] private bool autoSetupModelHierarchy = false;
 
+        [Header("Optimization")]
+        [Tooltip("Disable GameObjects for hidden meshes to remove Update overhead")]
+        [SerializeField] private bool optimizeHierarchy = true;
+        [Tooltip("Permanently destroy unused meshes (Saves memory, strict optimization for static NPCs)")]
+        [SerializeField] private bool stripUnusedMeshes = true;
+
         [Header("Debug")]
         [SerializeField] private bool showDebugGizmos = true;
         #endregion
@@ -124,8 +130,36 @@ namespace POTCO
             // OPTIMIZATION: Cache mask once
             patrolLayerMask = LayerMask.GetMask("Default", "Collision", "Wall");
 
-            // Don't set spawnPosition yet - wait for creature to settle on ground first
-            // This prevents spawning in mid-air and picking unreachable waypoints
+            // Fix "100s of hidden clothing pieces" lag
+            PerformMeshOptimization();
+        }
+
+        private void PerformMeshOptimization()
+        {
+            // Find all renderers, including inactive ones
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            int destroyedCount = 0;
+            int processedCount = 0;
+
+            foreach (Renderer r in renderers)
+            {
+                if (r.gameObject == gameObject) continue;
+
+                // Only destroy if the GameObject itself is inactive (hidden by DNA/clothing system)
+                // Do NOT check enabled status, as VisZoneManager may have disabled it for culling
+                if (!r.gameObject.activeSelf && stripUnusedMeshes)
+                {
+                    Destroy(r.gameObject);
+                    destroyedCount++;
+                }
+                // If optimizeHierarchy is on but strip is off, we can't really do much more 
+                // since they are already inactive.
+            }
+
+            if (destroyedCount > 0)
+            {
+                // DebugLogger.LogNPCController($"[{gameObject.name}] Optimized: Destroyed {destroyedCount} unused clothing pieces.");
+            }
         }
 
         /// <summary>
@@ -200,7 +234,6 @@ namespace POTCO
                     if (controller != null && controller.enabled)
                     {
                         controller.enabled = false;
-                        DebugLogger.LogNPCController($"🔒 Disabled CharacterController for stationary NPC: {gameObject.name}");
                     }
 
                     // Also check for and disable any Rigidbody components
@@ -210,31 +243,15 @@ namespace POTCO
                         rb.isKinematic = true;
                         rb.linearVelocity = Vector3.zero;
                         rb.angularVelocity = Vector3.zero;
-                        DebugLogger.LogNPCController($"🔒 Set Rigidbody to kinematic for stationary NPC: {gameObject.name}");
-                    }
-
-                    DebugLogger.LogNPCController($"🔒 Position and rotation locked for stationary NPC: {gameObject.name}");
-                }
-                else
-                {
-                    // Force position and rotation to locked values (prevents any movement or rotation)
-                    if (Vector3.Distance(transform.position, lockedPosition) > 0.001f)
-                    {
-                        transform.position = lockedPosition;
-                        DebugLogger.LogWarningNPCController($"⚠️ Stationary NPC {gameObject.name} was moved! Resetting to locked position.");
-                    }
-                    if (Quaternion.Angle(transform.rotation, lockedRotation) > 0.01f)
-                    {
-                        transform.rotation = lockedRotation;
                     }
                 }
-
+                
                 // Stationary NPCs still handle FSM state transitions but don't move or rotate
+                // Optimization: Logic only runs if needed
                 switch (currentState)
                 {
                     case NPCState.LandRoam:
-                        // Check for player detection (transition to Notice)
-                        if (playerTransform != null && ShouldNoticePlayer())
+                        if (playerTransform != null && Time.frameCount % 10 == 0 && ShouldNoticePlayer())
                         {
                             ChangeState(NPCState.Notice);
                         }
@@ -645,7 +662,6 @@ namespace POTCO
         public float TurnDirection => currentTurnDirection;
 
         // PlayerController-compatible API for SimpleAnimationPlayer
-        public bool IsSwimming => false; // NPCs don't swim yet
         public Vector3 Velocity => velocity;
         public Vector2 MoveInput => Vector2.zero; // NPCs use AI, not direct input
         public float TurnInput => currentTurnDirection; // Alias for TurnDirection

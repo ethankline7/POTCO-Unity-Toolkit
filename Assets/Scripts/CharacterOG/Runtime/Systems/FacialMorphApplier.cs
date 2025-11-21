@@ -88,6 +88,9 @@ namespace CharacterOG.Runtime.Systems
 
         private Dictionary<string, float> currentMorphs = new();
 
+        // Shared list to avoid allocations during bone caching
+        private static List<Transform> s_sharedBoneList = new List<Transform>(200);
+
         /// <summary>
         /// Initialize applier.
         /// </summary>
@@ -100,27 +103,28 @@ namespace CharacterOG.Runtime.Systems
             this.database = database;
             this.rigRoot = rigRoot ?? headRoot;
 
-            Debug.Log($"[FacialMorphApplier] Initialized with headRoot='{headRoot?.name}', rigRoot='{this.rigRoot?.name}', gender='{database?.gender}' " +
-                     $"(POTCO ORIGINAL MODE: trans={TRANSLATION_SCALE}, rot={ROTATION_SCALE}, scale={SCALE_DAMPENING})");
-
-            BuildBoneCache();
+            // Lazy init - cache built on first ApplyMorphs
         }
 
         /// <summary>Apply all facial morphs from DNA</summary>
         public void ApplyMorphs(Dictionary<string, float> morphValues)
         {
-            if (morphValues == null || morphValues.Count == 0)
+            if (morphValues == null || morphValues.Count == 0) return;
+
+            // Lazy build cache
+            if (boneCache.Count == 0)
             {
-                return;
+                BuildBoneCache();
             }
 
             if (database == null || database.morphs.Count == 0)
             {
-                Debug.LogWarning($"[FacialMorphApplier] Cannot apply {morphValues.Count} facial morphs - morph database is empty");
+                // Debug.LogWarning($"[FacialMorphApplier] Cannot apply {morphValues.Count} facial morphs - morph database is empty");
                 return;
             }
 
             currentMorphs = new Dictionary<string, float>(morphValues);
+            // ... rest of method ...
 
             // Reset to original transforms first
             ResetToOriginal();
@@ -456,31 +460,22 @@ namespace CharacterOG.Runtime.Systems
 
         private void BuildBoneCache()
         {
-            if (rigRoot == null)
-            {
-                Debug.LogError("FacialMorphApplier: Rig root is null");
-                return;
-            }
+            if (rigRoot == null) return;
 
             boneCache.Clear();
+            s_sharedBoneList.Clear();
 
-            // Cache all transforms from rig root hierarchy by name
-            var allTransforms = rigRoot.GetComponentsInChildren<Transform>(includeInactive: true);
+            rigRoot.GetComponentsInChildren<Transform>(true, s_sharedBoneList);
 
-            foreach (var t in allTransforms)
+            foreach (var t in s_sharedBoneList)
             {
                 if (!boneCache.ContainsKey(t.name))
                 {
                     boneCache[t.name] = t;
                 }
             }
-
-            Debug.Log($"[FacialMorphApplier] Cached {boneCache.Count} bones from rig root '{rigRoot.name}'");
-
-            // Log specifically if we found common facial bones
-            var facialBonePatterns = new[] { "def_trs_", "trs_face_", "trs_left_", "trs_right_", "trs_mid_", "jaw", "forehead", "cheek", "nose", "eye" };
-            var foundFacialBones = boneCache.Keys.Where(name => facialBonePatterns.Any(pattern => name.Contains(pattern))).ToList();
-            Debug.Log($"[FacialMorphApplier] Found {foundFacialBones.Count} facial-related bones: {string.Join(", ", foundFacialBones)}");
+            
+            s_sharedBoneList.Clear();
         }
 
         /// <summary>Get diagnostic info</summary>

@@ -203,72 +203,56 @@ namespace POTCO
             Debug.Log($"[SpawnNode] SpawnEnemies() complete. Total spawned: {spawnedEntities.Count}");
         }
 
+        // Static caches to prevent redundant Resources.Load calls across multiple SpawnNodes
+        private static Dictionary<string, GameObject> s_creaturePrefabCache = new Dictionary<string, GameObject>();
+        private static Dictionary<string, AnimationClip> s_creatureAnimCache = new Dictionary<string, AnimationClip>();
+
         /// <summary>
         /// Spawn a creature (uses Animal AI system)
         /// Replicates the working logic from PropertyProcessor.SpawnCreature
         /// </summary>
         private GameObject SpawnCreature(string creatureName)
         {
-            Debug.Log($"[SpawnNode] ======== SpawnCreature START ========");
-            Debug.Log($"[SpawnNode] creatureName: '{creatureName}'");
-            Debug.Log($"[SpawnNode] creatureModelPath: '{creatureModelPath}'");
-            Debug.Log($"[SpawnNode] creatureSpecies: '{creatureSpecies}'");
+            // Debug.Log($"[SpawnNode] SpawnCreature: {creatureName}");
 
             // Use cached model path from import (set by PropertyProcessor)
-            if (string.IsNullOrEmpty(creatureModelPath))
-            {
-                Debug.LogError($"[SpawnNode] ❌ No creature model path cached for: {creatureName}");
-                Debug.LogError($"[SpawnNode] This means PropertyProcessor didn't set the model path during import!");
-                return null;
-            }
+            if (string.IsNullOrEmpty(creatureModelPath)) return null;
 
             string species = string.IsNullOrEmpty(creatureSpecies) ? creatureName.ToLower() : creatureSpecies.ToLower();
-            Debug.Log($"[SpawnNode] Using species: '{species}'");
 
-            // Try to load the model from Resources using cached path
-            Debug.Log($"[SpawnNode] Attempting Resources.Load<GameObject>('{creatureModelPath}')...");
-            GameObject creaturePrefab = Resources.Load<GameObject>(creatureModelPath);
+            GameObject creaturePrefab = null;
 
-            if (creaturePrefab != null)
+            // CHECK CACHE FIRST
+            if (!s_creaturePrefabCache.TryGetValue(creatureModelPath, out creaturePrefab))
             {
-                Debug.Log($"[SpawnNode] ✅ Found creature model on first try: {creatureModelPath}");
-            }
-            else
-            {
-                Debug.LogWarning($"[SpawnNode] ⚠️ Model not found at '{creatureModelPath}', trying with phase prefixes...");
+                // Try to load the model from Resources using cached path
+                creaturePrefab = Resources.Load<GameObject>(creatureModelPath);
 
-                // If not found, try adding phase prefixes (matches PropertyProcessor logic)
-                string[] phasePrefixes = new string[] { "", "phase_2/", "phase_3/", "phase_4/", "phase_5/", "phase_6/" };
-                int attemptCount = 0;
-                foreach (string prefix in phasePrefixes)
+                if (creaturePrefab == null)
                 {
-                    string testPath = prefix + creatureModelPath;
-                    attemptCount++;
-                    Debug.Log($"[SpawnNode] Attempt {attemptCount}: Resources.Load<GameObject>('{testPath}')...");
-                    creaturePrefab = Resources.Load<GameObject>(testPath);
-                    if (creaturePrefab != null)
+                    // If not found, try adding phase prefixes (matches PropertyProcessor logic)
+                    string[] phasePrefixes = new string[] { "", "phase_2/", "phase_3/", "phase_4/", "phase_5/", "phase_6/" };
+                    foreach (string prefix in phasePrefixes)
                     {
-                        Debug.Log($"[SpawnNode] ✅ Found creature model at: {testPath}");
-                        break;
+                        string testPath = prefix + creatureModelPath;
+                        creaturePrefab = Resources.Load<GameObject>(testPath);
+                        if (creaturePrefab != null) break;
                     }
-                    else
-                    {
-                        Debug.Log($"[SpawnNode] ❌ Not found at: {testPath}");
-                    }
+                }
+
+                if (creaturePrefab != null)
+                {
+                    s_creaturePrefabCache[creatureModelPath] = creaturePrefab;
                 }
             }
 
             if (creaturePrefab == null)
             {
-                Debug.LogError($"[SpawnNode] ❌ FAILED to load creature model after all attempts!");
-                Debug.LogError($"[SpawnNode] Base path tried: {creatureModelPath}");
-                Debug.LogError($"[SpawnNode] Also tried with prefixes: phase_2/, phase_3/, phase_4/, phase_5/, phase_6/");
-                Debug.LogError($"[SpawnNode] Make sure the model exists in Resources folder!");
+                Debug.LogError($"[SpawnNode] ❌ FAILED to load creature model: {creatureModelPath}");
                 return null;
             }
 
             // Instantiate creature (match PropertyProcessor instantiation)
-            Debug.Log($"[SpawnNode] Instantiating creature prefab: {creaturePrefab.name}");
             GameObject instance = null;
 
 #if UNITY_EDITOR
@@ -285,9 +269,6 @@ namespace POTCO
                 instance = Instantiate(creaturePrefab);
             }
 
-            // Don't rename - keep the original prefab name (e.g., "alligator_hi")
-            Debug.Log($"[SpawnNode] ✅ Instantiated: {instance.name}");
-
             // Parent to this spawn node (using false to maintain world scale/rotation)
             instance.transform.SetParent(transform, false);
 
@@ -295,29 +276,16 @@ namespace POTCO
             instance.transform.localPosition = Vector3.zero;
             instance.transform.localRotation = Quaternion.identity;
 
-            Debug.Log($"[SpawnNode] Parented creature to spawn node: {transform.name} at local position (0,0,0)");
-
             // Add RuntimeAnimatorPlayer component to the instance
             RuntimeAnimatorPlayer animComponent = instance.GetComponent<RuntimeAnimatorPlayer>();
             if (animComponent == null)
             {
                 animComponent = instance.AddComponent<RuntimeAnimatorPlayer>();
                 animComponent.Initialize();
-                Debug.Log($"[SpawnNode] ✅ Added RuntimeAnimatorPlayer component to instance: {instance.name}");
             }
 
             // Add AI components - pass the PARENT (this gameObject), not the instance
-            // This matches PropertyProcessor line 1210: AddCreatureAIComponents(currentGO, ...)
-            // AddCreatureAIComponents will:
-            // 1. Find the creature model (instance) as first child
-            // 2. Load animations onto the creature model
-            // 3. Add NPCData, CharacterController, NPCController to parent
-            // 4. Add AnimalAnimationPlayer to creature model
-            Debug.Log($"[SpawnNode] Adding AI components (passing parent to match PropertyProcessor)...");
             AddCreatureAIComponents(gameObject, species);
-
-            Debug.Log($"[SpawnNode] ✅ Successfully spawned creature: {creatureName}");
-            Debug.Log($"[SpawnNode] ======== SpawnCreature END ========");
 
             return instance;
         }
@@ -328,35 +296,26 @@ namespace POTCO
         private GameObject SpawnHumanEnemy(string enemyName)
         {
             // TODO: Implement human enemy spawning using DNA system
-            // For now, create a placeholder
             GameObject enemyParent = new GameObject(enemyName);
             enemyParent.transform.SetParent(transform);
             enemyParent.transform.position = transform.position;
 
-            Debug.LogWarning($"[SpawnNode] Human enemy spawning not fully implemented yet: {enemyName}");
             return enemyParent;
         }
 
         /// <summary>
         /// Add AI components to spawned creature
-        /// Matches the working logic from PropertyProcessor.AddCreatureAIComponents
-        /// NOTE: parentNode is the PARENT (SpawnNode GameObject), not the creature itself
         /// </summary>
         private void AddCreatureAIComponents(GameObject parentNode, string species)
         {
-            Debug.Log($"[SpawnNode] -------- AddCreatureAIComponents START --------");
-            Debug.Log($"[SpawnNode] parentNode: {parentNode.name}, species: {species}");
-
-            // Find the creature model (first child of parent) - matches PropertyProcessor line 1324-1329
+            // Find the creature model (first child of parent)
             GameObject creatureModel = null;
             if (parentNode.transform.childCount > 0)
             {
                 creatureModel = parentNode.transform.GetChild(0).gameObject;
-                Debug.Log($"[SpawnNode] ✅ Found creature model (first child): {creatureModel.name}");
             }
             else
             {
-                Debug.LogWarning($"[SpawnNode] ⚠️ No creature found as child of {parentNode.name}");
                 return;
             }
 
@@ -369,110 +328,67 @@ namespace POTCO
                 {
                     animComponent = creatureModel.AddComponent<RuntimeAnimatorPlayer>();
                     animComponent.Initialize();
-                    Debug.Log($"[SpawnNode] ✅ Added RuntimeAnimatorPlayer component to creature model: {creatureModel.name}");
                 }
 
-                // CRITICAL: Load and assign animation clips
-                Debug.Log($"[SpawnNode] Calling LoadCreatureAnimations for species: {species}");
                 LoadCreatureAnimations(animComponent, species);
             }
 
-            // Add NPCData component to parent node (matches PropertyProcessor line 1346)
-            Debug.Log($"[SpawnNode] Adding/Getting NPCData component on parent...");
+            // Add NPCData component to parent node
             NPCData npcData = parentNode.GetComponent<NPCData>();
             if (npcData == null)
             {
                 npcData = parentNode.AddComponent<NPCData>();
-                Debug.Log($"[SpawnNode] ✅ Added NPCData component");
-            }
-            else
-            {
-                Debug.Log($"[SpawnNode] NPCData already exists");
             }
 
-            // Configure NPC data (matches PropertyProcessor settings for Animals)
+            // Configure NPC data
             npcData.npcId = $"{spawnables}_{gameObject.name}";
-            npcData.category = "Animal"; // Mark as animal category (same as imported animals)
-            npcData.team = "Animal"; // Animals use neutral team (same as imported animals)
-            npcData.startState = string.IsNullOrEmpty(startState) ? "LandRoam" : startState; // Default to LandRoam
+            npcData.category = "Animal";
+            npcData.team = "Animal";
+            npcData.startState = string.IsNullOrEmpty(startState) ? "LandRoam" : startState;
             npcData.patrolRadius = patrolRadius;
-            npcData.aggroRadius = 0f; // Animals don't aggro by default (same as imported animals)
-            npcData.animSet = species.ToLower(); // Use species name as anim set identifier
-            Debug.Log($"[SpawnNode] ✅ Configured NPCData: category={npcData.category}, team={npcData.team}, state={npcData.startState}");
+            npcData.aggroRadius = 0f;
+            npcData.animSet = species.ToLower();
 
-            // Add CharacterController for movement to parent (matches PropertyProcessor)
-            Debug.Log($"[SpawnNode] Adding/Getting CharacterController on parent...");
+            // Add CharacterController
             CharacterController controller = parentNode.GetComponent<CharacterController>();
             if (controller == null)
             {
                 controller = parentNode.AddComponent<CharacterController>();
-                // Default creature size (matches PropertyProcessor)
                 controller.radius = 0.5f;
                 controller.height = 1.5f;
                 controller.center = new Vector3(0, 0.75f, 0);
-                Debug.Log($"[SpawnNode] ✅ Added CharacterController to {species}");
-            }
-            else
-            {
-                Debug.Log($"[SpawnNode] CharacterController already exists");
             }
 
-            // Add NPCController for AI to parent (matches PropertyProcessor)
-            Debug.Log($"[SpawnNode] Adding/Getting NPCController on parent...");
+            // Add NPCController
             NPCController npcController = parentNode.GetComponent<NPCController>();
             if (npcController == null)
             {
                 npcController = parentNode.AddComponent<NPCController>();
-                Debug.Log($"[SpawnNode] ✅ Added NPCController to {species}");
-            }
-            else
-            {
-                Debug.Log($"[SpawnNode] NPCController already exists");
             }
 
-            // Enable patrol using reflection (matches PropertyProcessor)
-            Debug.Log($"[SpawnNode] Enabling patrol via reflection...");
+            // Enable patrol
             var enablePatrolField = typeof(NPCController).GetField("enablePatrol",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (enablePatrolField != null)
             {
                 enablePatrolField.SetValue(npcController, true);
-                Debug.Log($"[SpawnNode] ✅ Enabled patrol for {species}");
-            }
-            else
-            {
-                Debug.LogWarning($"[SpawnNode] ⚠️ enablePatrol field not found via reflection!");
             }
 
-            // Ensure NPCController starts enabled (matches PropertyProcessor)
             npcController.enabled = true;
-            Debug.Log($"[SpawnNode] ✅ NPCController enabled");
 
-            // Add AnimalAnimationPlayer to the creature model (first child)
+            // Add AnimalAnimationPlayer
             if (creatureModel != null)
             {
                 AnimalAnimationPlayer animalAnimPlayer = creatureModel.GetComponent<AnimalAnimationPlayer>();
                 if (animalAnimPlayer == null)
                 {
                     animalAnimPlayer = creatureModel.AddComponent<AnimalAnimationPlayer>();
-
-                    // Set animation prefix (matches PropertyProcessor logic)
-                    // Strip LOD suffixes (_hi, _lo, etc.)
                     string animPrefix = species.ToLower();
                     animPrefix = System.Text.RegularExpressions.Regex.Replace(animPrefix, "_hi$|_lo$|_mid$", "");
                     animalAnimPlayer.animationPrefix = animPrefix;
                     animalAnimPlayer.currentState = string.IsNullOrEmpty(startState) ? "LandRoam" : startState;
-
-                    Debug.Log($"[SpawnNode] ✅ Added AnimalAnimationPlayer with prefix '{animPrefix}', state '{animalAnimPlayer.currentState}'");
-                }
-                else
-                {
-                    Debug.Log($"[SpawnNode] AnimalAnimationPlayer already exists");
                 }
             }
-
-            Debug.Log($"[SpawnNode] ✅ Successfully added all AI components to {species}");
-            Debug.Log($"[SpawnNode] -------- AddCreatureAIComponents END --------");
         }
 
         /// <summary>
@@ -481,76 +397,53 @@ namespace POTCO
         /// </summary>
         private void LoadCreatureAnimations(RuntimeAnimatorPlayer animComponent, string species)
         {
-            if (animComponent == null)
-            {
-                Debug.LogWarning($"[SpawnNode] Cannot load animations - animComponent is null");
-                return;
-            }
-
-            Debug.Log($"[SpawnNode] Loading animations for species: {species}");
+            if (animComponent == null) return;
 
             // Get the base model name without LOD suffix (e.g., "alligator_hi" -> "alligator")
             string baseModelName = System.Text.RegularExpressions.Regex.Replace(species, "_hi$|_lo$|_mid$", "");
 
-            // Common animation names for creatures (from POTCO creature .py files)
+            // Common animation names for creatures
             string[] commonAnimations = new string[]
             {
                 "idle", "walk", "run", "swim", "eat", "sleep", "attack", "hit", "death"
             };
 
-            int loadedCount = 0;
-            int failedCount = 0;
-
             foreach (string animName in commonAnimations)
             {
                 // Animation files are at: phase_#/models/char/alligator_idle.egg
-                // Resources.Load needs path without extension: phase_4/models/char/alligator_idle
-                string[] pathsToTry = new string[]
-                {
-                    $"phase_4/models/char/{baseModelName}_{animName}",
-                    $"phase_3/models/char/{baseModelName}_{animName}",
-                    $"phase_5/models/char/{baseModelName}_{animName}",
-                    $"phase_2/models/char/{baseModelName}_{animName}",
-                    $"phase_6/models/char/{baseModelName}_{animName}",
-                };
+                string clipName = $"{baseModelName}_{animName}";
+                string cacheKey = $"{species}_{animName}"; // Use species as key base for safety
 
                 AnimationClip clip = null;
-                string successPath = null;
 
-                foreach (string path in pathsToTry)
+                if (!s_creatureAnimCache.TryGetValue(cacheKey, out clip))
                 {
-                    clip = Resources.Load<AnimationClip>(path);
+                    string[] pathsToTry = new string[]
+                    {
+                        $"phase_4/models/char/{baseModelName}_{animName}",
+                        $"phase_3/models/char/{baseModelName}_{animName}",
+                        $"phase_5/models/char/{baseModelName}_{animName}",
+                        $"phase_2/models/char/{baseModelName}_{animName}",
+                        $"phase_6/models/char/{baseModelName}_{animName}",
+                    };
+
+                    foreach (string path in pathsToTry)
+                    {
+                        clip = Resources.Load<AnimationClip>(path);
+                        if (clip != null) break;
+                    }
+
                     if (clip != null)
                     {
-                        successPath = path;
-                        break;
+                        s_creatureAnimCache[cacheKey] = clip;
                     }
                 }
 
                 if (clip != null)
                 {
-                    // Add clip with the base model + anim name (e.g., "alligator_idle")
-                    string clipName = $"{baseModelName}_{animName}";
                     animComponent.AddClip(clip, clipName);
                     animComponent.SetWrapMode(clipName, WrapMode.Loop);
-
-                    loadedCount++;
-                    Debug.Log($"[SpawnNode] ✅ Loaded animation '{clipName}' from: {successPath}");
                 }
-                else
-                {
-                    failedCount++;
-                    // Don't log warning for every missing animation - creatures may not have all animations
-                }
-            }
-
-            if (loadedCount > 0)
-            {
-                Debug.Log($"[SpawnNode] Animation loading summary for {species}: {loadedCount} loaded, {failedCount} not found");
-            }
-            else
-            {
-                Debug.LogWarning($"[SpawnNode] ⚠️ No animations found for {species}! Tried paths like: phase_4/models/char/{baseModelName}_idle");
             }
         }
 

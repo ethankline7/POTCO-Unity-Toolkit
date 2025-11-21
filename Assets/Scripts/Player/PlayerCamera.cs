@@ -14,7 +14,6 @@ namespace Player
         [Tooltip("Height offset from player's feet to focus point (camera pivots around this)")]
         [SerializeField] private float targetFocusHeight = 6.09f;
         [SerializeField] private Vector3 followOffset = new Vector3(0f, 8.68f, 15.8f);
-        [SerializeField] private Vector3 swimFollowOffset = new Vector3(0f, 8.68f, 15.8f);
 
         [Header("Orbit Settings")]
         [SerializeField] private float yawSpeed = 708.2f;
@@ -147,10 +146,6 @@ namespace Player
 
             // Calculate max zoom based on current offset (changes with swimming state)
             Vector3 currentOffset = followOffset;
-            if (playerController != null && playerController.IsSwimming)
-            {
-                currentOffset = swimFollowOffset;
-            }
             float maxZoomDistance = currentOffset.magnitude;
 
             // Process mouse scroll wheel for zoom
@@ -201,10 +196,6 @@ namespace Player
         {
             // Choose offset based on swimming state
             Vector3 offset = followOffset;
-            if (playerController != null && playerController.IsSwimming)
-            {
-                offset = swimFollowOffset;
-            }
 
             // Apply zoom distance (scroll wheel controls distance)
             desiredDistance = currentZoomDistance;

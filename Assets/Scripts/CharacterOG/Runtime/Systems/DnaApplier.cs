@@ -225,6 +225,18 @@ namespace CharacterOG.Runtime.Systems
             Debug.Log($"DnaApplier: Applied DNA for '{dna.name}' ({dna.gender}, {dna.bodyShape})");
         }
 
+        /// <summary>
+        /// Permanently remove unused clothing meshes. 
+        /// Call this for NPCs that will never change clothes.
+        /// </summary>
+        public void OptimizeForStatic()
+        {
+            if (assembler != null)
+            {
+                assembler.OptimizeForStatic();
+            }
+        }
+
         /// <summary>Get currently applied DNA</summary>
         public PirateDNA GetCurrentDNA() => currentDna;
 

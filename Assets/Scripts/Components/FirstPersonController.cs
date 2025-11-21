@@ -147,7 +147,7 @@ public class FirstPersonController : MonoBehaviour
         }
 
         // Move with platform
-        if (currentPlatform != null && isGrounded)
+        if (currentPlatform != null)
         {
             // Calculate platform movement delta
             Vector3 platformMoveDelta = currentPlatform.position - lastPlatformPosition;
@@ -155,18 +155,21 @@ public class FirstPersonController : MonoBehaviour
             // Calculate rotation delta
             Quaternion rotationDelta = currentPlatform.rotation * Quaternion.Inverse(lastPlatformRotation);
 
-            // Apply platform movement
-            controller.Move(platformMoveDelta);
+            if (isGrounded)
+            {
+                // Apply platform movement
+                controller.Move(platformMoveDelta);
 
-            // Apply rotation around platform center
-            Vector3 offsetFromPlatform = transform.position - currentPlatform.position;
-            Vector3 rotatedOffset = rotationDelta * offsetFromPlatform;
-            Vector3 rotationMoveDelta = rotatedOffset - offsetFromPlatform;
-            controller.Move(rotationMoveDelta);
+                // Apply rotation around platform center
+                Vector3 offsetFromPlatform = transform.position - currentPlatform.position;
+                Vector3 rotatedOffset = rotationDelta * offsetFromPlatform;
+                Vector3 rotationMoveDelta = rotatedOffset - offsetFromPlatform;
+                controller.Move(rotationMoveDelta);
 
-            // Rotate player with platform (only Y-axis to keep upright)
-            Vector3 eulerDelta = rotationDelta.eulerAngles;
-            transform.Rotate(Vector3.up, eulerDelta.y, Space.World);
+                // Rotate player with platform (only Y-axis to keep upright)
+                Vector3 eulerDelta = rotationDelta.eulerAngles;
+                transform.Rotate(Vector3.up, eulerDelta.y, Space.World);
+            }
 
             // Store current platform transform for next frame
             lastPlatformPosition = currentPlatform.position;

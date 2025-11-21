@@ -52,7 +52,6 @@ namespace Player
         [SerializeField] private AnimationClip spinLeftClip;  // Female turn animation
         [SerializeField] private AnimationClip spinRightClip; // Female turn animation
         [SerializeField] private AnimationClip jumpClip;
-        [SerializeField] private AnimationClip swimClip;
 
         private POTCO.RuntimeAnimatorPlayer animComponent;
         private PlayerController playerController;
@@ -112,7 +111,6 @@ namespace Player
         private class ControllerAdapter
         {
             public bool IsGrounded { get; set; }
-            public bool IsSwimming { get; set; }
             public float CurrentSpeed { get; set; }
             public Vector3 Velocity { get; set; }
             public Vector2 MoveInput { get; set; }
@@ -135,7 +133,6 @@ namespace Player
                 return new ControllerAdapter
                 {
                     IsGrounded = playerController.IsGrounded,
-                    IsSwimming = playerController.IsSwimming,
                     CurrentSpeed = playerController.CurrentSpeed,
                     Velocity = playerController.Velocity,
                     MoveInput = playerController.MoveInput,
@@ -153,7 +150,6 @@ namespace Player
                 return new ControllerAdapter
                 {
                     IsGrounded = npcController.IsGrounded,
-                    IsSwimming = npcController.IsSwimming,
                     CurrentSpeed = npcController.CurrentSpeed,
                     Velocity = npcController.Velocity,
                     MoveInput = npcController.MoveInput,
@@ -245,7 +241,6 @@ namespace Player
                 if (spinLeftClip != null) loadedAnims.Append("spin_left ");
                 if (spinRightClip != null) loadedAnims.Append("spin_right ");
                 if (jumpClip != null) loadedAnims.Append("jump ");
-                if (swimClip != null) loadedAnims.Append("swim ");
 
                 Debug.Log(loadedAnims.ToString());
 
@@ -497,7 +492,6 @@ namespace Player
             if (spinRightClip == null) spinRightClip = FindAndLoadClip("spin_right", phases, searchPaths);
 
             if (jumpClip == null) jumpClip = FindAndLoadClip("jump", phases, searchPaths);
-            if (swimClip == null) swimClip = FindAndLoadClip("swim", phases, searchPaths);
 
             // Add clips to RuntimeAnimatorPlayer and set wrap modes
             if (idleClip != null)
@@ -587,11 +581,6 @@ namespace Player
                 animComponent.AddClip(jumpClip, "jump");
                 animComponent.SetWrapMode("jump", WrapMode.ClampForever);
             }
-            if (swimClip != null)
-            {
-                animComponent.AddClip(swimClip, "swim");
-                animComponent.SetWrapMode("swim", WrapMode.Loop);
-            }
 
             // Check if we have minimum required animations
             if (idleClip != null && walkClip != null)
@@ -657,11 +646,7 @@ namespace Player
             string targetAnim = "idle";
 
             // Determine which animation to play based on controller state
-            if (controller.IsSwimming)
-            {
-                targetAnim = "swim";
-            }
-            else if (controller.IsGrounded)
+            if (controller.IsGrounded)
             {
                 float speed = controller.CurrentSpeed;
                 Vector2 input = controller.MoveInput;

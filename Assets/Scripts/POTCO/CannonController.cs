@@ -308,6 +308,17 @@ namespace POTCO
             if (playerController != null) playerController.enabled = false;
             if (playerCamera != null) playerCamera.enabled = false;
 
+            // Disable CharacterController to prevent sliding/drifting and allow parenting
+            CharacterController charController = playerTransform.GetComponent<CharacterController>();
+            if (charController != null) charController.enabled = false;
+
+            // Parent player to cannon so they move with the ship
+            playerTransform.SetParent(transform);
+            
+            // Reset local position to stand behind cannon (optional, but good for consistency)
+            // playerTransform.localPosition = new Vector3(0, 0, -1.5f); 
+            // playerTransform.localRotation = Quaternion.identity;
+
             // Save original camera state
             originalFOV = mainCamera.fieldOfView;
             originalCameraParent = mainCamera.transform.parent;
@@ -537,6 +548,30 @@ namespace POTCO
         {
             isControlling = false;
 
+            // Move player to safe position behind cannon before re-enabling physics
+            if (playerTransform != null)
+            {
+                // Unparent first
+                playerTransform.SetParent(null);
+
+                // Calculate safe exit position:
+                // - Use transform.forward (base orientation) to place behind the cannon structure
+                // - Use transform.up to align with ship deck tilt
+                // - 2.5f back to clear the cannon mesh
+                // - 1.5f up to ensure dropping onto deck rather than spawning inside it
+                Vector3 exitPos = transform.position - (transform.forward * 2.5f) + (transform.up * 1.5f);
+                
+                playerTransform.position = exitPos;
+                
+                // Reset rotation to be upright (aligned with world up, but keeping yaw)
+                // Or align with ship up? CharacterController prefers World Up.
+                Vector3 currentEuler = playerTransform.eulerAngles;
+                playerTransform.rotation = Quaternion.Euler(0f, currentEuler.y, 0f);
+
+                // FORCE physics sync to prevent "stuck" state
+                Physics.SyncTransforms();
+            }
+
             // Restore camera
             if (mainCamera != null)
             {
@@ -549,6 +584,13 @@ namespace POTCO
             // Re-enable player components
             if (playerController != null) playerController.enabled = true;
             if (playerCamera != null) playerCamera.enabled = true;
+
+            // Re-enable CharacterController
+            if (playerTransform != null)
+            {
+                CharacterController charController = playerTransform.GetComponent<CharacterController>();
+                if (charController != null) charController.enabled = true;
+            }
 
             // Unlock cursor
             Cursor.lockState = CursorLockMode.None;
