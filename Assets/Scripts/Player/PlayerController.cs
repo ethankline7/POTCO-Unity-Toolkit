@@ -104,6 +104,10 @@ namespace Player
 
             if (GetComponent<POTCO.HideLevelGeometry>() == null)
                 gameObject.AddComponent<POTCO.HideLevelGeometry>();
+
+            // Auto-attach ShipBoarding for swimming interactions
+            if (GetComponent<ShipBoarding>() == null)
+                gameObject.AddComponent<ShipBoarding>();
         }
 
         private void Start()
