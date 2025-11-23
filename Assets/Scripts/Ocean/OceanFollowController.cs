@@ -175,9 +175,9 @@ namespace POTCO.Ocean
                     planarReflection.mainCamera = Camera.main;
                 }
                 planarReflection.waterMaterial = oceanMaterial;  // Uses material instance from above
-                planarReflection.useScreenResolution = true;
-                planarReflection.textureSize = 256;
-                planarReflection.updateInterval = 0;
+                
+                // Optimization: Use defaults from PlanarReflection script (128px, interval 3)
+                // Do NOT override them here
 
                 // Exclude Water layer from reflections to prevent double ocean
                 int waterLayer = LayerMask.NameToLayer("Water");

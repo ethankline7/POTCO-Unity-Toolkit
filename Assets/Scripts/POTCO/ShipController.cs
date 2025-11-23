@@ -80,6 +80,9 @@ namespace POTCO
         // Movement acceleration
         private float currentSpeed = 0f;
 
+        // Cached wake material
+        private static Material _cachedWakeMaterial;
+
         void Start()
         {
             mainCamera = Camera.main;
@@ -147,6 +150,8 @@ namespace POTCO
             {
                 Debug.Log($"ShipController: Wheel found at {wheelTransform.position}");
             }
+
+            SetupShipWake();
         }
 
         void Update()
@@ -1059,6 +1064,192 @@ namespace POTCO
             // Draw ship collision detection range
             Gizmos.color = Color.cyan;
             Gizmos.DrawWireSphere(transform.position, shipCollisionDetectionRange);
+        }
+
+        private void SetupShipWake()
+        {
+            // 1. Add ShipWake component if missing
+            ShipWake wake = GetComponent<ShipWake>();
+            if (wake == null)
+            {
+                wake = gameObject.AddComponent<ShipWake>();
+            }
+
+            // 2. Create/Cache Material
+            if (_cachedWakeMaterial == null)
+            {
+                Shader s = Shader.Find("POTCO/WakeShader");
+                if (s != null)
+                {
+                    _cachedWakeMaterial = new Material(s);
+                    
+                    // Load RGB texture
+                    Texture tex = Resources.Load<Texture>("phase_2/maps/Wake");
+                    if (tex != null) _cachedWakeMaterial.mainTexture = tex;
+
+                    // Load Alpha texture (Wake_a)
+                    Texture texAlpha = Resources.Load<Texture>("phase_2/maps/Wake_a");
+                    if (texAlpha != null) 
+                    {
+                        _cachedWakeMaterial.SetTexture("_AlphaTex", texAlpha);
+                    }
+                }
+            }
+
+            // Calculate Ship Dimensions
+            Bounds shipBounds = new Bounds(transform.position, Vector3.zero);
+            bool boundsInit = false;
+            Renderer[] allRenderers = GetComponentsInChildren<Renderer>();
+            
+            foreach (var r in allRenderers)
+            {
+                if (r is ParticleSystemRenderer || r is TrailRenderer) continue;
+                if (r.name.Contains("Wake") || r.name.Contains("Bow")) continue;
+                
+                if (!boundsInit)
+                {
+                    shipBounds = r.bounds;
+                    boundsInit = true;
+                }
+                else
+                {
+                    shipBounds.Encapsulate(r.bounds);
+                }
+            }
+            
+            float shipLength = shipBounds.size.z;
+            
+            // Determine Class and Settings based on length
+            // POTCO Source values:
+            // Warship (L3): Offset 125, Scale 0.6
+            // Merchant (L2): Offset 80, Scale 0.5
+            // Interceptor (L1): Offset 22.5, Scale 0.18
+            
+            float wakeOffsetZ;
+            float wakeScale;
+            
+            if (shipLength > 450f) // Large (Warship) - observed ~616
+            {
+                wakeOffsetZ = 125.0f;
+                wakeScale = 0.6f;
+            }
+            else if (shipLength > 150f) // Medium (Merchant/Brig) - observed ~312
+            {
+                wakeOffsetZ = 80.0f;
+                wakeScale = 0.5f;
+            }
+            else // Small (Sloop/Interceptor)
+            {
+                wakeOffsetZ = 22.5f;
+                wakeScale = 0.18f;
+            }
+
+            Debug.Log($"[ShipController] SetupWake: Length={shipLength:F1} -> Offset={wakeOffsetZ}, Scale={wakeScale}");
+
+            // 3. Setup Stern Wake (Using wake_zero.egg)
+            if (wake.sternAnchor == null)
+            {
+                Transform t = FindChildRecursive(transform, "SternWake");
+                if (t == null)
+                {
+                    GameObject prefab = Resources.Load<GameObject>("phase_2/models/sea/wake_zero");
+                    if (prefab != null)
+                    {
+                        GameObject go = Instantiate(prefab, transform);
+                        go.name = "SternWake";
+                        
+                        // Position: Aft centerline at waterline with per-class Z offset
+                        // Assuming ship origin is center, Stern is -Z.
+                        // User said "move +Z ... behind stern" which was ambiguous, 
+                        // but standard POTCO "wake_offset_y" usually means distance from origin.
+                        // We will place it at -wakeOffsetZ.
+                        go.transform.localPosition = new Vector3(0, 0.5f, -wakeOffsetZ);
+                        go.transform.localRotation = Quaternion.identity;
+                        
+                        // Scale: Uniform per class
+                        go.transform.localScale = Vector3.one * wakeScale;
+                        
+                        Renderer[] renderers = go.GetComponentsInChildren<Renderer>();
+                        wake.wakeRenderers = renderers;
+                        wake.sternAnchor = go.transform;
+                        
+                        // Find Bones
+                        Transform[] bones = new Transform[4];
+                        bones[0] = FindChildRecursive(go.transform, "def_wake_1");
+                        bones[1] = FindChildRecursive(go.transform, "def_wake_2");
+                        bones[2] = FindChildRecursive(go.transform, "def_wake_3");
+                        bones[3] = FindChildRecursive(go.transform, "def_wake_4");
+                        wake.wakeBones = bones;
+                        
+                        if (_cachedWakeMaterial != null)
+                        {
+                            foreach (var wakeR in renderers) wakeR.material = _cachedWakeMaterial;
+                        }
+                        t = go.transform;
+                    }
+                }
+                else
+                {
+                    wake.wakeRenderers = t.GetComponentsInChildren<Renderer>();
+                    wake.sternAnchor = t;
+                    
+                    // Re-find bones
+                    Transform[] bones = new Transform[4];
+                    bones[0] = FindChildRecursive(t, "def_wake_1");
+                    bones[1] = FindChildRecursive(t, "def_wake_2");
+                    bones[2] = FindChildRecursive(t, "def_wake_3");
+                    bones[3] = FindChildRecursive(t, "def_wake_4");
+                    wake.wakeBones = bones;
+                }
+            }
+            
+            wake.UpdateColor();
+
+            // 4. Setup Bow Wake (Procedural Quad)
+            if (wake.bowRenderer == null)
+            {
+                Transform t = FindChildRecursive(transform, "BowWake");
+                if (t == null)
+                {
+                    GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                    Destroy(go.GetComponent<Collider>());
+                    go.name = "BowWake";
+                    go.transform.SetParent(transform);
+                    
+                    // Position: Bow (Forward tip)
+                    // Use bounds max Z for accurate bow tip
+                    float bowZ = (shipBounds.max.z - transform.position.z); // Localish Z (world diff)
+                    // Actually, better to calculate local bounds if rotated, but for Setup usually upright.
+                    // We'll use the raw bounds relative to pivot.
+                    // shipBounds is World Axis Aligned.
+                    // If ship is rotated, this is wrong. 
+                    // But SetupShipWake runs at Start. Ship might be rotated.
+                    // Let's assume local forward is ship forward.
+                    // We'll use the half-length we found earlier as a proxy.
+                    Vector3 bowPosLocal = new Vector3(0, 0.5f, shipLength * 0.48f); // 48% of length forward
+                    
+                    go.transform.localPosition = bowPosLocal;
+                    go.transform.localRotation = Quaternion.Euler(90, 0, 0); // Flat
+                    
+                    // Scale: Uniform based on stern scale (maybe slightly larger for visibility)
+                    float bowScale = wakeScale * 4.0f; 
+                    go.transform.localScale = new Vector3(bowScale, bowScale, 1);
+                    
+                    Renderer bowR = go.GetComponent<Renderer>();
+                    wake.bowRenderer = bowR;
+                    wake.bowAnchor = go.transform;
+                    if (_cachedWakeMaterial != null) bowR.material = _cachedWakeMaterial;
+                    t = go.transform;
+                }
+                else
+                {
+                     wake.bowRenderer = t.GetComponent<Renderer>();
+                     wake.bowAnchor = t;
+                }
+            }
+            
+            // Force wake to recapture the new positions we just set
+            wake.RecaptureOffsets();
         }
     }
 }

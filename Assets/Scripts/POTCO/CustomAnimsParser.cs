@@ -22,35 +22,39 @@ namespace POTCO
 
             animSetDatabase = new Dictionary<string, CustomAnimData>();
 
-            string filePath = Path.Combine(Application.dataPath, "Editor/POTCO_Source/leveleditor/CustomAnims.py");
-            if (!File.Exists(filePath))
+            // Try loading from Resources first (Build-friendly)
+            TextAsset customAnimsText = Resources.Load<TextAsset>("CustomAnims");
+            if (customAnimsText != null)
             {
-                Debug.LogError($"❌ CustomAnims.py not found at: {filePath}");
+                Debug.Log("✅ CustomAnimsParser: Loaded CustomAnims from Resources");
+                ParseCustomAnimsContent(customAnimsText.text);
+                isInitialized = true;
                 return;
             }
 
-            try
+            // Fallback to direct file path (Editor-only legacy support)
+            string filePath = Path.Combine(Application.dataPath, "Editor/POTCO_Source/leveleditor/CustomAnims.py");
+            if (File.Exists(filePath))
             {
-                ParseCustomAnimsFile(filePath);
+                Debug.Log("ℹ️ CustomAnimsParser: Loaded CustomAnims from Editor path");
+                ParseCustomAnimsContent(File.ReadAllText(filePath));
                 isInitialized = true;
-                Debug.Log($"✅ CustomAnims parsed successfully! Loaded {animSetDatabase.Count} AnimSets");
+                return;
             }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"❌ Failed to parse CustomAnims.py: {ex.Message}\n{ex.StackTrace}");
-            }
+
+            Debug.LogError("❌ CustomAnimsParser: Could not find CustomAnims.txt in Resources or CustomAnims.py in Editor path!");
         }
 
-        private static void ParseCustomAnimsFile(string filePath)
+        private static void ParseCustomAnimsContent(string content)
         {
-            // OPTIMIZATION: Use ReadLines to stream instead of ReadAllLines to avoid loading huge array
-            var lines = File.ReadLines(filePath);
+            // Split content into lines for processing
+            var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
 
             CustomAnimData currentAnimSet = null;
             string currentProperty = null;
             bool inInteractAnims = false;
 
-            foreach (string line in lines) // Streaming iteration
+            foreach (string line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
@@ -116,6 +120,12 @@ namespace POTCO
                     ParsePropertySpan(currentAnimSet, currentProperty, span);
                 }
             }
+        }
+
+        // Legacy method stub for compatibility if needed, though we replaced usage
+        private static void ParseCustomAnimsFile(string filePath)
+        {
+            ParseCustomAnimsContent(File.ReadAllText(filePath));
         }
 
         // New Optimized Helper

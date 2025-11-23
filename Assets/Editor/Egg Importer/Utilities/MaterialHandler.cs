@@ -293,6 +293,9 @@ public class MaterialHandler
                     // We've assigned textures to match their UV requirements
                     mat.SetFloat("_SwapUVChannels", 0.0f);
                     mat.DisableKeyword("SWAP_UV_CHANNELS");
+                    
+                    // Enable GPU Instancing
+                    mat.enableInstancing = true;
 
                     // For multi-texture materials, let UVs work naturally
                     if (mat.HasProperty("_MainTexWrap"))
@@ -329,6 +332,9 @@ public class MaterialHandler
                     // Create alpha blend version with transparent shader
                     Shader transparentShader = GetCachedTransparentShader();
                     Material alphaMat = new Material(transparentShader) { name = matName };
+                    
+                    // Enable GPU Instancing
+                    alphaMat.enableInstancing = true;
 
                     // Copy textures and properties from base material
                     if (baseMat.mainTexture) alphaMat.mainTexture = baseMat.mainTexture;
@@ -522,6 +528,9 @@ public class MaterialHandler
             mat.SetFloat(MetallicPropertyId, 0.0f);
         if (mat.HasProperty(GlossinessPropertyId))
             mat.SetFloat(GlossinessPropertyId, 0.1f);
+            
+        // Enable GPU Instancing
+        mat.enableInstancing = true;
 
         DebugLogger.LogEggImporter($"Created vertex color material '{materialName}' using shader: {shader.name}");
 

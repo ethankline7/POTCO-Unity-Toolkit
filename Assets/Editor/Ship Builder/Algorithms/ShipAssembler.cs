@@ -106,6 +106,13 @@ namespace POTCO.ShipBuilder
                 }
             }
 
+            // Preserve specific locators for runtime effects (bowwave)
+            PreserveLocator(shipRoot.transform, locators, "location_bowwave");
+            
+            // Preserve other potential effect locators if needed
+            if (locators.ContainsKey("location_bowwave1"))
+                PreserveLocator(shipRoot.transform, locators, "location_bowwave1");
+
             // Clean up logic object (we only needed it for the transforms)
             Object.DestroyImmediate(logicObject);
 
@@ -262,6 +269,19 @@ namespace POTCO.ShipBuilder
             component.transform.position = locator.position;
             component.transform.rotation = locator.rotation;
             component.transform.localScale = locator.localScale;
+        }
+
+        private void PreserveLocator(Transform parent, Dictionary<string, Transform> locators, string locatorName)
+        {
+            if (locators.ContainsKey(locatorName))
+            {
+                Transform source = locators[locatorName];
+                GameObject preserved = new GameObject(locatorName);
+                preserved.transform.SetParent(parent);
+                preserved.transform.position = source.position;
+                preserved.transform.rotation = source.rotation;
+                preserved.transform.localScale = source.localScale;
+            }
         }
 
 
