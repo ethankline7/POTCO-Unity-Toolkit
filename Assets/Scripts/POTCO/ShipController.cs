@@ -1204,49 +1204,6 @@ namespace POTCO
             }
             
             wake.UpdateColor();
-
-            // 4. Setup Bow Wake (Procedural Quad)
-            if (wake.bowRenderer == null)
-            {
-                Transform t = FindChildRecursive(transform, "BowWake");
-                if (t == null)
-                {
-                    GameObject go = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                    Destroy(go.GetComponent<Collider>());
-                    go.name = "BowWake";
-                    go.transform.SetParent(transform);
-                    
-                    // Position: Bow (Forward tip)
-                    // Use bounds max Z for accurate bow tip
-                    float bowZ = (shipBounds.max.z - transform.position.z); // Localish Z (world diff)
-                    // Actually, better to calculate local bounds if rotated, but for Setup usually upright.
-                    // We'll use the raw bounds relative to pivot.
-                    // shipBounds is World Axis Aligned.
-                    // If ship is rotated, this is wrong. 
-                    // But SetupShipWake runs at Start. Ship might be rotated.
-                    // Let's assume local forward is ship forward.
-                    // We'll use the half-length we found earlier as a proxy.
-                    Vector3 bowPosLocal = new Vector3(0, 0.5f, shipLength * 0.48f); // 48% of length forward
-                    
-                    go.transform.localPosition = bowPosLocal;
-                    go.transform.localRotation = Quaternion.Euler(90, 0, 0); // Flat
-                    
-                    // Scale: Uniform based on stern scale (maybe slightly larger for visibility)
-                    float bowScale = wakeScale * 4.0f; 
-                    go.transform.localScale = new Vector3(bowScale, bowScale, 1);
-                    
-                    Renderer bowR = go.GetComponent<Renderer>();
-                    wake.bowRenderer = bowR;
-                    wake.bowAnchor = go.transform;
-                    if (_cachedWakeMaterial != null) bowR.material = _cachedWakeMaterial;
-                    t = go.transform;
-                }
-                else
-                {
-                     wake.bowRenderer = t.GetComponent<Renderer>();
-                     wake.bowAnchor = t;
-                }
-            }
             
             // Force wake to recapture the new positions we just set
             wake.RecaptureOffsets();

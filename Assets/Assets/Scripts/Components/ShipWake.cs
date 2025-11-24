@@ -13,17 +13,11 @@ namespace POTCO
         [Tooltip("Transform where the wake strip starts (Stern)")]
         public Transform sternAnchor;
         
-        [Tooltip("Transform where the bow wave card sits")]
-        public Transform bowAnchor;
-        
         [Tooltip("Renderers for the stern wake strip (supports multiple meshes)")]
         public Renderer[] wakeRenderers;
         
         [Tooltip("Wake bones for progressive bending (def_wake_1..4)")]
         public Transform[] wakeBones;
-        
-        [Tooltip("Renderer for the bow wave card")]
-        public Renderer bowRenderer;
 
         [Header("Parameters (POTCO-ish)")]
         public Color wakeColor = new Color(0.6f, 0.7f, 0.8f, 1f); // Default to bluish tint
@@ -52,8 +46,17 @@ namespace POTCO
 
         // Offset management for no-bobbing
         private Vector3 sternOffset;
-        private Vector3 bowOffset;
         private bool isInitialized = false;
+        
+        // Smoothed rotation logic
+        private float currentYawVel;
+        private float currentYawVelVelocity; // for SmoothDamp
+        
+        [Header("Smoothing Settings")]
+        [Tooltip("Time to reach full turn bend (seconds)")]
+        public float turnTime = 0.0f;
+        [Tooltip("Time to snap back to straight (seconds) - make this larger for slower return")]
+        public float returnTime = 0.4f;
         
         // Initial local rotations of bones to apply additive rotation
         private Quaternion[] initialBoneRotations;
@@ -61,17 +64,10 @@ namespace POTCO
         void Start()
         {
             // Capture initial offsets before detaching
-            // We assume the ship is relatively flat or at setup pose when Start runs
             if (sternAnchor)
             {
                 sternOffset = transform.InverseTransformPoint(sternAnchor.position);
                 sternAnchor.SetParent(null); // Detach to prevent bobbing
-            }
-            
-            if (bowAnchor)
-            {
-                bowOffset = transform.InverseTransformPoint(bowAnchor.position);
-                bowAnchor.SetParent(null); // Detach to prevent bobbing
             }
 
             // Capture initial bone rotations
@@ -99,12 +95,6 @@ namespace POTCO
                 if (sternAnchor.parent == transform) sternAnchor.SetParent(null);
             }
             
-            if (bowAnchor)
-            {
-                bowOffset = transform.InverseTransformPoint(bowAnchor.position);
-                if (bowAnchor.parent == transform) bowAnchor.SetParent(null);
-            }
-            
             // Recapture bone rotations if needed (usually static relative to stern, but good to be safe)
             if (wakeBones != null && wakeBones.Length > 0)
             {
@@ -121,7 +111,7 @@ namespace POTCO
             LateUpdate();
         }
         
-        // ... existing OnEnable, OnDestroy, Update ...
+        // ... existing OnEnable ...
 
         void OnEnable()
         {
@@ -134,7 +124,6 @@ namespace POTCO
         {
             // Clean up detached objects
             if (sternAnchor) Destroy(sternAnchor.gameObject);
-            if (bowAnchor) Destroy(bowAnchor.gameObject);
         }
 
         void Update()
@@ -182,11 +171,6 @@ namespace POTCO
                     if (r) r.material.SetFloat("_WakeU", u);
                 }
             }
-
-            if (bowRenderer)
-            {
-                bowRenderer.material.SetFloat("_WakeU", u);
-            }
         }
 
         void LateUpdate()
@@ -198,7 +182,17 @@ namespace POTCO
             Vector3 shipFlatPos = transform.position;
             Quaternion shipFlatRot = Quaternion.Euler(0, transform.eulerAngles.y, 0);
 
-            float r = Avg(yawVel);
+            float targetR = Avg(yawVel);
+            
+            // Smoothing logic:
+            // If target is moving away from 0 (turning), use turnTime.
+            // If target is moving towards 0 (returning), use returnTime.
+            // Simple heuristic: check magnitudes.
+            float smoothTime = (Mathf.Abs(targetR) > Mathf.Abs(currentYawVel)) ? turnTime : returnTime;
+            
+            currentYawVel = Mathf.SmoothDamp(currentYawVel, targetR, ref currentYawVelVelocity, smoothTime);
+            
+            float r = currentYawVel;
 
             // Update Stern
             if (sternAnchor)
@@ -219,8 +213,8 @@ namespace POTCO
                     // def_wake_3: Medium bend
                     // def_wake_4: Large bend
                     
-                    // Factors: 0, 0.2, 0.6, 1.0 ?
-                    float[] factors = { 0f, 0.2f, 0.6f, 1.0f };
+                    // Factors: 0, 0.5, 0.4, 1.0 ? (Decreased def_wake_3 to 0.4)
+                    float[] factors = { 0f, 0.5f, 0.4f, 1.0f };
                     
                     for (int i = 0; i < wakeBones.Length; i++)
                     {
@@ -247,15 +241,6 @@ namespace POTCO
                     sternAnchor.rotation = shipFlatRot * Quaternion.Euler(0, r * turnFactor, 0);
                 }
             }
-
-            // Update Bow
-            if (bowAnchor)
-            {
-                Vector3 targetPos = shipFlatPos + (shipFlatRot * new Vector3(bowOffset.x, 0, bowOffset.z));
-                targetPos.y = 0.5f; 
-                bowAnchor.position = targetPos;
-                bowAnchor.rotation = shipFlatRot * Quaternion.Euler(90, 0, 0); 
-            }
         }
         
         public void UpdateColor()
@@ -266,10 +251,6 @@ namespace POTCO
                 {
                     if (r) r.material.SetColor("_Color", wakeColor);
                 }
-            }
-            if (bowRenderer)
-            {
-                 bowRenderer.material.SetColor("_Color", wakeColor);
             }
         }
 
@@ -307,7 +288,6 @@ namespace POTCO
                     if (r && r.enabled != on) r.enabled = on;
                 }
             }
-            if (bowRenderer && bowRenderer.enabled != on) bowRenderer.enabled = on;
         }
 
         void SetAlpha(float a)
@@ -319,7 +299,6 @@ namespace POTCO
                     if (r) r.material.SetFloat("_Alpha", a);
                 }
             }
-            if (bowRenderer) bowRenderer.material.SetFloat("_Alpha", a);
         }
         
         void OnValidate()
