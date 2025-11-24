@@ -165,8 +165,10 @@ namespace Player
                 float mouseX = Input.GetAxis("Mouse X");
                 float mouseY = Input.GetAxis("Mouse Y");
 
-                currentYaw += mouseX * yawSpeed * Time.deltaTime;
-                currentPitch -= mouseY * pitchSpeed * Time.deltaTime;
+                // Remove Time.deltaTime to decouple rotation speed from frame rate
+                // Multiply by fixed 0.02f (equivalent to ~50fps) to preserve existing sensitivity scale
+                currentYaw += mouseX * yawSpeed * 0.02f;
+                currentPitch -= mouseY * pitchSpeed * 0.02f;
 
                 // Clamp pitch
                 currentPitch = Mathf.Clamp(currentPitch, minPitch, maxPitch);

@@ -35,6 +35,49 @@ public class EggImporter : ScriptedImporter
     private Dictionary<string, float> _timingData;
     private Stopwatch _timer;
 
+    private struct FileAnalysis
+    {
+        public bool IsAnimationOnly;
+        public bool HasSkeletalData;
+    }
+
+    private FileAnalysis AnalyzeFile(string[] lines)
+    {
+        bool hasBundle = false;
+        bool hasVertices = false;
+        bool hasPolygons = false;
+        bool hasJoints = false;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            // Use Span for zero allocations
+            ReadOnlySpan<char> line = lines[i].AsSpan().Trim();
+            
+            if (line.StartsWith("<Bundle>".AsSpan(), StringComparison.Ordinal)) hasBundle = true;
+            else if (line.StartsWith("<Vertex>".AsSpan(), StringComparison.Ordinal)) hasVertices = true;
+            else if (line.StartsWith("<Polygon>".AsSpan(), StringComparison.Ordinal)) hasPolygons = true;
+            else if (line.StartsWith("<Joint>".AsSpan(), StringComparison.Ordinal)) hasJoints = true;
+            // Check for vertex weights (rigged)
+            else if (line.Contains("<Scalar> membership".AsSpan(), StringComparison.Ordinal)) hasJoints = true; 
+            // Check for joint tables
+            else if (line.StartsWith("<Table>".AsSpan(), StringComparison.Ordinal) && i + 1 < lines.Length)
+            {
+                string nextLine = lines[i+1];
+                if (nextLine.IndexOf("joint", StringComparison.OrdinalIgnoreCase) >= 0)
+                    hasJoints = true;
+            }
+            
+            // Optimization: Early exit if we know it's NOT anim only AND we found skeletal data
+            if (hasVertices && hasPolygons && hasJoints)
+            {
+                return new FileAnalysis { IsAnimationOnly = false, HasSkeletalData = true };
+            }
+        }
+
+        bool isAnimOnly = hasBundle && !hasVertices && !hasPolygons;
+        return new FileAnalysis { IsAnimationOnly = isAnimOnly, HasSkeletalData = hasJoints };
+    }
+
     public override void OnImportAsset(AssetImportContext ctx)
     {
         // Cache settings instance to avoid repeated Resources.Load (optimization: 15-25% faster)
@@ -50,17 +93,19 @@ public class EggImporter : ScriptedImporter
         // Read file once for all checks (optimization: avoid multiple File.ReadAllLines)
         var lines = File.ReadAllLines(ctx.assetPath);
 
+        // Perform single-pass file analysis
+        FileAnalysis analysis = AnalyzeFile(lines);
+        bool isAnimationOnly = analysis.IsAnimationOnly;
+        bool hasSkeletalData = analysis.HasSkeletalData;
+
         // Check LOD filtering before importing
-        if (!ShouldImportBasedOnLOD(ctx.assetPath, lines, settings))
+        if (!ShouldImportBasedOnLOD(ctx.assetPath, hasSkeletalData, settings))
         {
             DebugLogger.LogEggImporter($"LOD filtering: skipping {Path.GetFileName(ctx.assetPath)}");
             return;
         }
 
         // Check if we should skip animations or skeletal models
-        bool isAnimationOnly = IsAnimationOnlyFile(lines);
-        bool hasSkeletalData = HasSkeletalData(lines);
-
         if (isAnimationOnly && settings.skipAnimations)
         {
             DebugLogger.LogEggImporter($"Animation filtering: skipping animation-only file {Path.GetFileName(ctx.assetPath)}");
@@ -185,32 +230,6 @@ public class EggImporter : ScriptedImporter
             int createdMaterials = EditorPrefs.GetInt("EggImporter_CreatedMaterials", 0) + _materials.Count;
             EditorPrefs.SetInt("EggImporter_CreatedMaterials", createdMaterials);
         }
-    }
-
-    private bool IsAnimationOnlyFile(string[] lines)
-    {
-        bool hasBundle = false;
-        bool hasVertices = false;
-        bool hasPolygons = false;
-
-        // Early termination optimization - stop when we have enough info
-        for (int i = 0; i < lines.Length; i++)
-        {
-            string line = lines[i].Trim();
-            if (line.StartsWith("<Bundle>")) hasBundle = true;
-            else if (line.StartsWith("<Vertex>")) hasVertices = true;
-            else if (line.StartsWith("<Polygon>")) hasPolygons = true;
-            
-            // Early exit if we already know it's not animation-only
-            if (hasVertices || hasPolygons)
-            {
-                DebugLogger.LogEggImporter($"File analysis - Bundle: {hasBundle}, Vertices: {hasVertices}, Polygons: {hasPolygons} (early exit)");
-                return false;
-            }
-        }
-
-        DebugLogger.LogEggImporter($"File analysis - Bundle: {hasBundle}, Vertices: {hasVertices}, Polygons: {hasPolygons}");
-        return hasBundle && !hasVertices && !hasPolygons;
     }
 
     private void HandleAnimationOnlyFile(string[] lines, GameObject rootGO, AssetImportContext ctx)
@@ -663,7 +682,7 @@ public class EggImporter : ScriptedImporter
         }
     }
     
-    private bool ShouldImportBasedOnLOD(string assetPath, string[] lines, EggImporterSettings settings)
+    private bool ShouldImportBasedOnLOD(string assetPath, bool hasSkeletalData, EggImporterSettings settings)
     {
         string fileName = Path.GetFileNameWithoutExtension(assetPath).ToLower();
 
@@ -683,8 +702,6 @@ public class EggImporter : ScriptedImporter
         // If set to highest only, apply LOD filtering
         if (settings.lodImportMode == EggImporterSettings.LODImportMode.HighestOnly)
         {
-            // Use pre-read lines array (optimization: avoid re-reading file)
-            bool hasSkeletalData = HasSkeletalData(lines);
             return ShouldImportHighestLODOnly(fileName, hasSkeletalData);
         }
 
@@ -694,42 +711,6 @@ public class EggImporter : ScriptedImporter
     private bool ShouldImportHighestLODOnly(string fileName, bool hasSkeletalData)
     {
         return LODFilteringUtility.ShouldImportHighestLODOnly(fileName, hasSkeletalData);
-    }
-    
-    private bool HasSkeletalData(string[] lines)
-    {
-        // Check for joint definitions or joint tables which indicate skeletal data
-        for (int i = 0; i < lines.Length; i++)
-        {
-            string line = lines[i].Trim();
-            
-            // Look for joint definitions
-            if (line.StartsWith("<Joint>"))
-            {
-                DebugLogger.LogEggImporter("Found skeletal data: <Joint> definition");
-                return true;
-            }
-            
-            // Look for joint tables
-            if (line.StartsWith("<Table>") && i + 1 < lines.Length)
-            {
-                string nextLine = lines[i + 1].Trim();
-                if (nextLine.Contains("joint") || nextLine.Contains("Joint"))
-                {
-                    DebugLogger.LogEggImporter("Found skeletal data: Joint table");
-                    return true;
-                }
-            }
-            
-            // Look for vertex weights (indicates rigged mesh)
-            if (line.Contains("<Scalar> membership"))
-            {
-                DebugLogger.LogEggImporter("Found skeletal data: Vertex weights");
-                return true;
-            }
-        }
-        
-        return false;
     }
     
     private void RecordTiming(string phase, EggImporterSettings settings)

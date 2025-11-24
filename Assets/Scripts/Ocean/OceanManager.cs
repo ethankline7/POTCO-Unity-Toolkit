@@ -68,6 +68,21 @@ namespace POTCO.Ocean
         private Color targetWaterColor;
         private static MaterialPropertyBlock _propBlock;
 
+        // Cached Shader Property IDs
+        private static readonly int _UVScaleID = Shader.PropertyToID("_UVScale");
+        private static readonly int _UVSpeedAID = Shader.PropertyToID("_UVSpeedA");
+        private static readonly int _UVSpeedBID = Shader.PropertyToID("_UVSpeedB");
+        private static readonly int _TimeSecID = Shader.PropertyToID("_TimeSec");
+        private static readonly int _WaterColorID = Shader.PropertyToID("_WaterColor");
+        private static readonly int[] _WaveIDs = { 
+            Shader.PropertyToID("_Wave0"), Shader.PropertyToID("_Wave1"), 
+            Shader.PropertyToID("_Wave2"), Shader.PropertyToID("_Wave3") 
+        };
+        private static readonly int[] _WaveDirIDs = { 
+            Shader.PropertyToID("_WaveDir0"), Shader.PropertyToID("_WaveDir1"), 
+            Shader.PropertyToID("_WaveDir2"), Shader.PropertyToID("_WaveDir3") 
+        };
+
         void Start()
         {
             if (_propBlock == null)
@@ -187,11 +202,11 @@ namespace POTCO.Ocean
             if (oceanRenderers == null || oceanRenderers.Length == 0) return;
 
             // Update the property block once
-            _propBlock.SetVector("_UVScale", uvScale);
-            _propBlock.SetVector("_UVSpeedA", uvSpeedA);
-            _propBlock.SetVector("_UVSpeedB", uvSpeedB);
-            _propBlock.SetFloat("_TimeSec", Time.time);
-            _propBlock.SetColor("_WaterColor", currentWaterColor);
+            _propBlock.SetVector(_UVScaleID, uvScale);
+            _propBlock.SetVector(_UVSpeedAID, uvSpeedA);
+            _propBlock.SetVector(_UVSpeedBID, uvSpeedB);
+            _propBlock.SetFloat(_TimeSecID, Time.time);
+            _propBlock.SetColor(_WaterColorID, currentWaterColor);
 
             // Set wave parameters
             for (int i = 0; i < waves.Length && i < 4; i++)
@@ -201,8 +216,8 @@ namespace POTCO.Ocean
                 Vector2 direction = new Vector2(Mathf.Cos(dirRad), Mathf.Sin(dirRad));
 
                 // Pack wave data: (amplitude, wavelength, speed, unused)
-                _propBlock.SetVector($"_Wave{i}", new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
-                _propBlock.SetVector($"_WaveDir{i}", new Vector4(direction.x, direction.y, 0f, 0f));
+                _propBlock.SetVector(_WaveIDs[i], new Vector4(w.amplitude, w.wavelength, w.speed, 0f));
+                _propBlock.SetVector(_WaveDirIDs[i], new Vector4(direction.x, direction.y, 0f, 0f));
             }
 
             // Apply to all renderers

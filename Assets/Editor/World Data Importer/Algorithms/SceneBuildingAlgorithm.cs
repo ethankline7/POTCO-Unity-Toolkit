@@ -32,16 +32,28 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
+            
+            // Optimization: Use HashSet for O(1) lookup of queued spawns
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> npcsSpawnedSet = new HashSet<ObjectData>();
+            
             List<(GameObject go, ObjectData data)> creaturesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> creaturesSpawnedSet = new HashSet<ObjectData>();
+            
             List<(GameObject go, ObjectData data)> enemiesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> enemiesSpawnedSet = new HashSet<ObjectData>();
 
             for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
             {
                 string line = lines[lineIndex];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                int indent = line.TakeWhile(char.IsWhiteSpace).Count();
+                // Optimized indent calculation
+                int indent = 0;
+                while (indent < line.Length && char.IsWhiteSpace(line[indent]))
+                {
+                    indent++;
+                }
 
                 while (parentStack.Count > 0 && indent <= parentStack.Peek().indent)
                 {
@@ -175,9 +187,10 @@ namespace WorldDataImporter.Algorithms
                     if (settings?.importNPCs == true && currentData != null &&
                         currentData.objectType == "Townsperson" &&
                         currentData.isReadyForNPCSpawn &&
-                        !npcsToSpawn.Any(npc => npc.data == currentData))
+                        !npcsSpawnedSet.Contains(currentData))
                     {
                         npcsToSpawn.Add((currentGO, currentData));
+                        npcsSpawnedSet.Add(currentData);
                         DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
                     }
 
@@ -185,9 +198,10 @@ namespace WorldDataImporter.Algorithms
                     if (currentData != null &&
                         currentData.objectType == "Animal" &&
                         currentData.isReadyForCreatureSpawn &&
-                        !creaturesToSpawn.Any(creature => creature.data == currentData))
+                        !creaturesSpawnedSet.Contains(currentData))
                     {
                         creaturesToSpawn.Add((currentGO, currentData));
+                        creaturesSpawnedSet.Add(currentData);
                         DebugLogger.LogWorldImporter($"📋 Added Animal to spawn queue: {currentData.id} ({currentData.species})");
                     }
 
@@ -195,9 +209,10 @@ namespace WorldDataImporter.Algorithms
                     if (currentData != null &&
                         currentData.objectType == "Spawn Node" &&
                         currentData.isReadyForEnemySpawn &&
-                        !enemiesToSpawn.Any(enemy => enemy.data == currentData))
+                        !enemiesSpawnedSet.Contains(currentData))
                     {
                         enemiesToSpawn.Add((currentGO, currentData));
+                        enemiesSpawnedSet.Add(currentData);
                         DebugLogger.LogWorldImporter($"📋 Added Spawn Node to spawn queue: {currentData.id} ({currentData.spawnables})");
                     }
 
@@ -332,9 +347,16 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
+            
+            // Optimization: Use HashSet for O(1) lookup of queued spawns
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> npcsSpawnedSet = new HashSet<ObjectData>();
+            
             List<(GameObject go, ObjectData data)> creaturesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> creaturesSpawnedSet = new HashSet<ObjectData>();
+            
             List<(GameObject go, ObjectData data)> enemiesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> enemiesSpawnedSet = new HashSet<ObjectData>();
 
             int objectsCreated = 0;
             
@@ -343,7 +365,12 @@ namespace WorldDataImporter.Algorithms
                 string line = lines[lineIndex];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                int indent = line.TakeWhile(char.IsWhiteSpace).Count();
+                // Optimized indent calculation
+                int indent = 0;
+                while (indent < line.Length && char.IsWhiteSpace(line[indent]))
+                {
+                    indent++;
+                }
 
                 while (parentStack.Count > 0 && indent <= parentStack.Peek().indent)
                 {
@@ -483,9 +510,10 @@ namespace WorldDataImporter.Algorithms
                     if (settings?.importNPCs == true && currentData != null &&
                         currentData.objectType == "Townsperson" &&
                         currentData.isReadyForNPCSpawn &&
-                        !npcsToSpawn.Any(npc => npc.data == currentData))
+                        !npcsSpawnedSet.Contains(currentData))
                     {
                         npcsToSpawn.Add((currentGO, currentData));
+                        npcsSpawnedSet.Add(currentData);
                         DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
                     }
 
@@ -493,9 +521,10 @@ namespace WorldDataImporter.Algorithms
                     if (currentData != null &&
                         currentData.objectType == "Animal" &&
                         currentData.isReadyForCreatureSpawn &&
-                        !creaturesToSpawn.Any(creature => creature.data == currentData))
+                        !creaturesSpawnedSet.Contains(currentData))
                     {
                         creaturesToSpawn.Add((currentGO, currentData));
+                        creaturesSpawnedSet.Add(currentData);
                         DebugLogger.LogWorldImporter($"📋 Added Animal to spawn queue: {currentData.id} ({currentData.species})");
                     }
 
@@ -503,9 +532,10 @@ namespace WorldDataImporter.Algorithms
                     if (currentData != null &&
                         currentData.objectType == "Spawn Node" &&
                         currentData.isReadyForEnemySpawn &&
-                        !enemiesToSpawn.Any(enemy => enemy.data == currentData))
+                        !enemiesSpawnedSet.Contains(currentData))
                     {
                         enemiesToSpawn.Add((currentGO, currentData));
+                        enemiesSpawnedSet.Add(currentData);
                         DebugLogger.LogWorldImporter($"📋 Added Spawn Node to spawn queue: {currentData.id} ({currentData.spawnables})");
                     }
                 }

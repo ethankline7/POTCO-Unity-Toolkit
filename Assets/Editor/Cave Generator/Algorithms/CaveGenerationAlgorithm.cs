@@ -39,6 +39,11 @@ namespace CaveGenerator.Algorithms
         {
             var generationQueue = new Queue<(Transform connector, int depth)>();
             
+            // Pre-calculate lists to avoid LINQ in hot path
+            var tunnelPieces = validPrefabs.Where(p => !deadEnds.Contains(p)).ToList();
+            // Fallback if no tunnel pieces defined (treat all as valid)
+            if (tunnelPieces.Count == 0) tunnelPieces = new List<GameObject>(validPrefabs);
+            
             // Add all starting connectors to the queue for branching
             foreach (var connector in openConnectors.ToList())
             {
@@ -66,12 +71,12 @@ namespace CaveGenerator.Algorithms
                 DebugLogger.LogProceduralGeneration($"🔗 Attempting to connect piece {piecesGenerated + 1} to connector {fromConnector.name} at depth {depth}");
                 
                 // Choose piece type based on depth and branching settings
-                var prefabsToChooseFrom = new List<GameObject>();
+                List<GameObject> prefabsToChooseFrom;
                 
                 if (depth < settings.maxDepth && Random.value < settings.branchProbability)
                 {
                     // Use tunnel pieces for branching
-                    prefabsToChooseFrom = validPrefabs.Where(p => !deadEnds.Contains(p)).ToList();
+                    prefabsToChooseFrom = tunnelPieces;
                     DebugLogger.LogProceduralGeneration("🌿 Attempting to create branch");
                 }
                 else if (piecesGenerated >= settings.caveLength - 2 || depth >= settings.maxDepth)
@@ -151,6 +156,11 @@ namespace CaveGenerator.Algorithms
         {
             DebugLogger.LogProceduralGeneration("🚶 Generating LINEAR cave (no branching)");
             
+            // Pre-calculate lists to avoid LINQ in hot path
+            var tunnelPieces = validPrefabs.Where(p => !deadEnds.Contains(p)).ToList();
+            // Fallback if no tunnel pieces defined (treat all as valid)
+            if (tunnelPieces.Count == 0) tunnelPieces = new List<GameObject>(validPrefabs);
+            
             int piecesGenerated = 1; // First piece already placed
             Transform currentConnector = null;
             
@@ -168,7 +178,7 @@ namespace CaveGenerator.Algorithms
                 DebugLogger.LogProceduralGeneration($"🔗 Linear connection {piecesGenerated + 1} from connector {currentConnector.name}");
                 
                 // Choose piece type - prefer tunnel pieces for continuation
-                var prefabsToChooseFrom = new List<GameObject>();
+                List<GameObject> prefabsToChooseFrom;
                 
                 if (piecesGenerated >= settings.caveLength - 1)
                 {
@@ -179,9 +189,8 @@ namespace CaveGenerator.Algorithms
                 else
                 {
                     // Use tunnel pieces to continue the linear path
-                    prefabsToChooseFrom = validPrefabs.Where(p => !deadEnds.Contains(p)).ToList();
-                    if (prefabsToChooseFrom.Count == 0)
-                        prefabsToChooseFrom = validPrefabs; // Fallback to any piece
+                    prefabsToChooseFrom = tunnelPieces;
+                    // Fallback handled in pre-calc
                 }
                 
                 if (prefabsToChooseFrom.Count == 0) 

@@ -91,7 +91,8 @@ namespace Player
             controller = GetComponent<CharacterController>();
 
             // Configure CharacterController settings
-            controller.stepOffset = stepOffset;
+            // Clamp stepOffset to ensure it's valid (must be <= height)
+            controller.stepOffset = Mathf.Min(stepOffset, controller.height);
             controller.skinWidth = skinWidth;
             // Small epsilon to prevent micro-stutter/getting stuck
             controller.minMoveDistance = 0.001f; 
