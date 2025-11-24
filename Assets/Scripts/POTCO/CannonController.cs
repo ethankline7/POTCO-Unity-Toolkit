@@ -76,469 +76,595 @@ namespace POTCO
         public float lightIntensity = 3f;
         [Tooltip("Light range")]
         public float lightRange = 15f;
-        [Tooltip("Light color")]
-        public Color lightColor = new Color(1f, 0.6f, 0.2f);
-
-        // Internal state
-        private bool isControlling = false;
-        private Transform playerTransform;
-        private Player.PlayerController playerController;
-        private Player.PlayerCamera playerCamera;
-        private Camera mainCamera;
-
-        // Camera state backup
-        private float originalFOV;
-        private Vector3 originalCameraLocalPosition;
-        private Quaternion originalCameraLocalRotation;
-        private Transform originalCameraParent;
-
-        // Cannon state
-        private float currentYaw = 0f;
-        private float currentPitch = 0f;
-        private float lastFireTime = -999f;
-        private float playerSearchTimer = 0f;
-
-        // Visibility state
-        private System.Collections.Generic.List<Renderer> hiddenPlayerRenderers = new System.Collections.Generic.List<Renderer>();
-        private System.Collections.Generic.List<Renderer> hiddenSailRenderers = new System.Collections.Generic.List<Renderer>();
-
-        private void Start()
-        {
-            mainCamera = Camera.main;
-
-            // Auto-create cannon rig if not present
-            if (hNode == null || pivot == null || cannonExitPoint == null)
-            {
-                CreateCannonRig();
-            }
-
-            // Try to load cannonball prefab if not assigned
-            if (cannonballPrefab == null)
-            {
-                GameObject loadedPrefab = Resources.Load<GameObject>("phase_3/models/ammunition/cannonball");
-                if (loadedPrefab != null)
+                [Tooltip("Light color")]
+                public Color lightColor = new Color(1f, 0.6f, 0.2f);
+        
+                        [Header("Burst Fire Settings")]
+                        public int maxBurstShots = 3;
+                        public float burstShotDelay = 0.1f; // Short delay between burst shots
+                
+                                // Internal state
+                
+                                private bool isControlling = false;
+                
+                                private int currentBurstShots = 0;
+                
+                                private float burstResetTime = 0f;
+                
+                                private Vector3 initialPivotScale = Vector3.one;
+                
+                                private Coroutine recoilCoroutine;
+                
+                                
+                
+                                private Transform playerTransform;
+                
+                                private Player.PlayerController playerController;
+                private Player.PlayerCamera playerCamera;
+                private Camera mainCamera;
+        
+                // Camera state backup
+                private float originalFOV;
+                private Vector3 originalCameraLocalPosition;
+                private Quaternion originalCameraLocalRotation;
+                private Transform originalCameraParent;
+        
+                // Cannon state
+                private float currentYaw = 0f;
+                private float currentPitch = 0f;
+                private float lastFireTime = -999f;
+                private float playerSearchTimer = 0f;
+        
+                // Visibility state
+                private System.Collections.Generic.List<Renderer> hiddenPlayerRenderers = new System.Collections.Generic.List<Renderer>();
+                private System.Collections.Generic.List<Renderer> hiddenSailRenderers = new System.Collections.Generic.List<Renderer>();
+        
+                private void Start()
                 {
-                    cannonballPrefab = loadedPrefab;
-                    Debug.Log($"✅ Auto-loaded cannonball prefab from Resources");
-                }
-                else
-                {
-                    Debug.LogWarning($"⚠️ Cannonball prefab not found at phase_3/models/ammunition/cannonball");
-                }
-            }
-        }
-
-        private void Update()
-        {
-            if (!isControlling)
-            {
-                CheckForPlayerNearby();
-            }
-            else
-            {
-                HandleCannonControls();
-                HandleExitControl();
-            }
-        }
-
-        /// <summary>
-        /// Find cannon bones in model hierarchy
-        /// Looks for def_cannon_turn (yaw) and def_cannon_updown (pitch)
-        /// </summary>
-        private void CreateCannonRig()
-        {
-            Debug.Log($"🔧 Finding cannon bones for {gameObject.name}...");
-
-            // Find def_cannon_turn bone (yaw/horizontal rotation)
-            if (hNode == null)
-            {
-                hNode = FindChildRecursive(transform, "def_cannon_turn");
-                if (hNode != null)
-                {
-                    Debug.Log($"✅ Found def_cannon_turn bone at: {GetTransformPath(hNode)}");
-                }
-                else
-                {
-                    Debug.LogWarning($"⚠️ def_cannon_turn bone not found, creating fallback");
-                    GameObject hNodeObj = new GameObject("hNode_fallback");
-                    hNodeObj.transform.SetParent(transform);
-                    hNodeObj.transform.localPosition = Vector3.zero;
-                    hNodeObj.transform.localRotation = Quaternion.identity;
-                    hNode = hNodeObj.transform;
-                }
-            }
-
-            // Find def_cannon_updown bone (pitch/vertical rotation)
-            if (pivot == null)
-            {
-                pivot = FindChildRecursive(transform, "def_cannon_updown");
-                if (pivot != null)
-                {
-                    Debug.Log($"✅ Found def_cannon_updown bone at: {GetTransformPath(pivot)}");
-                }
-                else
-                {
-                    Debug.LogWarning($"⚠️ def_cannon_updown bone not found, creating fallback under hNode");
-                    GameObject pivotObj = new GameObject("pivot_fallback");
-                    pivotObj.transform.SetParent(hNode);
-                    pivotObj.transform.localPosition = Vector3.zero;
-                    pivotObj.transform.localRotation = Quaternion.identity;
-                    pivot = pivotObj.transform;
-                }
-            }
-
-            // Create cannonExitPoint at muzzle (find barrel end or create)
-            if (cannonExitPoint == null)
-            {
-                // Try to find existing muzzle marker
-                Transform muzzle = FindChildRecursive(transform, "muzzle");
-                if (muzzle == null) muzzle = FindChildRecursive(transform, "def_muzzle");
-                if (muzzle == null) muzzle = FindChildRecursive(transform, "cannon_exit");
-
-                if (muzzle != null)
-                {
-                    cannonExitPoint = muzzle;
-                    Debug.Log($"✅ Found muzzle point at: {GetTransformPath(cannonExitPoint)}");
-                }
-                else
-                {
-                    // Create exit point at end of barrel
-                    GameObject exitPointObj = new GameObject("cannonExitPoint");
-                    exitPointObj.transform.SetParent(pivot);
-                    exitPointObj.transform.localPosition = new Vector3(0f, 0f, 2f); // Forward along Z
-                    exitPointObj.transform.localRotation = Quaternion.identity;
-                    cannonExitPoint = exitPointObj.transform;
-                    Debug.Log($"✅ Created cannonExitPoint at barrel end");
-                }
-            }
-
-            Debug.Log($"✅ Cannon rig setup complete for {gameObject.name}");
-        }
-
-        /// <summary>
-        /// Recursively find child transform by name
-        /// </summary>
-        private Transform FindChildRecursive(Transform parent, string childName)
-        {
-            foreach (Transform child in parent)
-            {
-                if (child.name.Equals(childName, System.StringComparison.OrdinalIgnoreCase))
-                    return child;
-
-                Transform found = FindChildRecursive(child, childName);
-                if (found != null)
-                    return found;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Get full hierarchy path of transform
-        /// </summary>
-        private string GetTransformPath(Transform t)
-        {
-            string path = t.name;
-            while (t.parent != null && t.parent != transform)
-            {
-                t = t.parent;
-                path = t.name + "/" + path;
-            }
-            return path;
-        }
-
-        private void CheckForPlayerNearby()
-        {
-            if (mainCamera == null) return;
-
-            // Find player if not cached
-            if (playerTransform == null)
-            {
-                // OPTIMIZATION: Only search once every 2 seconds
-                if (Time.time < playerSearchTimer) return;
-                playerSearchTimer = Time.time + 2.0f;
-
-                playerTransform = FindPlayer();
-                if (playerTransform == null) return;
-            }
-
-            // Check distance to cannon
-            float distance = Vector3.Distance(playerTransform.position, transform.position);
-
-            if (distance <= interactionDistance)
-            {
-                // Show prompt every 30 frames
-                if (Time.frameCount % 30 == 0)
-                {
-                    Debug.Log($"Press {interactKey} to use cannon!");
-                }
-
-                if (Input.GetKeyDown(interactKey))
-                {
-                    EnterCannonControl();
-                }
-            }
-        }
-
-        private Transform FindPlayer()
-        {
-            // Try Player tag
-            GameObject player = GameObject.FindGameObjectWithTag("Player");
-            if (player != null) return player.transform;
-
-            // Try PlayerController component
-            Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
-            if (pc != null)
-            {
-                if (pc.tag == "Untagged") pc.tag = "Player";
-                return pc.transform;
-            }
-
-            return null;
-        }
-
-        private void EnterCannonControl()
-        {
-            isControlling = true;
-
-            // Cache player components
-            playerController = playerTransform.GetComponent<Player.PlayerController>();
-            playerCamera = mainCamera.GetComponent<Player.PlayerCamera>();
-
-            // Disable player movement and camera
-            if (playerController != null) playerController.enabled = false;
-            if (playerCamera != null) playerCamera.enabled = false;
-
-            // Disable CharacterController to prevent sliding/drifting and allow parenting
-            CharacterController charController = playerTransform.GetComponent<CharacterController>();
-            if (charController != null) charController.enabled = false;
-
-            // Disable NPCController if present
-            POTCO.NPCController npcController = playerTransform.GetComponent<POTCO.NPCController>();
-            if (npcController != null) npcController.enabled = false;
-
-            // Parent player to cannon so they move with the ship
-            playerTransform.SetParent(transform);
-            
-            // Reset local position to stand behind cannon (optional, but good for consistency)
-            // playerTransform.localPosition = new Vector3(0, 0, -1.5f); 
-            // playerTransform.localRotation = Quaternion.identity;
-
-            // Save original camera state
-            originalFOV = mainCamera.fieldOfView;
-            originalCameraParent = mainCamera.transform.parent;
-            originalCameraLocalPosition = mainCamera.transform.localPosition;
-            originalCameraLocalRotation = mainCamera.transform.localRotation;
-
-            // Set cannon camera - parent to pivot so it rotates with the cannon
-            mainCamera.fieldOfView = cannonFOV;
-            mainCamera.transform.SetParent(pivot); // Parent to pivot bone so camera follows cannon rotation
-            mainCamera.transform.localPosition = camParentOffset;
-            mainCamera.transform.localRotation = Quaternion.identity;
-
-            // Initialize cannon rotation to forward
-            currentYaw = 0f;
-            currentPitch = 0f;
-            hNode.localRotation = Quaternion.Euler(0f, currentYaw, 0f);
-            pivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
-
-            // Lock cursor
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-
-            // Hide player character model (only hide currently visible renderers)
-            hiddenPlayerRenderers.Clear();
-            Renderer[] allPlayerRenderers = playerTransform.GetComponentsInChildren<Renderer>();
-            foreach (Renderer renderer in allPlayerRenderers)
-            {
-                if (renderer.enabled)
-                {
-                    renderer.enabled = false;
-                    hiddenPlayerRenderers.Add(renderer);
-                }
-            }
-
-            // Hide sails (only on this specific ship, not all ships in scene)
-            hiddenSailRenderers.Clear();
-            Transform shipTransform = transform.root; // The ship this cannon is attached to
-            Renderer[] allShipRenderers = shipTransform.GetComponentsInChildren<Renderer>();
-            foreach (Renderer renderer in allShipRenderers)
-            {
-                if (renderer.enabled && renderer.name.ToLower().Contains("sail"))
-                {
-                    // Verify this renderer is actually part of this ship's hierarchy
-                    if (renderer.transform.IsChildOf(shipTransform))
+                    mainCamera = Camera.main;
+        
+                    // Auto-create cannon rig if not present
+                                if (hNode == null || pivot == null || cannonExitPoint == null)
+                                {
+                                    CreateCannonRig();
+                                }
+                                
+                                // Ensure we capture the initial scale correctly even if rig was pre-assigned
+                                if (pivot != null)
+                                {
+                                    initialPivotScale = pivot.localScale;
+                                }
+                    
+                                // Try to load cannonball prefab if not assigned                    if (cannonballPrefab == null)
                     {
-                        renderer.enabled = false;
-                        hiddenSailRenderers.Add(renderer);
+                        GameObject loadedPrefab = Resources.Load<GameObject>("phase_3/models/ammunition/cannonball");
+                        if (loadedPrefab != null)
+                        {
+                            cannonballPrefab = loadedPrefab;
+                            Debug.Log($"✅ Auto-loaded cannonball prefab from Resources");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"⚠️ Cannonball prefab not found at phase_3/models/ammunition/cannonball");
+                        }
                     }
                 }
-            }
-
-            Debug.Log($"✅ Entered cannon control mode - FOV: {cannonFOV}, Yaw limits: [{minH}, {maxH}], Pitch limits: [{minP}, {maxP}]");
-        }
-
-        private void HandleCannonControls()
-        {
-            // Update camera settings live (allows tweaking in Inspector during Play mode)
-            mainCamera.fieldOfView = cannonFOV;
-            mainCamera.transform.localPosition = camParentOffset;
-
-            // Mouse input for aiming (POTCO sensitivity values)
-            float mouseX = Input.GetAxis("Mouse X");
-            float mouseY = Input.GetAxis("Mouse Y");
-
-            // Update yaw (left/right) - fixed inverted controls
-            currentYaw += mouseX * sensH * 100f; // Multiply by 100 to match POTCO feel
-            currentYaw = Mathf.Clamp(currentYaw, minH, maxH);
-
-            // Update pitch (up/down) - inverted for proper feel
-            currentPitch += -mouseY * sensP * 100f; // Negative for natural aiming
-            currentPitch = Mathf.Clamp(currentPitch, minP, maxP);
-
-            // Apply rotations (camera follows automatically since it's parented to pivot)
-            hNode.localRotation = Quaternion.Euler(0f, currentYaw, 0f);
-            pivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
-
-            // Fire cannon
-            if (Input.GetKeyDown(fireKey) && Time.time >= lastFireTime + fireCooldown)
-            {
-                FireCannon();
-            }
-        }
-
-        private void FireCannon()
-        {
-            lastFireTime = Time.time;
-
-            if (cannonballPrefab == null)
-            {
-                Debug.LogWarning("⚠️ Cannot fire - cannonball prefab not assigned!");
-                return;
-            }
-
-            // Spawn cannonball at muzzle
-            GameObject cannonball = Instantiate(cannonballPrefab, cannonExitPoint.position, cannonExitPoint.rotation);
-
-            // Get current heading and pitch from rig
-            float fireH = hNode.localRotation.eulerAngles.y;
-            float fireP = pivot.localRotation.eulerAngles.x;
-
-            // Calculate fire direction
-            Vector3 fireDirection = cannonExitPoint.forward;
-
-            // Add Rigidbody if not present
-            Rigidbody rb = cannonball.GetComponent<Rigidbody>();
-            if (rb == null)
-            {
-                rb = cannonball.AddComponent<Rigidbody>();
-                rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
-            }
-
-            // Launch projectile
-            rb.linearVelocity = fireDirection * muzzleVelocity;
-            rb.useGravity = true;
-
-            // Add CannonProjectile component for collision handling
-            CannonProjectile projectile = cannonball.GetComponent<CannonProjectile>();
-            if (projectile == null)
-            {
-                projectile = cannonball.AddComponent<CannonProjectile>();
-            }
-
-            // Apply customization settings
-            projectile.damage = cannonballDamage;
-            projectile.explosionRadius = explosionRadius;
-            projectile.lifetime = cannonballLifetime;
-
-            // Add trail on a separate child object to avoid physics issues
-            GameObject trailObject = new GameObject("Trail");
-            trailObject.transform.SetParent(cannonball.transform);
-            trailObject.transform.localPosition = Vector3.zero;
-            trailObject.transform.localRotation = Quaternion.identity;
-
-            TrailRenderer trail = trailObject.AddComponent<TrailRenderer>();
-            trail.time = trailDuration;
-            trail.startWidth = trailStartWidth;
-            trail.endWidth = trailEndWidth;
-            trail.material = new Material(Shader.Find("Sprites/Default"));
-            trail.startColor = trailStartColor;
-            trail.endColor = trailEndColor;
-            trail.numCornerVertices = 5;
-            trail.numCapVertices = 5;
-            trail.alignment = LineAlignment.TransformZ; // Keep trail facing forward regardless of rotation
-
-            // Add glowing light for visibility
-            Light pointLight = cannonball.AddComponent<Light>();
-            pointLight.type = LightType.Point;
-            pointLight.color = lightColor;
-            pointLight.intensity = lightIntensity;
-            pointLight.range = lightRange;
-            pointLight.shadows = LightShadows.None;
-
-            // Make material emissive if possible
-            Renderer renderer = cannonball.GetComponent<Renderer>();
-            if (renderer != null && renderer.material != null)
-            {
-                renderer.material.EnableKeyword("_EMISSION");
-                renderer.material.SetColor("_EmissionColor", lightColor * 2f);
-            }
-
-            // CRITICAL FIX: Ignore collision with the ship
-            Collider cannonballCollider = cannonball.GetComponent<Collider>();
-            if (cannonballCollider == null) cannonballCollider = cannonball.AddComponent<SphereCollider>();
-
-            // Get the root object (The Ship this cannon is attached to)
-            Transform shipRoot = transform.root;
-
-            // Find ALL colliders on the ship (deck, hull, masts, rails, etc.)
-            Collider[] shipColliders = shipRoot.GetComponentsInChildren<Collider>(true);
-
-            foreach (Collider shipCollider in shipColliders)
-            {
-                // Don't ignore the cannonball itself
-                if (shipCollider != null && shipCollider != cannonballCollider)
+        
+                private void Update()
                 {
-                    Physics.IgnoreCollision(cannonballCollider, shipCollider);
+                    // Reset burst count if cooldown has fully elapsed
+                    if (Time.time >= burstResetTime && currentBurstShots > 0)
+                    {
+                        currentBurstShots = 0;
+                    }
+        
+                    if (!isControlling)
+                    {
+                        CheckForPlayerNearby();
+                    }
+                    else
+                    {
+                        HandleCannonControls();
+                        HandleExitControl();
+                    }
                 }
-            }
-
-            // Play effects (TODO: Add muzzle flash and sound)
-            Debug.Log($"🔥 Fired cannon! H: {fireH:F1}°, P: {fireP:F1}°");
-
-            // Simple recoil animation (scale barrel slightly)
-            if (pivot != null)
-            {
-                StartCoroutine(RecoilAnimation());
-            }
-        }
-
-        private System.Collections.IEnumerator RecoilAnimation()
-        {
-            Vector3 originalScale = pivot.localScale;
-            Vector3 recoilScale = originalScale + new Vector3(0f, -0.2f, 0f); // Slight compression
-
-            // Recoil
-            float recoilTime = 0.1f;
-            float elapsed = 0f;
-            while (elapsed < recoilTime)
-            {
-                pivot.localScale = Vector3.Lerp(originalScale, recoilScale, elapsed / recoilTime);
-                elapsed += Time.deltaTime;
-                yield return null;
-            }
-
-            // Spring back
-            elapsed = 0f;
-            float returnTime = 0.3f;
-            while (elapsed < returnTime)
-            {
-                pivot.localScale = Vector3.Lerp(recoilScale, originalScale, elapsed / returnTime);
-                elapsed += Time.deltaTime;
-                yield return null;
-            }
-
-            pivot.localScale = originalScale;
-        }
+        
+                /// <summary>
+                /// Find cannon bones in model hierarchy
+                /// Looks for def_cannon_turn (yaw) and def_cannon_updown (pitch)
+                /// </summary>
+                private void CreateCannonRig()
+                {
+                    Debug.Log($"🔧 Finding cannon bones for {gameObject.name}...");
+        
+                    // Find def_cannon_turn bone (yaw/horizontal rotation)
+                    if (hNode == null)
+                    {
+                        hNode = FindChildRecursive(transform, "def_cannon_turn");
+                        if (hNode != null)
+                        {
+                            Debug.Log($"✅ Found def_cannon_turn bone at: {GetTransformPath(hNode)}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"⚠️ def_cannon_turn bone not found, creating fallback");
+                            GameObject hNodeObj = new GameObject("hNode_fallback");
+                            hNodeObj.transform.SetParent(transform);
+                            hNodeObj.transform.localPosition = Vector3.zero;
+                            hNodeObj.transform.localRotation = Quaternion.identity;
+                            hNode = hNodeObj.transform;
+                        }
+                    }
+        
+                    // Find def_cannon_updown bone (pitch/vertical rotation)
+                    if (pivot == null)
+                    {
+                        pivot = FindChildRecursive(transform, "def_cannon_updown");
+                        if (pivot != null)
+                        {
+                            Debug.Log($"✅ Found def_cannon_updown bone at: {GetTransformPath(pivot)}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"⚠️ def_cannon_updown bone not found, creating fallback under hNode");
+                                                GameObject pivotObj = new GameObject("pivot_fallback");
+                                                pivotObj.transform.SetParent(hNode);
+                                                pivotObj.transform.localPosition = Vector3.zero;
+                                                pivotObj.transform.localRotation = Quaternion.identity;
+                                                pivot = pivotObj.transform;
+                                            }
+                                            
+                                            // Capture initial scale for recoil reset
+                                            initialPivotScale = pivot.localScale;
+                                        }
+                            
+                                        // Create cannonExitPoint at muzzle (find barrel end or create)                    if (cannonExitPoint == null)
+                    {
+                        // Try to find existing muzzle marker
+                        Transform muzzle = FindChildRecursive(transform, "muzzle");
+                        if (muzzle == null) muzzle = FindChildRecursive(transform, "def_muzzle");
+                        if (muzzle == null) muzzle = FindChildRecursive(transform, "cannon_exit");
+        
+                        if (muzzle != null)
+                        {
+                            cannonExitPoint = muzzle;
+                            Debug.Log($"✅ Found muzzle point at: {GetTransformPath(cannonExitPoint)}");
+                        }
+                        else
+                        {
+                            // Create exit point at end of barrel
+                            GameObject exitPointObj = new GameObject("cannonExitPoint");
+                            exitPointObj.transform.SetParent(pivot);
+                            exitPointObj.transform.localPosition = new Vector3(0f, 0f, 2f); // Forward along Z
+                            exitPointObj.transform.localRotation = Quaternion.identity;
+                            cannonExitPoint = exitPointObj.transform;
+                            Debug.Log($"✅ Created cannonExitPoint at barrel end");
+                        }
+                    }
+        
+                    Debug.Log($"✅ Cannon rig setup complete for {gameObject.name}");
+                }
+        
+                /// <summary>
+                /// Recursively find child transform by name
+                /// </summary>
+                private Transform FindChildRecursive(Transform parent, string childName)
+                {
+                    foreach (Transform child in parent)
+                    {
+                        if (child.name.Equals(childName, System.StringComparison.OrdinalIgnoreCase))
+                            return child;
+        
+                        Transform found = FindChildRecursive(child, childName);
+                        if (found != null)
+                            return found;
+                    }
+                    return null;
+                }
+        
+                /// <summary>
+                /// Get full hierarchy path of transform
+                /// </summary>
+                private string GetTransformPath(Transform t)
+                {
+                    string path = t.name;
+                    while (t.parent != null && t.parent != transform)
+                    {
+                        t = t.parent;
+                        path = t.name + "/" + path;
+                    }
+                    return path;
+                }
+        
+                private void CheckForPlayerNearby()
+                {
+                    if (mainCamera == null) return;
+        
+                    // Find player if not cached
+                    if (playerTransform == null)
+                    {
+                        // OPTIMIZATION: Only search once every 2 seconds
+                        if (Time.time < playerSearchTimer) return;
+                        playerSearchTimer = Time.time + 2.0f;
+        
+                        playerTransform = FindPlayer();
+                        if (playerTransform == null) return;
+                    }
+        
+                    // Check distance to cannon
+                    float distance = Vector3.Distance(playerTransform.position, transform.position);
+        
+                    if (distance <= interactionDistance)
+                    {
+                        // Show prompt every 30 frames
+                        if (Time.frameCount % 30 == 0)
+                        {
+                            Debug.Log($"Press {interactKey} to use cannon!");
+                        }
+        
+                        if (Input.GetKeyDown(interactKey))
+                        {
+                            EnterCannonControl();
+                        }
+                    }
+                }
+        
+                private Transform FindPlayer()
+                {
+                    // Try Player tag
+                    GameObject player = GameObject.FindGameObjectWithTag("Player");
+                    if (player != null) return player.transform;
+        
+                    // Try PlayerController component
+                    Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
+                    if (pc != null)
+                    {
+                        if (pc.tag == "Untagged") pc.tag = "Player";
+                        return pc.transform;
+                    }
+        
+                    return null;
+                }
+        
+                private void EnterCannonControl()
+                {
+                    isControlling = true;
+        
+                    // Cache player components
+                    playerController = playerTransform.GetComponent<Player.PlayerController>();
+                    playerCamera = mainCamera.GetComponent<Player.PlayerCamera>();
+        
+                    // Disable player movement and camera
+                    if (playerController != null) playerController.enabled = false;
+                    if (playerCamera != null) playerCamera.enabled = false;
+        
+                    // Disable CharacterController to prevent sliding/drifting and allow parenting
+                    CharacterController charController = playerTransform.GetComponent<CharacterController>();
+                    if (charController != null) charController.enabled = false;
+        
+                    // Disable NPCController if present
+                    POTCO.NPCController npcController = playerTransform.GetComponent<POTCO.NPCController>();
+                    if (npcController != null) npcController.enabled = false;
+        
+                    // Parent player to cannon so they move with the ship
+                    playerTransform.SetParent(transform);
+                    
+                    // Reset local position to stand behind cannon (optional, but good for consistency)
+                    // playerTransform.localPosition = new Vector3(0, 0, -1.5f); 
+                    // playerTransform.localRotation = Quaternion.identity;
+        
+                    // Save original camera state
+                    originalFOV = mainCamera.fieldOfView;
+                    originalCameraParent = mainCamera.transform.parent;
+                    originalCameraLocalPosition = mainCamera.transform.localPosition;
+                    originalCameraLocalRotation = mainCamera.transform.localRotation;
+        
+                    // Set cannon camera - parent to pivot so it rotates with the cannon
+                    mainCamera.fieldOfView = cannonFOV;
+                    mainCamera.transform.SetParent(pivot); // Parent to pivot bone so camera follows cannon rotation
+                    mainCamera.transform.localPosition = camParentOffset;
+                    mainCamera.transform.localRotation = Quaternion.identity;
+        
+                    // Initialize cannon rotation to forward
+                    currentYaw = 0f;
+                    currentPitch = 0f;
+                    hNode.localRotation = Quaternion.Euler(0f, currentYaw, 0f);
+                    pivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+        
+                    // Lock cursor
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
+        
+                    // Hide player character model (only hide currently visible renderers)
+                    hiddenPlayerRenderers.Clear();
+                    Renderer[] allPlayerRenderers = playerTransform.GetComponentsInChildren<Renderer>();
+                    foreach (Renderer renderer in allPlayerRenderers)
+                    {
+                        if (renderer.enabled)
+                        {
+                            renderer.enabled = false;
+                            hiddenPlayerRenderers.Add(renderer);
+                        }
+                    }
+        
+                    // Hide sails (only on this specific ship, not all ships in scene)
+                    hiddenSailRenderers.Clear();
+                    Transform shipTransform = transform.root; // The ship this cannon is attached to
+                    Renderer[] allShipRenderers = shipTransform.GetComponentsInChildren<Renderer>();
+                    foreach (Renderer renderer in allShipRenderers)
+                    {
+                        if (renderer.enabled && renderer.name.ToLower().Contains("sail"))
+                        {
+                            // Verify this renderer is actually part of this ship's hierarchy
+                            if (renderer.transform.IsChildOf(shipTransform))
+                            {
+                                renderer.enabled = false;
+                                hiddenSailRenderers.Add(renderer);
+                            }
+                        }
+                    }
+        
+                    Debug.Log($"✅ Entered cannon control mode - FOV: {cannonFOV}, Yaw limits: [{minH}, {maxH}], Pitch limits: [{minP}, {maxP}]");
+                }
+        
+                private void HandleCannonControls()
+                {
+                    // Update camera settings live (allows tweaking in Inspector during Play mode)
+                    mainCamera.fieldOfView = cannonFOV;
+                    mainCamera.transform.localPosition = camParentOffset;
+        
+                    // Mouse input for aiming (POTCO sensitivity values)
+                    float mouseX = Input.GetAxis("Mouse X");
+                    float mouseY = Input.GetAxis("Mouse Y");
+        
+                    // Update yaw (left/right) - fixed inverted controls
+                    currentYaw += mouseX * sensH * 100f; // Multiply by 100 to match POTCO feel
+                    currentYaw = Mathf.Clamp(currentYaw, minH, maxH);
+        
+                    // Update pitch (up/down) - inverted for proper feel
+                    currentPitch += -mouseY * sensP * 100f; // Negative for natural aiming
+                    currentPitch = Mathf.Clamp(currentPitch, minP, maxP);
+        
+                    // Apply rotations (camera follows automatically since it's parented to pivot)
+                    hNode.localRotation = Quaternion.Euler(0f, currentYaw, 0f);
+                    pivot.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+        
+                    // Fire cannon
+                    // Logic: Allow fire if we haven't maxed burst AND short delay passed
+                    // OR if full cooldown passed (which resets burst in Update)
+                    bool canFire = false;
+                    
+                    if (currentBurstShots < maxBurstShots)
+                    {
+                        // In burst mode: check short delay
+                        if (Time.time >= lastFireTime + burstShotDelay) canFire = true;
+                    }
+                    else
+                    {
+                        // Burst full: check full cooldown
+                        if (Time.time >= lastFireTime + fireCooldown) canFire = true;
+                    }
+        
+                    if (Input.GetKeyDown(fireKey) && canFire)
+                    {
+                        FireCannon();
+                    }
+                }
+        
+                private void FireCannon()
+                {
+                    lastFireTime = Time.time;
+                    currentBurstShots++;
+                    
+                    // If we hit max burst, set reset time for full cooldown
+                    // Otherwise set it to now + cooldown (sliding window)
+                    burstResetTime = Time.time + fireCooldown;
+        
+                    if (cannonballPrefab == null)
+                    {
+                        Debug.LogWarning("⚠️ Cannot fire - cannonball prefab not assigned!");
+                        return;
+                    }
+        
+                    // Spawn Effects (Smoke & Muzzle Flash)
+                    if (cannonExitPoint != null)
+                    {
+                        Quaternion lookOut = Quaternion.LookRotation(-cannonExitPoint.forward, cannonExitPoint.up);
+        
+                                                                                                                                        // Muzzle Fire
+        
+                                                                                                                                        GameObject fire = new GameObject("CannonMuzzleFire");
+        
+                                                                                                                                        fire.transform.position = cannonExitPoint.position - cannonExitPoint.forward * -4.2f;
+        
+                                                                                                                                        fire.transform.rotation = lookOut * Quaternion.Euler(75, 180, 0);
+        
+                                                                                                                                        fire.transform.localScale = Vector3.one * 0.7f;
+        
+                                                                                                                                        // Parenting to cannonExitPoint makes it bob with the cannon/ship
+        
+                                                                                                                                        fire.transform.SetParent(cannonExitPoint, true); 
+        
+                                                                                                                                        fire.AddComponent<POTCO.Effects.CannonMuzzleFireEffect>();
+        
+                                                                                                                        
+        
+                                                                                                                                        // Blast Smoke
+        
+                                                                                                                                        GameObject smoke = new GameObject("CannonSmokeSimple");
+        
+                                                                                                                                        smoke.transform.position = cannonExitPoint.position - cannonExitPoint.forward * -4.2f;
+        
+                                                                                                                                        smoke.transform.rotation = lookOut;
+        
+                                                                                                                                        smoke.AddComponent<POTCO.Effects.CannonSmokeSimpleEffect>();                    }
+        
+                    // Spawn cannonball at muzzle
+                    GameObject cannonball = Instantiate(cannonballPrefab, cannonExitPoint.position, cannonExitPoint.rotation);
+                    
+                    // Get current heading and pitch from rig
+                    float fireH = hNode.localRotation.eulerAngles.y;
+                    float fireP = pivot.localRotation.eulerAngles.x;
+        
+                    // Calculate fire direction
+                    Vector3 fireDirection = cannonExitPoint.forward;
+        
+                    // Add Rigidbody if not present
+                    Rigidbody rb = cannonball.GetComponent<Rigidbody>();
+                    if (rb == null)
+                    {
+                        rb = cannonball.AddComponent<Rigidbody>();
+                        rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+                    }
+        
+                    // Launch projectile
+                    rb.linearVelocity = fireDirection * muzzleVelocity;
+                    rb.useGravity = true;
+        
+                    // Add CannonProjectile component for collision handling
+                    CannonProjectile projectile = cannonball.GetComponent<CannonProjectile>();
+                    if (projectile == null)
+                    {
+                        projectile = cannonball.AddComponent<CannonProjectile>();
+                    }
+        
+                    // Apply customization settings
+                    projectile.damage = cannonballDamage;
+                    projectile.explosionRadius = explosionRadius;
+                    projectile.lifetime = cannonballLifetime;
+        
+                    // Add trail on a separate child object to avoid physics issues
+                    GameObject trailObject = new GameObject("Trail");
+                    trailObject.transform.SetParent(cannonball.transform);
+                    trailObject.transform.localPosition = Vector3.zero;
+                    trailObject.transform.localRotation = Quaternion.identity;
+        
+                    TrailRenderer trail = trailObject.AddComponent<TrailRenderer>();
+                    trail.time = trailDuration;
+                    trail.startWidth = trailStartWidth;
+                    trail.endWidth = trailEndWidth;
+                    trail.material = new Material(Shader.Find("Sprites/Default"));
+                    trail.startColor = trailStartColor;
+                    trail.endColor = trailEndColor;
+                    trail.numCornerVertices = 5;
+                    trail.numCapVertices = 5;
+                    trail.alignment = LineAlignment.TransformZ; // Keep trail facing forward regardless of rotation
+        
+                    // Add glowing light for visibility
+                    Light pointLight = cannonball.AddComponent<Light>();
+                    pointLight.type = LightType.Point;
+                    pointLight.color = lightColor;
+                    pointLight.intensity = lightIntensity;
+                    pointLight.range = lightRange;
+                    pointLight.shadows = LightShadows.None;
+        
+                    // Make material emissive if possible
+                    Renderer renderer = cannonball.GetComponent<Renderer>();
+                    if (renderer != null && renderer.material != null)
+                    {
+                        renderer.material.EnableKeyword("_EMISSION");
+                        renderer.material.SetColor("_EmissionColor", lightColor * 2f);
+                    }
+        
+                    // CRITICAL FIX: Ignore collision with the ship
+                    Collider cannonballCollider = cannonball.GetComponent<Collider>();
+                    if (cannonballCollider == null) cannonballCollider = cannonball.AddComponent<SphereCollider>();
+        
+                    // Get the root object (The Ship this cannon is attached to)
+                    Transform shipRoot = transform.root;
+        
+                    // Find ALL colliders on the ship (deck, hull, masts, rails, etc.)
+                    Collider[] shipColliders = shipRoot.GetComponentsInChildren<Collider>(true);
+        
+                    foreach (Collider shipCollider in shipColliders)
+                    {
+                        // Don't ignore the cannonball itself
+                        if (shipCollider != null && shipCollider != cannonballCollider)
+                        {
+                            Physics.IgnoreCollision(cannonballCollider, shipCollider);
+                        }
+                    }
+        
+                    // Play effects (TODO: Add muzzle flash and sound)
+                    Debug.Log($"🔥 Fired cannon! H: {fireH:F1}°, P: {fireP:F1}°");
+        
+                                            // Simple recoil animation (scale barrel slightly)
+        
+                                            if (pivot != null)
+        
+                                            {
+        
+                                                if (recoilCoroutine != null) StopCoroutine(recoilCoroutine);
+        
+                                                recoilCoroutine = StartCoroutine(RecoilAnimation());
+        
+                                            }
+        
+                                        }
+        
+                                
+        
+                                        private System.Collections.IEnumerator RecoilAnimation()
+        
+                                        {
+        
+                                            // Always start from the clean initial scale to prevent squash accumulation
+        
+                                            Vector3 baseScale = initialPivotScale;
+        
+                                            Vector3 recoilScale = baseScale + new Vector3(0f, -0.2f, 0f); // Slight compression on Y
+        
+                                
+        
+                                            // Recoil (Compress)
+        
+                                            float recoilTime = 0.1f;
+        
+                                            float elapsed = 0f;
+        
+                                            while (elapsed < recoilTime)
+        
+                                            {
+        
+                                                pivot.localScale = Vector3.Lerp(baseScale, recoilScale, elapsed / recoilTime);
+        
+                                                elapsed += Time.deltaTime;
+        
+                                                yield return null;
+        
+                                            }
+        
+                                            pivot.localScale = recoilScale;
+        
+                                
+        
+                                            // Spring back (Expand)
+        
+                                            elapsed = 0f;
+        
+                                            float returnTime = 0.2f;
+        
+                                            while (elapsed < returnTime)
+        
+                                            {
+        
+                                                pivot.localScale = Vector3.Lerp(recoilScale, baseScale, elapsed / returnTime);
+        
+                                                elapsed += Time.deltaTime;
+        
+                                                yield return null;
+        
+                                            }
+        
+                                
+        
+                                            // Force reset to exact initial scale
+        
+                                            pivot.localScale = baseScale;
+        
+                                            recoilCoroutine = null;
+        
+                                        }
 
         private void HandleExitControl()
         {

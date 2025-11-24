@@ -27,11 +27,27 @@ public class MaterialHandler
     private static bool _textureCacheInitialized = false;
     
     // New overload that accepts alpha textures and wrap modes specified by .egg files
-    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO)
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO, string assetPath = "")
     {
         DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths and {alphaPaths.Count} alpha paths");
         var materials = new List<Material>(texturePaths.Count + 1);
         var createdMaterialNames = new HashSet<string>(); // Track what we've created
+
+        // Check if we should use ParticleGUI shader based on asset path
+        bool useParticleGUI = false;
+        if (!string.IsNullOrEmpty(assetPath))
+        {
+            string lowerPath = assetPath.ToLowerInvariant();
+            if (lowerPath.Contains("/effects/") || 
+                lowerPath.Contains("/fonts/") || 
+                lowerPath.Contains("/gui/") || 
+                lowerPath.Contains("/texturecards/") ||
+                lowerPath.Contains("/sky/"))
+            {
+                useParticleGUI = true;
+                DebugLogger.LogEggImporter($"[Shader] Using ParticleGUI shader for asset: {assetPath}");
+            }
+        }
 
         foreach (var kvp in texturePaths)
         {
@@ -70,8 +86,28 @@ public class MaterialHandler
                     DebugLogger.LogWarningEggImporter($"[AlphaMask] Could not load alpha texture: {alphaPath}");
             }
 
-            // Create material with appropriate shader (transparent if alpha blend needed)
-            mat = CreateVertexColorMaterial(materialName, needsAlphaBlend);
+            // Create material with appropriate shader
+            if (useParticleGUI)
+            {
+                Shader guiShader = Shader.Find("EggImporter/ParticleGUI");
+                if (guiShader == null)
+                {
+                    DebugLogger.LogWarningEggImporter("Shader 'EggImporter/ParticleGUI' not found! Falling back to standard.");
+                    guiShader = GetCachedVertexColorShader();
+                }
+                
+                mat = new Material(guiShader);
+                mat.name = materialName;
+                mat.enableInstancing = true;
+                
+                // Ensure tint is white by default for GUI
+                if (mat.HasProperty("_Color"))
+                    mat.SetColor("_Color", Color.white);
+            }
+            else
+            {
+                mat = CreateVertexColorMaterial(materialName, needsAlphaBlend);
+            }
 
             if (colorTex)
             {
@@ -96,23 +132,43 @@ public class MaterialHandler
             }
             else
             {
-                // Set culling to back for regular materials (only show front faces)
-                mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Back);
-                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
-                DebugLogger.LogEggImporter($"[Standard] Material {cleanMatName} set to back-face culling (Cull: Back)");
+                // For ParticleGUI, default cull is Off (0), but for standard meshes default is Back (2)
+                // Only set Back culling if NOT using ParticleGUI (as GUI often needs double-sided or explicit control)
+                // Actually, particles usually need Cull Off.
+                if (!useParticleGUI)
+                {
+                    mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Back);
+                    mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+                    DebugLogger.LogEggImporter($"[Standard] Material {cleanMatName} set to back-face culling (Cull: Back)");
+                }
+                else
+                {
+                    // Ensure ParticleGUI materials render in transparent queue
+                    mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                }
             }
 
-            // Use cached property IDs for better performance
-            if (mat.HasProperty(MetallicPropertyId))
-                mat.SetFloat(MetallicPropertyId, 0.0f);
-            if (mat.HasProperty(GlossinessPropertyId))
-                mat.SetFloat(GlossinessPropertyId, 0.1f);
+            // Use cached property IDs for better performance (only for standard shaders)
+            if (!useParticleGUI)
+            {
+                if (mat.HasProperty(MetallicPropertyId))
+                    mat.SetFloat(MetallicPropertyId, 0.0f);
+                if (mat.HasProperty(GlossinessPropertyId))
+                    mat.SetFloat(GlossinessPropertyId, 0.1f);
+            }
 
             // Don't apply wrap mode in shader - causes stretching artifacts
             // Let textures use natural UV wrapping (repeat mode)
             if (mat.HasProperty("_MainTexWrap"))
             {
                 mat.SetVector("_MainTexWrap", Vector4.zero); // 0 = repeat
+            }
+
+            // Only reset color for standard shaders, ParticleGUI might use tint
+            if (!useParticleGUI)
+            {
+                if (mat.HasProperty(ColorPropertyId))
+                    mat.SetColor(ColorPropertyId, Color.white);
             }
 
             materials.Add(mat);

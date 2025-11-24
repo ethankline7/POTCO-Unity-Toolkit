@@ -740,7 +740,34 @@ namespace POTCO
                     OnSpawnCannonball(muzzle, isPlayerControlled);
                 }
 
-                yield return new WaitForSeconds(cannonFireClip.length);
+                // 1. Spawn Muzzle Fire immediately
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject fire = new GameObject("CannonMuzzleFire");
+                    fire.transform.position = muzzle.position - muzzle.forward * 4.2f;
+                    fire.transform.rotation = lookOut * Quaternion.Euler(90, 0, 0);
+                    fire.transform.SetParent(muzzle, true); // Follow bobbing
+                    fire.AddComponent<POTCO.Effects.CannonMuzzleFireEffect>();
+                }
+
+                // 2. Wait 0.3s for Smoke delay
+                float smokeDelay = 0.3f;
+                yield return new WaitForSeconds(smokeDelay);
+
+                // 3. Spawn Blast Smoke
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject smoke = new GameObject("CannonBlastSmoke");
+                    smoke.transform.position = muzzle.position - muzzle.forward * 5.2f;
+                    smoke.transform.rotation = lookOut;
+                    smoke.AddComponent<POTCO.Effects.CannonBlastSmokeEffect>();
+                }
+
+                // 4. Wait remaining animation time
+                float remainingTime = cannonFireClip.length - smokeDelay;
+                if (remainingTime > 0) yield return new WaitForSeconds(remainingTime);
 
                 // Close cannons
                 anim.Play("close");
@@ -758,7 +785,29 @@ namespace POTCO
                     OnSpawnCannonball(muzzle, isPlayerControlled);
                 }
 
+                // 1. Spawn Muzzle Fire immediately
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject fire = new GameObject("CannonMuzzleFire");
+                    fire.transform.position = muzzle.position - muzzle.forward * 4.2f;
+                    fire.transform.rotation = lookOut * Quaternion.Euler(90, 0, 0);
+                    fire.transform.SetParent(muzzle, true); // Follow bobbing
+                    fire.AddComponent<POTCO.Effects.CannonMuzzleFireEffect>();
+                }
+
+                // 2. Wait 0.3s
                 yield return new WaitForSeconds(0.3f);
+
+                // 3. Spawn Blast Smoke
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject smoke = new GameObject("CannonBlastSmoke");
+                    smoke.transform.position = muzzle.position - muzzle.forward * 5.2f;
+                    smoke.transform.rotation = lookOut;
+                    smoke.AddComponent<POTCO.Effects.CannonBlastSmokeEffect>();
+                }
             }
         }
 

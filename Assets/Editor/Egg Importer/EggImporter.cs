@@ -391,7 +391,7 @@ public class EggImporter : ScriptedImporter
         PopulateJointWeightsFromVertices(vertexPool);
         RecordTiming("Populate Joint Weights");
 
-        _materials = CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO);
+        _materials = CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO, ctx.assetPath);
         RecordTiming("Create Materials");
         
         // Use optimized material dictionary creation from MaterialHandler
@@ -501,9 +501,9 @@ public class EggImporter : ScriptedImporter
         return _materialHandler.CreateMaterials(texturePaths, alphaPaths, rootGO);
     }
 
-    private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO)
+    private List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO, string assetPath)
     {
-        return _materialHandler.CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO);
+        return _materialHandler.CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO, assetPath);
     }
 
     private void CreateMasterVertexBuffer(List<EggVertex> vertexPool)
