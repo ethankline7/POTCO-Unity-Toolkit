@@ -132,19 +132,23 @@ namespace POTCO
         
         private void Start()
         {
+#if UNITY_EDITOR
             if (autoDetectOnStart)
             {
                 AutoDetectProperties();
             }
+#endif
         }
         
         private void OnValidate()
         {
             // Auto-detect when component is added or modified in editor
+#if UNITY_EDITOR
             if (Application.isEditor && autoDetectOnStart)
             {
                 AutoDetectProperties();
             }
+#endif
         }
         
         /// <summary>
@@ -152,6 +156,7 @@ namespace POTCO
         /// </summary>
         public void AutoDetectProperties()
         {
+#if UNITY_EDITOR
             if (autoGenerateId)
             {
                 if (string.IsNullOrEmpty(objectId))
@@ -180,6 +185,7 @@ namespace POTCO
                     objectType = detectedType;
                 }
             }
+#endif
         }
         
         /// <summary>

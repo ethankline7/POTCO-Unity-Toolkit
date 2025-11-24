@@ -20,8 +20,17 @@ namespace POTCO
         
         private float currentVal;
         private Renderer rend;
+        
+        // Optimization: MaterialPropertyBlock
+        private MaterialPropertyBlock propBlock;
+        private static readonly int FoamUProp = Shader.PropertyToID("_FoamU");
+        private static readonly int FoamVProp = Shader.PropertyToID("_FoamV");
 
-        void Awake() { rend = GetComponent<Renderer>(); }
+        void Awake() 
+        { 
+            rend = GetComponent<Renderer>();
+            propBlock = new MaterialPropertyBlock();
+        }
 
         void Update()
         {
@@ -35,26 +44,25 @@ namespace POTCO
                 float sine = Mathf.Sin((Time.time * scrollSpeed) + phaseOffset);
                 
                 // Apply V offset
-                SetProp("_FoamV", sine * amplitude);
+                SetProp(FoamVProp, sine * amplitude);
             }
             else if (motionType == FoamMotionType.ScrollU)
             {
                 currentVal = Mathf.Repeat(currentVal + scrollSpeed * Time.deltaTime, 1f);
-                SetProp("_FoamU", currentVal);
+                SetProp(FoamUProp, currentVal);
             }
             else if (motionType == FoamMotionType.ScrollV)
             {
                 currentVal = Mathf.Repeat(currentVal + scrollSpeed * Time.deltaTime, 1f);
-                SetProp("_FoamV", currentVal);
+                SetProp(FoamVProp, currentVal);
             }
         }
         
-        void SetProp(string name, float val)
+        void SetProp(int propId, float val)
         {
-            foreach (var m in rend.materials)
-            {
-                if (m.HasProperty(name)) m.SetFloat(name, val);
-            }
+            rend.GetPropertyBlock(propBlock);
+            propBlock.SetFloat(propId, val);
+            rend.SetPropertyBlock(propBlock);
         }
     }
 }

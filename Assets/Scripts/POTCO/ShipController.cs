@@ -586,6 +586,14 @@ namespace POTCO
                     Debug.Log("Disabled Player.PlayerCamera");
                 }
 
+                // Disable NPCController if present (prevents AI trying to move while driving)
+                var npcController = playerTransform.GetComponent<POTCO.NPCController>();
+                if (npcController != null)
+                {
+                    npcController.enabled = false;
+                    Debug.Log("Disabled POTCO.NPCController");
+                }
+
                 // Parent player to ship so they move together
                 playerTransform.SetParent(transform);
                 Debug.Log("Player parented to ship and positioned at wheel");
@@ -867,6 +875,14 @@ namespace POTCO
                 {
                     playerCamera.enabled = true;
                     Debug.Log("Re-enabled Player.PlayerCamera");
+                }
+
+                // Re-enable NPCController
+                var npcController = playerTransform.GetComponent<POTCO.NPCController>();
+                if (npcController != null)
+                {
+                    npcController.enabled = true;
+                    Debug.Log("Re-enabled POTCO.NPCController");
                 }
 
                 // Re-enable SimpleAnimationPlayer to restore normal animations

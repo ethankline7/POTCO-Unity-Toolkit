@@ -60,9 +60,18 @@ namespace POTCO
         
         // Initial local rotations of bones to apply additive rotation
         private Quaternion[] initialBoneRotations;
+        
+        // Optimization: MaterialPropertyBlock
+        private MaterialPropertyBlock propBlock;
+        private static readonly int WakeUProp = Shader.PropertyToID("_WakeU");
+        private static readonly int ColorProp = Shader.PropertyToID("_Color");
+        private static readonly int AlphaProp = Shader.PropertyToID("_Alpha");
 
         void Start()
         {
+            // Initialize Property Block
+            propBlock = new MaterialPropertyBlock();
+
             // Capture initial offsets before detaching
             if (sternAnchor)
             {
@@ -168,7 +177,12 @@ namespace POTCO
             {
                 foreach (var r in wakeRenderers)
                 {
-                    if (r) r.material.SetFloat("_WakeU", u);
+                    if (r)
+                    {
+                        r.GetPropertyBlock(propBlock);
+                        propBlock.SetFloat(WakeUProp, u);
+                        r.SetPropertyBlock(propBlock);
+                    }
                 }
             }
         }
@@ -247,9 +261,16 @@ namespace POTCO
         {
             if (wakeRenderers != null)
             {
+                if (propBlock == null) propBlock = new MaterialPropertyBlock();
+                
                 foreach (var r in wakeRenderers)
                 {
-                    if (r) r.material.SetColor("_Color", wakeColor);
+                    if (r)
+                    {
+                        r.GetPropertyBlock(propBlock);
+                        propBlock.SetColor(ColorProp, wakeColor);
+                        r.SetPropertyBlock(propBlock);
+                    }
                 }
             }
         }
@@ -296,7 +317,12 @@ namespace POTCO
             {
                 foreach (var r in wakeRenderers)
                 {
-                    if (r) r.material.SetFloat("_Alpha", a);
+                    if (r)
+                    {
+                        r.GetPropertyBlock(propBlock);
+                        propBlock.SetFloat(AlphaProp, a);
+                        r.SetPropertyBlock(propBlock);
+                    }
                 }
             }
         }

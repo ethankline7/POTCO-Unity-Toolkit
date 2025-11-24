@@ -135,6 +135,8 @@ namespace Player
 
         private void Update()
         {
+            if (controller == null || !controller.enabled) return;
+
             ProcessInput();
             UpdateGroundState();
             UpdateSwimmingState();
@@ -225,6 +227,7 @@ namespace Player
 
         private void LateUpdate()
         {
+            if (controller == null || !controller.enabled) return;
             HandleMovingPlatform();
         }
 
@@ -299,6 +302,9 @@ namespace Player
 
         private void ProcessMovement()
         {
+            // Prevent movement if controller is disabled (e.g. when driving ship)
+            if (controller == null || !controller.enabled) return;
+
             bool canJump = (Time.time - lastGroundedTime) < coyoteTime;
             bool isFreeLooking = playerCamera != null && playerCamera.IsFreeLooking;
 

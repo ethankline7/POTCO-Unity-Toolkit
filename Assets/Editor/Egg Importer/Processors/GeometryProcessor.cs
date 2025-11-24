@@ -980,6 +980,9 @@ public class GeometryProcessor
         // Track if we've seen a _high group at THIS level (for ship LOD filtering)
         bool hasSeenHighGroupAtThisLevel = false;
 
+        // Track used names at this level to ensure uniqueness among siblings
+        HashSet<string> usedNames = new HashSet<string>();
+
         int i = start;
         while (i < end)
         {
@@ -1047,9 +1050,19 @@ public class GeometryProcessor
                     }
                 }
                 
-                string newPath = string.IsNullOrEmpty(currentPath) ? groupName : currentPath + "/" + groupName;
+                // Resolve name uniqueness to prevent "Multiple Objects with the same name/type" errors
+                string uniqueName = groupName;
+                int counter = 1;
+                while (usedNames.Contains(uniqueName))
+                {
+                    uniqueName = $"{groupName}_{counter}";
+                    counter++;
+                }
+                usedNames.Add(uniqueName);
 
-                GameObject newGO = new GameObject(groupName);
+                string newPath = string.IsNullOrEmpty(currentPath) ? uniqueName : currentPath + "/" + uniqueName;
+
+                GameObject newGO = new GameObject(uniqueName);
                 newGO.transform.SetParent(hierarchyMap[currentPath], false);
                 hierarchyMap[newPath] = newGO.transform;
 

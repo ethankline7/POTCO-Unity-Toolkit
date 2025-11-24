@@ -77,7 +77,8 @@ namespace WorldDataImporter.Algorithms
                     // Add ObjectListInfo component to store metadata only if ImportObjectListData is enabled
                     if (settings != null && settings.importObjectListData)
                     {
-                        var typeInfo = Undo.AddComponent<ObjectListInfo>(newGO);
+                        // Optimization: Use direct AddComponent instead of Undo.AddComponent for large imports to save memory/time
+                        var typeInfo = newGO.AddComponent<ObjectListInfo>();
                         typeInfo.objectId = currentId;
                     }
 

@@ -190,6 +190,10 @@ namespace POTCO
         #region Update Loop
         private void Update()
         {
+            // Prevent "CharacterController.Move called on inactive controller" error
+            // This happens if another script (like ShipController) disables the controller
+            if (controller == null || !controller.enabled) return;
+
             // Check grounded state early (needed for spawn position initialization)
             isGrounded = controller.isGrounded;
 

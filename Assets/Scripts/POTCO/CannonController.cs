@@ -312,6 +312,10 @@ namespace POTCO
             CharacterController charController = playerTransform.GetComponent<CharacterController>();
             if (charController != null) charController.enabled = false;
 
+            // Disable NPCController if present
+            POTCO.NPCController npcController = playerTransform.GetComponent<POTCO.NPCController>();
+            if (npcController != null) npcController.enabled = false;
+
             // Parent player to cannon so they move with the ship
             playerTransform.SetParent(transform);
             
@@ -590,6 +594,9 @@ namespace POTCO
             {
                 CharacterController charController = playerTransform.GetComponent<CharacterController>();
                 if (charController != null) charController.enabled = true;
+
+                POTCO.NPCController npcController = playerTransform.GetComponent<POTCO.NPCController>();
+                if (npcController != null) npcController.enabled = true;
             }
 
             // Unlock cursor

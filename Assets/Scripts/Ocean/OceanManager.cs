@@ -58,9 +58,9 @@ namespace POTCO.Ocean
         [Tooltip("Wave parameters for vertex displacement")]
         public Wave[] waves = new Wave[]
         {
-            new Wave { amplitude = 0.1f, wavelength = 8f, speed = 0.5f, directionDegrees = 20f },
-            new Wave { amplitude = 0.1f, wavelength = 5f, speed = 1.8f, directionDegrees = -30f },
-            new Wave { amplitude = 0.1f, wavelength = 2.5f, speed = 0.5f, directionDegrees = 75f }
+            new Wave { amplitude = 0.005f, wavelength = 8f, speed = 0.5f, directionDegrees = 20f },
+            new Wave { amplitude = 0.005f, wavelength = 5f, speed = 1.8f, directionDegrees = -30f },
+            new Wave { amplitude = 0.005f, wavelength = 2.5f, speed = 0.5f, directionDegrees = 75f }
         };
 
         private MeshRenderer[] oceanRenderers;
