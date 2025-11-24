@@ -234,8 +234,120 @@ namespace WorldDataImporter.Processors
                         }
                         
                         // Apply any pending visual modifications (only if enabled)
-                        if (instance != null && objectData != null)
+                        if (instance != null)
                         {
+                            // --- AUTOMATIC SHORELINE FOAM INJECTION ---
+                            // Check if this is an island model
+                            if (modelPath.Contains("models/islands/") || modelPath.Contains("pir_m_are_isl_"))
+                            {
+                                // Construct foam model path: add "_wave_none" before extension (which is implied)
+                                // e.g. "phase_2/models/islands/pir_m_are_isl_delFuego" -> ".../pir_m_are_isl_delFuego_wave_none"
+                                string foamModelPath = modelPath + "_wave_none";
+                                
+                                // Attempt to instantiate foam model
+                                // Note: We pass 'currentGO' as parent so it moves with the island
+                                GameObject foamInstance = AssetUtilities.InstantiatePrefab(foamModelPath, currentGO, useEgg, null); // Pass null stats to avoid counting as 'successful import' or 'missing' for main stats
+                                
+                                if (foamInstance != null)
+                                {
+                                    DebugLogger.LogWorldImporter($"🌊 Found and attached shoreline foam: {foamModelPath}");
+                                    
+                                    // Ensure perfect alignment
+                                    foamInstance.transform.localPosition = Vector3.zero;
+                                    foamInstance.transform.localRotation = Quaternion.identity;
+                                    foamInstance.transform.localScale = Vector3.one;
+                                    
+                                    // Setup Foam Material and Scroller
+                                    Material shoreFoamMat = null;
+                                    Shader foamShader = Shader.Find("POTCO/ShoreFoam");
+                                    if (foamShader != null)
+                                    {
+                                        shoreFoamMat = new Material(foamShader);
+                                        shoreFoamMat.name = "ShoreFoam_Runtime";
+                                    }
+                                    else
+                                    {
+                                        DebugLogger.LogWarningWorldImporter("⚠️ POTCO/ShoreFoam shader not found! Foam will use default material.");
+                                    }
+
+                                    // Apply to all renderers
+                                    Renderer[] renderers = foamInstance.GetComponentsInChildren<Renderer>(true);
+                                    for (int i = 0; i < renderers.Length; i++)
+                                    {
+                                        var r = renderers[i];
+                                        
+                                        if (foamShader != null)
+                                        {
+                                            // 1. Capture existing texture from the current material
+                                            Material mat = r.material;
+                                            Texture existingTex = null;
+                                            
+                                            if (mat.HasProperty("_MainTex"))
+                                                existingTex = mat.GetTexture("_MainTex");
+                                            else if (mat.HasProperty("_BaseMap"))
+                                                existingTex = mat.GetTexture("_BaseMap");
+                                            
+                                            if (existingTex == null)
+                                            {
+                                                DebugLogger.LogWarningWorldImporter($"⚠️ ShoreFoam: No texture found on {r.name} before shader swap.");
+                                            }
+
+                                            // 2. Swap shader to POTCO/ShoreFoam
+                                            mat.shader = foamShader;
+                                            
+                                            // 3. Restore texture
+                                            if (existingTex != null)
+                                            {
+                                                mat.SetTexture("_MainTex", existingTex);
+                                            }
+                                            
+                                            // 4. Reset/Init properties
+                                            mat.SetFloat("_FoamU", 0f);
+                                            mat.SetFloat("_FoamV", 0f);
+                                            mat.SetFloat("_Alpha", 1f);
+                                            mat.SetColor("_Color", Color.white);
+                                        }
+                                        
+                                        // Add Scroller with "Tide" settings
+                                        var scroller = r.gameObject.AddComponent<ShoreFoamScroller>();
+                                        scroller.motionType = FoamMotionType.TideV;
+                                        
+                                        // Specific tuning based on mesh name (mesh_tide1 vs mesh_tide2)
+                                        string rName = r.name.ToLower();
+                                        if (rName.Contains("tide1"))
+                                        {
+                                            // mesh_tide1: Very slow, huge amplitude? (As requested: Spd 0.01, Amp 6.21)
+                                            scroller.scrollSpeed = 0.01f;
+                                            scroller.amplitude = 6.21f;
+                                            scroller.phaseOffset = 0f;
+                                        }
+                                        else if (rName.Contains("tide2"))
+                                        {
+                                            // mesh_tide2: Faster wash (As requested: Spd 1.0, Amp 0.15)
+                                            scroller.scrollSpeed = 1.0f;
+                                            scroller.amplitude = 0.15f;
+                                            scroller.phaseOffset = 0f;
+                                        }
+                                        else
+                                        {
+                                            // Fallback if names differ
+                                            if (i % 2 == 0)
+                                            {
+                                                scroller.scrollSpeed = 1.2f;
+                                                scroller.amplitude = 0.15f;
+                                            }
+                                            else
+                                            {
+                                                scroller.scrollSpeed = 0.7f;
+                                                scroller.amplitude = 0.20f;
+                                                scroller.phaseOffset = 2.0f;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // -------------------------------------------
+
                             // Handle collision settings
                             if (settings?.importCollisions == false)
                             {

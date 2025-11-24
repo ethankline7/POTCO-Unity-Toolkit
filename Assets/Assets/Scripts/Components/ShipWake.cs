@@ -54,7 +54,7 @@ namespace POTCO
         
         [Header("Smoothing Settings")]
         [Tooltip("Time to reach full turn bend (seconds)")]
-        public float turnTime = 0.0f;
+        public float turnTime = 0.1f;
         [Tooltip("Time to snap back to straight (seconds) - make this larger for slower return")]
         public float returnTime = 0.4f;
         
