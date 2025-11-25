@@ -10,6 +10,7 @@ namespace POTCO.Editor.ItemCreator
     {
         private ItemDatabase _itemDatabase;
         private Vector2 _scrollPosition;
+        private Vector2 _detailScrollPosition;
         private int _selectedItemId = -1;
         private ItemDataRow _selectedItem;
 
@@ -164,6 +165,8 @@ namespace POTCO.Editor.ItemCreator
         private void DrawItemDetailPanel()
         {
             EditorGUILayout.BeginVertical(GUI.skin.box, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            _detailScrollPosition = EditorGUILayout.BeginScrollView(_detailScrollPosition);
+
             if (_selectedItem == null)
             {
                 EditorGUILayout.LabelField("Select an item from the list to view/edit details.", EditorStyles.miniLabel);
@@ -171,6 +174,14 @@ namespace POTCO.Editor.ItemCreator
             else
             {
                 EditorGUILayout.LabelField($"Editing Item: {_selectedItem.GetItemName()} (ID: {_selectedItem.ItemId})", EditorStyles.boldLabel);
+                
+                if (GUILayout.Button("Copy to Clipboard"))
+                {
+                    string data = PythonDataParser.WriteSingleItemData(_selectedItem);
+                    GUIUtility.systemCopyBuffer = data;
+                    Debug.Log("Item data copied to clipboard: " + data);
+                }
+
                 EditorGUILayout.Space();
 
                 DrawIdentitySection();
@@ -192,6 +203,8 @@ namespace POTCO.Editor.ItemCreator
 
                 DrawAttributesBoostsSection();
             }
+            
+            EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
         }
 
