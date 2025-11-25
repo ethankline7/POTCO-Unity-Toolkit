@@ -444,9 +444,9 @@ namespace CharacterOG.Editor
                 }
 
                 // Store applied colors for persistence
-                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                colorPersistence.StoreColors(skin, hair, top, bot);
-                DebugLogger.LogNPCImport($"Added CharacterColorPersistence to '{dna.name}' with colors: skin={skin}, hair={hair}, top={top}, bot={bot}");
+                var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot, shoe);
+                DebugLogger.LogNPCImport($"Added CharacterColorPersistence to '{dna.name}' with colors: skin={skin}, hair={hair}, top={top}, bot={bot}, shoe={shoe}");
 
                 // Setup as NPC with all required components
                 SetupAsNPC(character, dna);
@@ -597,8 +597,8 @@ namespace CharacterOG.Editor
                         }
 
                         // Store applied colors for persistence
-                        var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                        colorPersistence.StoreColors(skin, hair, top, bot);
+                        var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                        colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                         // Setup as NPC with all required components
                         SetupAsNPC(character, dna);
@@ -675,8 +675,8 @@ namespace CharacterOG.Editor
                 }
 
                 // Store applied colors for persistence
-                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                colorPersistence.StoreColors(skin, hair, top, bot);
+                var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                 DebugLogger.LogNPCImport($"Successfully applied NPC '{dna.name}' to {selectedCharacter.name}");
                 EditorUtility.DisplayDialog("Success", $"Applied NPC '{dna.name}' to {selectedCharacter.name}", "OK");
@@ -1106,8 +1106,8 @@ namespace CharacterOG.Editor
                     }
 
                     // Store applied colors for persistence
-                    var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                    colorPersistence.StoreColors(skin, hair, top, bot);
+                    var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                    colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                     // Add text label
                     GameObject label = new GameObject("Label");

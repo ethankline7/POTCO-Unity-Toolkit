@@ -40,29 +40,13 @@ namespace CharacterOG.Runtime.Utils
                 return null;
             }
 
-            string genderKey = gender.ToLower();
-
-            lock (cacheLock)
-            {
-                // Check if we have a template cache for this gender
-                if (!templateCaches.TryGetValue(genderKey, out var templateCache))
-                {
-                    // First time for this gender - build template cache from this instance
-                    Debug.Log($"[RendererCachePool] Building template cache for gender '{genderKey}' from {characterRoot.name}");
-                    templateCache = new GroupRendererCache(characterRoot);
-                    templateCaches[genderKey] = templateCache;
-                    Debug.Log($"[RendererCachePool] Template cache created: {templateCache.TotalRendererCount} renderers indexed");
-                    return templateCache;
-                }
-                else
-                {
-                    // We have a template - create a new cache for this instance
-                    // This is much faster than scanning the hierarchy again
-                    Debug.Log($"[RendererCachePool] Reusing template cache structure for gender '{genderKey}' ({templateCache.TotalRendererCount} renderers)");
-                    var newCache = new GroupRendererCache(characterRoot);
-                    return newCache;
-                }
-            }
+            // OPTIMIZATION REMOVED: Template caching caused severe bugs because GroupRendererCache
+            // stores direct references to Renderer components. Reusing a template meant controlling
+            // the renderers of the *first* spawned character, not the current one.
+            // We must build a fresh cache for every new character instance.
+            // scanning ~1000 transforms is fast enough (~1ms).
+            
+            return new GroupRendererCache(characterRoot);
         }
 
         /// <summary>Clear all template caches (useful for editor refresh)</summary>

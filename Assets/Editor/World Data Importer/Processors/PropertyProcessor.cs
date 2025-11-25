@@ -1000,8 +1000,8 @@ namespace WorldDataImporter.Processors
                     dnaApplier.ApplyDNA(pirateDna);
 
                     // Store applied colors for persistence
-                    var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                    colorPersistence.StoreColors(skin, hair, top, bot);
+                    var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                    colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                     // Add CharacterGenderData for animation system
                     var genderData = instance.GetComponent<CharacterOG.Runtime.CharacterGenderData>();

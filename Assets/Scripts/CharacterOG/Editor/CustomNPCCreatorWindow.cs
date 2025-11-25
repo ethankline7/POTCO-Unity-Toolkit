@@ -1098,8 +1098,9 @@ namespace CharacterOG.Editor
                 case Slot.Coat:
                     return customDna.topColorIdx;
                 case Slot.Pant:
-                case Slot.Shoe:
                     return customDna.botColorIdx;
+                case Slot.Shoe:
+                    return customDna.shoesColorIdx;
                 default: return 0;
             }
         }
@@ -1115,8 +1116,10 @@ namespace CharacterOG.Editor
                     customDna.topColorIdx = value;
                     break;
                 case Slot.Pant:
-                case Slot.Shoe:
                     customDna.botColorIdx = value;
+                    break;
+                case Slot.Shoe:
+                    customDna.shoesColorIdx = value;
                     break;
             }
         }
@@ -1310,6 +1313,58 @@ namespace CharacterOG.Editor
             DebugLogger.LogNPCImport($"Spawned new character '{character.name}'");
         }
 
+        private void RespawnCharacter()
+        {
+            if (selectedCharacter == null)
+            {
+                SpawnNewCharacter();
+                return;
+            }
+
+            // Capture state
+            Vector3 oldPos = selectedCharacter.transform.position;
+            Quaternion oldRot = selectedCharacter.transform.rotation;
+            string oldName = selectedCharacter.name;
+
+            // Destroy old
+            GameObject.DestroyImmediate(selectedCharacter);
+            selectedCharacter = null;
+            dnaApplier = null;
+            cachedCharacter = null;
+
+            // Spawn new
+            string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+            GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+            if (modelPrefab != null)
+            {
+                GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                if (character == null)
+                    character = GameObject.Instantiate(modelPrefab);
+
+                character.name = oldName;
+                character.transform.position = oldPos;
+                character.transform.rotation = oldRot;
+
+                selectedCharacter = character;
+                Selection.activeGameObject = character;
+
+                // Apply DNA and setup
+                ApplyToCharacter();
+
+                if (addPlayerController)
+                {
+                    SetupAsPlayerController(character);
+                }
+                else
+                {
+                    SetupAsNPC(character, customDna);
+                }
+
+                DebugLogger.LogNPCImport($"Respawned character '{character.name}' to fix rendering state");
+            }
+        }
+
         private void ApplyToCharacter()
         {
             if (selectedCharacter == null)
@@ -1380,8 +1435,8 @@ namespace CharacterOG.Editor
                 }
 
                 // Store applied colors for persistence (from DnaApplier)
-                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                colorPersistence.StoreColors(skin, hair, top, bot);
+                var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                 // Add CharacterGenderData component to persist gender information for animation system
                 var genderData = selectedCharacter.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
@@ -1581,6 +1636,7 @@ namespace CharacterOG.Editor
             // Randomize colors
             customDna.topColorIdx = random.Next(palettes.dye.Count);
             customDna.botColorIdx = random.Next(palettes.dye.Count);
+            customDna.shoesColorIdx = random.Next(palettes.dye.Count);
             customDna.hatColorIdx = random.Next(palettes.dye.Count);
 
             // Randomize hair/facial hair (some chance for none)
@@ -1601,7 +1657,7 @@ namespace CharacterOG.Editor
 
             customDna.hairColorIdx = random.Next(palettes.hair.Count);
 
-            if (autoApply) ApplyToCharacter();
+            if (autoApply) RespawnCharacter();
 
             DebugLogger.LogNPCImport("Randomized all character features including facial morphs");
         }
@@ -1626,6 +1682,7 @@ namespace CharacterOG.Editor
             customDna.skinColorIdx = random.Next(palettes.skin.Count);
             customDna.topColorIdx = random.Next(palettes.dye.Count);
             customDna.botColorIdx = random.Next(palettes.dye.Count);
+            customDna.shoesColorIdx = random.Next(palettes.dye.Count);
             customDna.hatColorIdx = random.Next(palettes.dye.Count);
             customDna.hairColorIdx = random.Next(palettes.hair.Count);
             customDna.eyeColorIdx = random.Next(palettes.irisTextures.Count);
@@ -1751,6 +1808,7 @@ namespace CharacterOG.Editor
             customDna.beard = 1;
             customDna.topColorIdx = 15; // Red
             customDna.botColorIdx = 5; // Black
+            customDna.shoesColorIdx = 5; // Black
             if (autoApply) ApplyToCharacter();
         }
 
@@ -1764,6 +1822,7 @@ namespace CharacterOG.Editor
             customDna.beard = 0;
             customDna.topColorIdx = 10; // Blue
             customDna.botColorIdx = 10;
+            customDna.shoesColorIdx = 5; // Black shoes for officer
             if (autoApply) ApplyToCharacter();
         }
 
@@ -1778,6 +1837,7 @@ namespace CharacterOG.Editor
             customDna.mustache = 1;
             customDna.topColorIdx = 20; // Brown
             customDna.botColorIdx = 5;
+            customDna.shoesColorIdx = 5;
             if (autoApply) ApplyToCharacter();
         }
 
@@ -1792,6 +1852,7 @@ namespace CharacterOG.Editor
             customDna.beard = 0;
             customDna.topColorIdx = 25; // Purple/fancy
             customDna.botColorIdx = 5;
+            customDna.shoesColorIdx = 5;
             if (autoApply) ApplyToCharacter();
         }
     }

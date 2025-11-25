@@ -21,6 +21,8 @@ namespace CharacterOG.Runtime
         [SerializeField, HideInInspector]
         private Color botColor = Color.white;
         [SerializeField, HideInInspector]
+        private Color shoeColor = Color.white;
+        [SerializeField, HideInInspector]
         private bool hasStoredColors = false;
 
         // Property blocks for each renderer
@@ -59,12 +61,13 @@ namespace CharacterOG.Runtime
         /// Store color data from DNA application
         /// Call this after applying DNA to a character
         /// </summary>
-        public void StoreColors(Color skinColor, Color hairColor, Color topColor, Color botColor)
+        public void StoreColors(Color skinColor, Color hairColor, Color topColor, Color botColor, Color shoeColor)
         {
             this.skinColor = skinColor;
             this.hairColor = hairColor;
             this.topColor = topColor;
             this.botColor = botColor;
+            this.shoeColor = shoeColor;
             this.hasStoredColors = true;
 
 #if UNITY_EDITOR
@@ -125,7 +128,11 @@ namespace CharacterOG.Runtime
                 else if (name.Contains("clothing_layer") || name.Contains("shirt") || name.Contains("vest") || name.Contains("coat") || name.Contains("hat"))
                 {
                     // Check if it's top or bottom clothing
-                    if (name.Contains("pant") || name.Contains("shoe") || name.Contains("boot"))
+                    if (name.Contains("shoe") || name.Contains("boot"))
+                    {
+                        colorToApply = shoeColor;
+                    }
+                    else if (name.Contains("pant"))
                     {
                         colorToApply = botColor;
                     }
@@ -135,9 +142,13 @@ namespace CharacterOG.Runtime
                     }
                 }
                 // Bottom clothing color - pants, shoes
-                else if (name.Contains("pant") || name.Contains("shoe") || name.Contains("boot") || name.Contains("_abs"))
+                else if (name.Contains("pant") || name.Contains("_abs"))
                 {
                     colorToApply = botColor;
+                }
+                else if (name.Contains("shoe") || name.Contains("boot"))
+                {
+                    colorToApply = shoeColor;
                 }
 
                 if (colorToApply.HasValue)
@@ -191,9 +202,9 @@ namespace CharacterOG.Runtime
         /// <summary>
         /// Public API - Get stored colors for debugging
         /// </summary>
-        public (Color skin, Color hair, Color top, Color bot) GetStoredColors()
+        public (Color skin, Color hair, Color top, Color bot, Color shoe) GetStoredColors()
         {
-            return (skinColor, hairColor, topColor, botColor);
+            return (skinColor, hairColor, topColor, botColor, shoeColor);
         }
 
 #if UNITY_EDITOR
