@@ -464,12 +464,43 @@ namespace POTCO.Editor.ItemCreator
         private void DrawGatingProgressionSection()
         {
             EditorGUILayout.LabelField("Gating / Progression", EditorStyles.boldLabel);
-            if (ItemColumnMapping.Mapping.ContainsKey("NOTORIETY_REQ"))
-                _selectedItem.SetNotorietyReq(EditorGUILayout.IntField("Notoriety Req:", _selectedItem.GetNotorietyReq()));
             
+            if (ItemColumnMapping.Mapping.ContainsKey("NOTORIETY_REQ"))
+            {
+                _selectedItem.SetNotorietyReq(EditorGUILayout.IntField("Notoriety Req:", _selectedItem.GetNotorietyReq()));
+            }
+            if (ItemColumnMapping.Mapping.ContainsKey("ITEM_NOTORIETY_REQ"))
+            {
+                _selectedItem.SetItemNotorietyReq(EditorGUILayout.IntField("Item Notoriety Req:", _selectedItem.GetItemNotorietyReq()));
+            }
+
             _selectedItem.SetVelvetRope(EditorGUILayout.IntField("Velvet Rope:", _selectedItem.GetVelvetRope()));
-            _selectedItem.SetHoliday(EditorGUILayout.IntField("Holiday:", _selectedItem.GetHoliday())); 
+            
+            // Only show/set Holiday if the item class supports it
+            // This prevents overwriting ITEM_MODEL (which shares the same column index 34) with 0
+            if (HasHolidayData(_selectedItem.GetItemClass()))
+            {
+                _selectedItem.SetHoliday(EditorGUILayout.IntField("Holiday:", _selectedItem.GetHoliday())); 
+            }
+            
             EditorGUILayout.Space();
+        }
+
+        private bool HasHolidayData(int itemClass)
+        {
+            // Mapping based on POTCO logic
+            // Clothing, Tattoo, Jewelry have Holiday data at index 34
+            // Weapons have ITEM_MODEL at index 34
+            if (_itemDatabase == null || _itemDatabase.InventoryTypeConstantsMap == null) return false;
+
+            // Helper to safely get value
+            int GetVal(string key) => InventoryTypeConstants.GetValue(key);
+
+            if (itemClass == GetVal("ItemTypeClothing")) return true;
+            if (itemClass == GetVal("ItemTypeTattoo")) return true;
+            if (itemClass == GetVal("ItemTypeJewelry")) return true;
+            
+            return false;
         }
 
         private void DrawPresentationSection()
