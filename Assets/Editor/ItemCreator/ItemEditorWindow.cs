@@ -17,6 +17,11 @@ namespace POTCO.Editor.ItemCreator
         // Editor State
         private string _searchString = "";
         private int _selectedClassFilter = -1; 
+        
+        // Loading State
+        private bool _isLoading;
+        private float _loadingProgress;
+        private string _loadingMessage;
 
         // Preview State
         private Texture2D _iconTexture;
@@ -41,11 +46,7 @@ namespace POTCO.Editor.ItemCreator
                 _itemDatabase = ScriptableObject.CreateInstance<ItemDatabase>();
                 AssetDatabase.CreateAsset(_itemDatabase, "Assets/Editor/ItemCreator/ItemDatabase.asset");
                 AssetDatabase.SaveAssets();
-                _itemDatabase.LoadAllData(); 
-            }
-            else if (_itemDatabase.AllItems.Count == 0 && _itemDatabase.ColumnHeadings.Count == 0)
-            {
-                _itemDatabase.LoadAllData(); 
+                // Don't auto-load async on enable to avoid unexpected hangs or state issues, let user trigger it
             }
         }
 
@@ -103,9 +104,23 @@ namespace POTCO.Editor.ItemCreator
             DrawToolbar();
             EditorGUILayout.Space();
 
+            if (_isLoading)
+            {
+                Rect rect = GUILayoutUtility.GetRect(position.width, 20);
+                EditorGUI.ProgressBar(rect, _loadingProgress, _loadingMessage);
+                
+                // If we don't have basic data yet, stop drawing
+                if (_itemDatabase == null || _itemDatabase.AllItems == null || _itemDatabase.AllItems.Count == 0)
+                {
+                    return;
+                }
+                // If we DO have data (partial load), let it fall through to draw the list
+                GUI.enabled = false; // Disable interaction while loading
+            }
+
             if (_itemDatabase == null || _itemDatabase.AllItems == null || _itemDatabase.AllItems.Count == 0)
             {
-                if (GUILayout.Button("Load All Data")) _itemDatabase.LoadAllData();
+                if (!_isLoading && GUILayout.Button("Load All Data")) StartLoading();
                 return;
             }
 
@@ -122,16 +137,19 @@ namespace POTCO.Editor.ItemCreator
             }
 
             EditorGUILayout.EndHorizontal();
+            
+            GUI.enabled = true; // Re-enable if we disabled it earlier
         }
 
         private void DrawToolbar()
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
+            
+            GUI.enabled = !_isLoading;
+            
             if (GUILayout.Button("Load All Data", EditorStyles.toolbarButton))
             {
-                _itemDatabase.LoadAllData();
-                _selectedItemId = -1;
-                _selectedItem = null;
+                StartLoading();
             }
             if (GUILayout.Button("Save ItemData.py", EditorStyles.toolbarButton))
             {
@@ -145,7 +163,39 @@ namespace POTCO.Editor.ItemCreator
             {
                 DuplicateSelectedItem();
             }
+            
+            GUI.enabled = true;
+            
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void StartLoading()
+        {
+            _isLoading = true;
+            _loadingProgress = 0f;
+            _loadingMessage = "Starting...";
+            _selectedItemId = -1;
+            _selectedItem = null;
+
+            _itemDatabase.LoadAllDataAsync(
+                (msg, prog) => 
+                {
+                    _loadingMessage = msg;
+                    _loadingProgress = prog;
+                    Repaint();
+                },
+                () => 
+                {
+                    // Partial Complete: ItemData Loaded
+                    Repaint();
+                },
+                () => 
+                {
+                    // Full Complete: Localization Loaded
+                    _isLoading = false;
+                    Repaint();
+                }
+            );
         }
 
         private void DrawItemListPanel()
@@ -248,53 +298,72 @@ namespace POTCO.Editor.ItemCreator
             int rarity = _selectedItem.GetRarity();
             string rarityName = "Unknown";
             
-            // Map rarity to colors/names (approximate POTCO values)
-            // CRUDE=1, COMMON=2, RARE=3, FAMED=4, LEGENDARY=5
+            // Try Localization Lookup for Rarity
+            bool foundRarity = false;
+            if (_itemDatabase.LocalizationData != null && _itemDatabase.LocalizationData.TryGetValue("ItemRarityNames", out object rarityDictObj) && rarityDictObj is Dictionary<object, object> rarityDict)
+            {
+                if (rarityDict.TryGetValue(rarity, out object rName))
+                {
+                    rarityName = rName.ToString();
+                    foundRarity = true;
+                }
+            }
+
+            if (!foundRarity)
+            {
+                switch(rarity)
+                {
+                    case 1: rarityName = "Crude"; break;
+                    case 2: rarityName = "Common"; break;
+                    case 3: rarityName = "Rare"; break;
+                    case 4: rarityName = "Famed"; break;
+                    case 5: rarityName = "Legendary"; break;
+                    default: rarityName = "Rarity " + rarity; break;
+                }
+            }
+
             switch(rarity)
             {
-                case 1: 
-                    titleColor = new Color(0.52f, 0.31f, 0.09f); 
-                    rarityName = "Crude";
-                    break;
-                case 2: 
-                    titleColor = new Color(0.8f, 0.8f, 0.0f); // Yellowish
-                    rarityName = "Common";
-                    break;
-                case 3: 
-                    titleColor = new Color(0.0f, 0.6f, 0.0f); // Green
-                    rarityName = "Rare";
-                    break;
-                case 4: 
-                    titleColor = new Color(0.24f, 0.36f, 0.6f); // Blue
-                    rarityName = "Famed";
-                    break;
-                case 5: 
-                    titleColor = new Color(0.6f, 0.0f, 0.0f); // Red
-                    rarityName = "Legendary";
-                    break;
-                default:
-                    rarityName = "Rarity " + rarity;
-                    break;
+                case 1: titleColor = new Color(0.52f, 0.31f, 0.09f); break;
+                case 2: titleColor = new Color(0.8f, 0.8f, 0.0f); break;
+                case 3: titleColor = new Color(0.0f, 0.6f, 0.0f); break;
+                case 4: titleColor = new Color(0.24f, 0.36f, 0.6f); break;
+                case 5: titleColor = new Color(0.6f, 0.0f, 0.0f); break;
             }
 
             GUIStyle coloredTitle = new GUIStyle(_titleStyle);
             coloredTitle.normal.textColor = titleColor;
-            GUILayout.Label(_selectedItem.GetItemName(), coloredTitle);
+            GUILayout.Label(GetLocalizedName(_selectedItem), coloredTitle);
 
             // 2. Subtitle (Rarity + Subtype)
-            // Need to reverse lookup subtype name from constant value
             string subtypeName = "";
-            int subtypeVal = _selectedItem.GetItemType(); 
-            // Note: For weapons, subtype is usually distinct.
-            // Let's just display the raw value or try to find it in the map
-            var key = _itemDatabase.ItemSubtypeConstantsMap.FirstOrDefault(x => x.Value == subtypeVal).Key;
-            subtypeName = key != null ? key.Replace("_", " ").ToTitleCase() : "Type " + subtypeVal;
+            int subtypeVal = _selectedItem.GetItemType();
+            
+            bool foundSubtype = false;
+            if (_itemDatabase.LocalizationData != null)
+            {
+                // Try various potential keys for subtype dictionaries
+                if (_itemDatabase.LocalizationData.TryGetValue("ItemSubtypeNames", out object subDictObj) && subDictObj is Dictionary<object, object> subDict)
+                {
+                    if (subDict.TryGetValue(subtypeVal, out object sName))
+                    {
+                        subtypeName = sName.ToString();
+                        foundSubtype = true;
+                    }
+                }
+            }
+
+            if (!foundSubtype)
+            {
+                var key = _itemDatabase.ItemSubtypeConstantsMap.FirstOrDefault(x => x.Value == subtypeVal).Key;
+                subtypeName = key != null ? key.Replace("_", " ").ToTitleCase() : "Type " + subtypeVal;
+            }
 
             GUILayout.Label($"{rarityName} {subtypeName}", _subtitleStyle);
 
             EditorGUILayout.Space();
 
-            // 3. 3D Model Preview (Center Stage)
+            // 3. 3D Model Preview
             Rect previewRect = GUILayoutUtility.GetRect(200, 200);
             if (_modelPreviewEditor != null)
             {
@@ -302,7 +371,6 @@ namespace POTCO.Editor.ItemCreator
             }
             else if (_iconTexture != null)
             {
-                // Fallback to icon if model missing
                 GUI.DrawTexture(previewRect, _iconTexture, ScaleMode.ScaleToFit);
             }
             else
@@ -320,7 +388,7 @@ namespace POTCO.Editor.ItemCreator
             }
             
             // 5. Flavor Text
-            string flavor = _selectedItem.GetFlavorText();
+            string flavor = GetLocalizedDescription(_selectedItem);
             if (!string.IsNullOrEmpty(flavor))
             {
                 EditorGUILayout.Space();
@@ -332,6 +400,111 @@ namespace POTCO.Editor.ItemCreator
             }
 
             EditorGUILayout.EndVertical();
+        }
+
+        private string GetLocalizedName(ItemDataRow item)
+        {
+            if (TryLookup("ItemNames", item, out string val)) return val;
+            return item.GetItemName();
+        }
+
+        private string GetLocalizedDescription(ItemDataRow item)
+        {
+            int cls = item.GetItemClass();
+            int clothingCls = InventoryTypeConstants.GetValue("ItemTypeClothing");
+            int tattooCls = InventoryTypeConstants.GetValue("ItemTypeTattoo");
+            int weaponCls = InventoryTypeConstants.GetValue("ItemTypeWeapon");
+
+            if (cls == clothingCls)
+            {
+                if (TryLookup("ClothingFlavorText", item, out string val)) return val;
+            }
+            else if (cls == tattooCls)
+            {
+                if (TryLookup("TattooStrings", item, out string val)) return val;
+            }
+            else if (cls == weaponCls)
+            {
+                if (TryLookup("WeaponStrings", item, out string val)) return val;
+            }
+            
+            // Fallbacks
+            if (TryLookup("ItemStrings", item, out string val2)) return val2;
+
+            return item.GetFlavorText();
+        }
+
+        private bool TryLookup(string dictName, ItemDataRow item, out string result)
+        {
+            result = null;
+            if (_itemDatabase == null || _itemDatabase.LocalizationData == null) return false;
+            
+            // 1. Try Nested Dictionary Lookup (e.g. ItemNames = { 1: 'Name' })
+            if (_itemDatabase.LocalizationData.TryGetValue(dictName, out object dictObj) && dictObj is Dictionary<object, object> dict)
+            {
+                if (dict.TryGetValue(item.ItemId, out object val)) 
+                {
+                    result = val.ToString();
+                    return true;
+                }
+
+                string constName = item.GetConstantName();
+                if (!string.IsNullOrEmpty(constName))
+                {
+                    foreach(var kvp in dict)
+                    {
+                        string k = kvp.Key.ToString();
+                        if (k == constName || k.EndsWith("." + constName))
+                        {
+                            result = kvp.Value.ToString();
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // 2. Try Top-Level Key Lookup (e.g. ItemNames[1] = 'Name' or ItemNames[ItemGlobals.CONST] = 'Name')
+            // The parser now stores these as keys like "ItemNames[1]" or "ItemNames[ItemGlobals.CONST]"
+            
+            // Check for ID based key: DictName[123]
+            string idKey = dictName + "[" + item.ItemId + "]";
+            if (_itemDatabase.LocalizationData.TryGetValue(idKey, out object valId))
+            {
+                result = valId.ToString();
+                return true;
+            }
+
+            // Check for Constant based key: DictName[ItemGlobals.CONST_NAME]
+            // We don't know the exact prefix (ItemGlobals vs WeaponGlobals etc), so we might need to scan or guess.
+            // ItemNames[ItemGlobals.TAILORED_CAPRIS]
+            string constantName = item.GetConstantName();
+            if (!string.IsNullOrEmpty(constantName))
+            {
+                // Try common prefixes
+                string[] prefixes = { "ItemGlobals", "WeaponGlobals", "InventoryType", "UberDogGlobals" };
+                foreach (var prefix in prefixes)
+                {
+                    string constKey = dictName + "[" + prefix + "." + constantName + "]";
+                    if (_itemDatabase.LocalizationData.TryGetValue(constKey, out object valConst))
+                    {
+                        result = valConst.ToString();
+                        return true;
+                    }
+                }
+                
+                // Scan for suffix match if explicit prefix failed (slower but safer)
+                string searchSuffix = "." + constantName + "]";
+                foreach (var key in _itemDatabase.LocalizationData.Keys)
+                {
+                    if (key.StartsWith(dictName + "[") && key.EndsWith(searchSuffix))
+                    {
+                        result = _itemDatabase.LocalizationData[key].ToString();
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private void DrawItemDetailPanel()
