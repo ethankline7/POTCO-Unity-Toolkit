@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using System.Linq;
-using POTCO.Editor.ItemCreator.Utilities; // For StringExtensions
+using POTCO.Editor.ItemCreator.Utilities; 
 
 namespace POTCO.Editor.ItemCreator
 {
@@ -16,8 +16,16 @@ namespace POTCO.Editor.ItemCreator
 
         // Editor State
         private string _searchString = "";
-        private int _selectedClassFilter = -1; // -1 for "All"
-        private int _selectedTypeFilter = -1; // -1 for "All"
+        private int _selectedClassFilter = -1; 
+
+        // Preview State
+        private Texture2D _iconTexture;
+        private GameObject _modelAsset;
+        private UnityEditor.Editor _modelPreviewEditor;
+        private GUIStyle _cardStyle;
+        private GUIStyle _titleStyle;
+        private GUIStyle _subtitleStyle;
+        private GUIStyle _statStyle;
 
         [MenuItem("POTCO/Item Editor")]
         public static void ShowWindow()
@@ -27,40 +35,78 @@ namespace POTCO.Editor.ItemCreator
 
         private void OnEnable()
         {
-            // Load the ItemDatabase ScriptableObject
             _itemDatabase = AssetDatabase.LoadAssetAtPath<ItemDatabase>("Assets/Editor/ItemCreator/ItemDatabase.asset");
             if (_itemDatabase == null)
             {
-                Debug.LogWarning("ItemDatabase ScriptableObject not found. Creating a new one.");
                 _itemDatabase = ScriptableObject.CreateInstance<ItemDatabase>();
                 AssetDatabase.CreateAsset(_itemDatabase, "Assets/Editor/ItemCreator/ItemDatabase.asset");
                 AssetDatabase.SaveAssets();
-                _itemDatabase.LoadAllData(); // Attempt to load data immediately after creation
+                _itemDatabase.LoadAllData(); 
             }
             else if (_itemDatabase.AllItems.Count == 0 && _itemDatabase.ColumnHeadings.Count == 0)
             {
-                _itemDatabase.LoadAllData(); // Load data if the database is empty (e.g., first time opening after project reload)
+                _itemDatabase.LoadAllData(); 
             }
+        }
+
+        private void OnDisable()
+        {
+            if (_modelPreviewEditor != null) DestroyImmediate(_modelPreviewEditor);
+        }
+
+        private void InitializeStyles()
+        {
+            if (_cardStyle == null)
+            {
+                _cardStyle = new GUIStyle(GUI.skin.box);
+                _cardStyle.normal.background = MakeTex(2, 2, new Color(0.1f, 0.1f, 0.15f, 0.9f)); // Dark blue-ish background
+                _cardStyle.padding = new RectOffset(10, 10, 10, 10);
+            }
+            if (_titleStyle == null)
+            {
+                _titleStyle = new GUIStyle(GUI.skin.label);
+                _titleStyle.fontSize = 18;
+                _titleStyle.fontStyle = FontStyle.Bold;
+                _titleStyle.alignment = TextAnchor.MiddleCenter;
+                _titleStyle.wordWrap = true;
+            }
+            if (_subtitleStyle == null)
+            {
+                _subtitleStyle = new GUIStyle(GUI.skin.label);
+                _subtitleStyle.fontSize = 12;
+                _subtitleStyle.fontStyle = FontStyle.Italic;
+                _subtitleStyle.alignment = TextAnchor.MiddleCenter;
+                _subtitleStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f);
+            }
+            if (_statStyle == null)
+            {
+                _statStyle = new GUIStyle(GUI.skin.label);
+                _statStyle.fontSize = 12;
+                _statStyle.alignment = TextAnchor.MiddleCenter;
+                _statStyle.normal.textColor = Color.white;
+            }
+        }
+
+        private Texture2D MakeTex(int width, int height, Color col)
+        {
+            Color[] pix = new Color[width * height];
+            for (int i = 0; i < pix.Length; i++) pix[i] = col;
+            Texture2D result = new Texture2D(width, height);
+            result.SetPixels(pix);
+            result.Apply();
+            return result;
         }
 
         private void OnGUI()
         {
+            InitializeStyles();
             DrawToolbar();
             EditorGUILayout.Space();
 
-            if (_itemDatabase == null)
+            if (_itemDatabase == null || _itemDatabase.AllItems == null || _itemDatabase.AllItems.Count == 0)
             {
-                EditorGUILayout.HelpBox("ItemDatabase ScriptableObject is missing!", MessageType.Error);
-                if (GUILayout.Button("Create ItemDatabase Asset"))
-                {
-                    OnEnable(); // Attempt to recreate
-                }
+                if (GUILayout.Button("Load All Data")) _itemDatabase.LoadAllData();
                 return;
-            }
-
-            if (_itemDatabase.AllItems == null || _itemDatabase.AllItems.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No item data loaded. Click 'Load All Data' to parse Python files.", MessageType.Warning);
             }
 
             EditorGUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
@@ -72,8 +118,7 @@ namespace POTCO.Editor.ItemCreator
             }
             catch (System.Exception e)
             {
-                EditorGUILayout.HelpBox($"Error drawing editor: {e.Message}", MessageType.Error);
-                // Debug.LogException(e); // Optional: log to console
+                EditorGUILayout.HelpBox($"Error drawing editor: {e.Message}\n{e.StackTrace}", MessageType.Error);
             }
 
             EditorGUILayout.EndHorizontal();
@@ -107,22 +152,14 @@ namespace POTCO.Editor.ItemCreator
         {
             EditorGUILayout.BeginVertical(GUILayout.Width(position.width * 0.3f), GUILayout.ExpandHeight(true));
 
-            // Search and Filter
             EditorGUILayout.LabelField("Filter Items", EditorStyles.boldLabel);
             _searchString = EditorGUILayout.TextField("Search:", _searchString);
 
             List<string> classFilterOptions = new List<string> { "All" };
             classFilterOptions.AddRange(_itemDatabase.InventoryTypeConstantsMap.Keys.OrderBy(k => k));
             
-            // Validate and clamp selected filter index
-            if (_selectedClassFilter >= classFilterOptions.Count)
-            {
-                _selectedClassFilter = 0;
-            }
-            else if (_selectedClassFilter < 0)
-            {
-                _selectedClassFilter = 0;
-            }
+            if (_selectedClassFilter >= classFilterOptions.Count) _selectedClassFilter = 0;
+            else if (_selectedClassFilter < 0) _selectedClassFilter = 0;
 
             _selectedClassFilter = EditorGUILayout.Popup("Item Class:", _selectedClassFilter, classFilterOptions.ToArray());
 
@@ -132,33 +169,168 @@ namespace POTCO.Editor.ItemCreator
             {
                 ItemDataRow item = entry.Value;
 
-                // Apply filters
                 bool matchesSearch = string.IsNullOrEmpty(_searchString) ||
                                      item.GetItemName().ToLower().Contains(_searchString.ToLower()) ||
                                      item.GetConstantName().ToLower().Contains(_searchString.ToLower());
 
-                // Re-validate index before access, though clamping above should handle it
                 bool matchesClassFilter = false;
                 if (_selectedClassFilter >= 0 && _selectedClassFilter < classFilterOptions.Count)
                 {
-                     matchesClassFilter = _selectedClassFilter == 0 || // "All" selected
+                     matchesClassFilter = _selectedClassFilter == 0 || 
                                           (_itemDatabase.InventoryTypeConstantsMap.TryGetValue(classFilterOptions[_selectedClassFilter], out int classFilterValue) && item.GetItemClass() == classFilterValue);
                 }
 
                 if (matchesSearch && matchesClassFilter)
                 {
                     bool isSelected = (_selectedItemId == item.ItemId);
-                    GUIStyle buttonStyle = isSelected ? (GUIStyle)"WhiteLabel" : GUI.skin.label; // Highlight selected
+                    GUIStyle buttonStyle = isSelected ? (GUIStyle)"WhiteLabel" : GUI.skin.label;
 
                     if (GUILayout.Button($"ID: {item.ItemId} - {item.GetItemName()}", buttonStyle))
                     {
-                        _selectedItemId = item.ItemId;
-                        _selectedItem = item;
+                        UpdateSelection(item);
                     }
                 }
             }
 
             EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+        }
+
+        private void UpdateSelection(ItemDataRow item)
+        {
+            _selectedItemId = item.ItemId;
+            _selectedItem = item;
+            
+            // Load Icon
+            _iconTexture = null;
+            string iconName = item.GetItemIcon();
+            if (!string.IsNullOrEmpty(iconName))
+            {
+                // Strip 'u' prefix if parser missed it (safety)
+                if (iconName.StartsWith("u'")) iconName = iconName.Substring(2, iconName.Length - 3);
+                
+                string[] guids = AssetDatabase.FindAssets(iconName + " t:Texture2D");
+                if (guids.Length > 0)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                    _iconTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                }
+            }
+
+            // Load Model
+            if (_modelPreviewEditor != null) DestroyImmediate(_modelPreviewEditor);
+            _modelAsset = null;
+            string modelName = item.GetItemModel();
+            if (!string.IsNullOrEmpty(modelName))
+            {
+                if (modelName.StartsWith("u'")) modelName = modelName.Substring(2, modelName.Length - 3);
+
+                // Search for the model. It might be an .egg, .fbx, or .prefab
+                string[] guids = AssetDatabase.FindAssets(modelName + " t:GameObject");
+                if (guids.Length > 0)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                    _modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                    if (_modelAsset != null)
+                    {
+                        _modelPreviewEditor = UnityEditor.Editor.CreateEditor(_modelAsset);
+                    }
+                }
+            }
+        }
+
+        private void DrawPOTCOCard()
+        {
+            EditorGUILayout.BeginVertical(_cardStyle, GUILayout.ExpandWidth(true));
+
+            // 1. Title (Name) - Colored by Rarity
+            Color titleColor = Color.white;
+            int rarity = _selectedItem.GetRarity();
+            string rarityName = "Unknown";
+            
+            // Map rarity to colors/names (approximate POTCO values)
+            // CRUDE=1, COMMON=2, RARE=3, FAMED=4, LEGENDARY=5
+            switch(rarity)
+            {
+                case 1: 
+                    titleColor = new Color(0.52f, 0.31f, 0.09f); 
+                    rarityName = "Crude";
+                    break;
+                case 2: 
+                    titleColor = new Color(0.8f, 0.8f, 0.0f); // Yellowish
+                    rarityName = "Common";
+                    break;
+                case 3: 
+                    titleColor = new Color(0.0f, 0.6f, 0.0f); // Green
+                    rarityName = "Rare";
+                    break;
+                case 4: 
+                    titleColor = new Color(0.24f, 0.36f, 0.6f); // Blue
+                    rarityName = "Famed";
+                    break;
+                case 5: 
+                    titleColor = new Color(0.6f, 0.0f, 0.0f); // Red
+                    rarityName = "Legendary";
+                    break;
+                default:
+                    rarityName = "Rarity " + rarity;
+                    break;
+            }
+
+            GUIStyle coloredTitle = new GUIStyle(_titleStyle);
+            coloredTitle.normal.textColor = titleColor;
+            GUILayout.Label(_selectedItem.GetItemName(), coloredTitle);
+
+            // 2. Subtitle (Rarity + Subtype)
+            // Need to reverse lookup subtype name from constant value
+            string subtypeName = "";
+            int subtypeVal = _selectedItem.GetItemType(); 
+            // Note: For weapons, subtype is usually distinct.
+            // Let's just display the raw value or try to find it in the map
+            var key = _itemDatabase.ItemSubtypeConstantsMap.FirstOrDefault(x => x.Value == subtypeVal).Key;
+            subtypeName = key != null ? key.Replace("_", " ").ToTitleCase() : "Type " + subtypeVal;
+
+            GUILayout.Label($"{rarityName} {subtypeName}", _subtitleStyle);
+
+            EditorGUILayout.Space();
+
+            // 3. 3D Model Preview (Center Stage)
+            Rect previewRect = GUILayoutUtility.GetRect(200, 200);
+            if (_modelPreviewEditor != null)
+            {
+                _modelPreviewEditor.OnInteractivePreviewGUI(previewRect, GUIStyle.none);
+            }
+            else if (_iconTexture != null)
+            {
+                // Fallback to icon if model missing
+                GUI.DrawTexture(previewRect, _iconTexture, ScaleMode.ScaleToFit);
+            }
+            else
+            {
+                GUI.Box(previewRect, "No Model/Icon");
+            }
+
+            EditorGUILayout.Space();
+
+            // 4. Stats
+            int attack = _selectedItem.GetPower();
+            if (attack > 0)
+            {
+                GUILayout.Label($"Attack: {attack}", _statStyle);
+            }
+            
+            // 5. Flavor Text
+            string flavor = _selectedItem.GetFlavorText();
+            if (!string.IsNullOrEmpty(flavor))
+            {
+                EditorGUILayout.Space();
+                GUIStyle flavorStyle = new GUIStyle(GUI.skin.label);
+                flavorStyle.wordWrap = true;
+                flavorStyle.alignment = TextAnchor.UpperLeft;
+                flavorStyle.fontStyle = FontStyle.Italic;
+                GUILayout.Label(flavor, flavorStyle);
+            }
+
             EditorGUILayout.EndVertical();
         }
 
@@ -173,15 +345,24 @@ namespace POTCO.Editor.ItemCreator
             }
             else
             {
-                EditorGUILayout.LabelField($"Editing Item: {_selectedItem.GetItemName()} (ID: {_selectedItem.ItemId})", EditorStyles.boldLabel);
-                
-                if (GUILayout.Button("Copy to Clipboard"))
+                // Header Row
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"Editing: {_selectedItem.GetItemName()}", EditorStyles.boldLabel);
+                if (GUILayout.Button("Copy to Clipboard", GUILayout.Width(120)))
                 {
                     string data = PythonDataParser.WriteSingleItemData(_selectedItem);
                     GUIUtility.systemCopyBuffer = data;
-                    Debug.Log("Item data copied to clipboard: " + data);
+                    Debug.Log("Item data copied: " + data);
                 }
+                EditorGUILayout.EndHorizontal();
 
+                EditorGUILayout.Space();
+
+                // Draw the POTCO-style Card
+                DrawPOTCOCard();
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Raw Data Editor", EditorStyles.boldLabel);
                 EditorGUILayout.Space();
 
                 DrawIdentitySection();
@@ -190,7 +371,6 @@ namespace POTCO.Editor.ItemCreator
                 DrawPresentationSection();
                 DrawModelAppearanceSection();
 
-                // Class-specific panels
                 int itemClass = _selectedItem.GetItemClass();
                 if (itemClass == InventoryTypeConstants.GetValue("ItemTypeWeapon"))
                 {
@@ -203,116 +383,71 @@ namespace POTCO.Editor.ItemCreator
 
                 DrawAttributesBoostsSection();
             }
-            
             EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
         }
 
         private void DrawIdentitySection()
         {
-            EditorGUILayout.LabelField("Header / Identity", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Identity", EditorStyles.boldLabel);
             _selectedItem.SetItemName(EditorGUILayout.TextField("Item Name:", _selectedItem.GetItemName()));
-            EditorGUILayout.LabelField("Constant Name:", _selectedItem.GetConstantName()); // Readonly or generated
-            EditorGUILayout.IntField("Item ID:", _selectedItem.ItemId); // Readonly
+            EditorGUILayout.LabelField("Constant Name:", _selectedItem.GetConstantName());
+            EditorGUILayout.IntField("Item ID:", _selectedItem.ItemId);
             _selectedItem.SetVersion(EditorGUILayout.IntField("Version:", _selectedItem.GetVersion()));
 
-            // --- Item Class Dropdown ---
-            if (_itemDatabase.InventoryTypeConstantsMap == null || _itemDatabase.InventoryTypeConstantsMap.Count == 0)
+            // Item Class
+            if (_itemDatabase.InventoryTypeConstantsMap != null && _itemDatabase.InventoryTypeConstantsMap.Count > 0)
             {
-                EditorGUILayout.HelpBox("Inventory Constants missing. Check UberDogGlobals.py parsing.", MessageType.Warning);
-                return;
-            }
+                List<string> classNames = _itemDatabase.InventoryTypeConstantsMap.Keys.OrderBy(k => k).ToList();
+                List<string> classDisplayNames = classNames.Select(name => name.Replace("ItemType", "")).ToList();
 
-            List<string> classNames = _itemDatabase.InventoryTypeConstantsMap.Keys.OrderBy(k => k).ToList();
-            List<string> classDisplayNames = classNames.Select(name => name.Replace("ItemType", "")).ToList();
+                int currentItemClassValue = _selectedItem.GetItemClass();
+                int selectedClassIndex = classNames.FindIndex(k => _itemDatabase.InventoryTypeConstantsMap[k] == currentItemClassValue);
+                
+                if (selectedClassIndex == -1) selectedClassIndex = 0;
 
-            int currentItemClassValue = _selectedItem.GetItemClass();
-            int selectedClassIndex = -1;
-            string currentItemClassName = _itemDatabase.InventoryTypeConstantsMap.FirstOrDefault(x => x.Value == currentItemClassValue).Key;
-            if (currentItemClassName != null)
-            {
-                selectedClassIndex = classNames.IndexOf(currentItemClassName);
-            }
-            
-            if (selectedClassIndex == -1 && classNames.Any())
-            {
-                 // Default logic or just leave as -1
-            }
-
-            int newSelectedClassIndex = EditorGUILayout.Popup("Item Class:", selectedClassIndex, classDisplayNames.ToArray());
-            if (newSelectedClassIndex != selectedClassIndex && newSelectedClassIndex >= 0)
-            {
-                string newClassName = classNames[newSelectedClassIndex];
-                int newClassValue = _itemDatabase.InventoryTypeConstantsMap[newClassName];
-                _selectedItem.SetItemClass(newClassValue);
-                _selectedItem.SetItemType(0); 
-            }
-
-            // --- Item Type / Subtype Dropdown (Dynamic based on Item Class) ---
-            EditorGUILayout.LabelField("Item Type / Subtype", EditorStyles.boldLabel);
-            List<string> subtypeNames = new List<string>();
-            List<string> subtypeDisplayNames = new List<string>();
-
-            // Populate subtype options based on the selected Item Class
-            switch (currentItemClassValue)
-            {
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeWeapon"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames, 
-                        new string[] { "CUTLASS", "SABRE", "RAPIER", "BAYONET", "DAGGER_SUBTYPE", "GRENADE_SUBTYPE", 
-                                       "FLINTLOCK_PISTOL", "BLUNDERBUSS", "MUSKET", "STAFF", "DOLL", "BROADSWORD", "SCIMITAR",
-                                       "CURSED_CUTLASS", "PISTOL", "REPEATER", "MUSKET", "BLUNDERBUSS", "BAYONET", "BASIC_DOLL",
-                                       "BANE", "MOJO", "SPIRIT", "DIRK", "KRIS", "BASIC_STAFF", "DARK", "NATURE", "WARDING",
-                                       "RAM", "BOARDING", "CARRONADE", "DUAL_CUTLASS", "AXE", "FENCING" });
-                    break;
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeClothing"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames,
-                        new string[] { "SHIRT", "VEST", "COAT", "PANT", "BELT", "BOOTS", "HAT", "GLOVES" });
-                    break;
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeTattoo"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames,
-                        new string[] { "TATTOO_HEAD", "TATTOO_ARM_LEFT", "TATTOO_ARM_RIGHT", "TATTOO_TORSO", "TATTOO_LEG_LEFT", "TATTOO_LEG_RIGHT" });
-                    break;
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeJewelry"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames,
-                        new string[] { "RING", "EARRING", "NECKLACE", "BRACELET" });
-                    break;
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeCharm"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames,
-                        new string[] { "TOTEM_FIRE", "TOTEM_ICE", "TOTEM_THUNDER", "TOTEM_VOODOO" });
-                    break;
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeConsumable"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames,
-                        new string[] { "POTION", "GROG", "TONIC", "GRENADES", "AMMO", "ELIXIR" });
-                    break;
-                case int val when val == InventoryTypeConstants.GetValue("ItemTypeMoney"):
-                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames,
-                        new string[] { "TREASURE", "QUEST_ITEM", "CURRENCY" });
-                    break;
-                default:
-                    break;
-            }
-
-            int currentItemTypeValue = _selectedItem.GetItemType();
-            int selectedTypeIndex = -1;
-            string currentItemTypeName = _itemDatabase.ItemSubtypeConstantsMap.FirstOrDefault(x => x.Value == currentItemTypeValue).Key;
-            if (currentItemTypeName != null)
-            {
-                selectedTypeIndex = subtypeNames.IndexOf(currentItemTypeName);
-            }
-            
-            if (subtypeDisplayNames.Any())
-            {
-                int newSelectedTypeIndex = EditorGUILayout.Popup("Subtype:", selectedTypeIndex, subtypeDisplayNames.ToArray());
-                if (newSelectedTypeIndex != selectedTypeIndex && newSelectedTypeIndex >= 0)
+                int newSelectedClassIndex = EditorGUILayout.Popup("Item Class:", selectedClassIndex, classDisplayNames.ToArray());
+                if (newSelectedClassIndex != selectedClassIndex)
                 {
-                    string newSubtypeName = subtypeNames[newSelectedTypeIndex];
-                    int newSubtypeValue = _itemDatabase.ItemSubtypeConstantsMap[newSubtypeName];
-                    _selectedItem.SetItemType(newSubtypeValue);
+                    string newClassName = classNames[newSelectedClassIndex];
+                    _selectedItem.SetItemClass(_itemDatabase.InventoryTypeConstantsMap[newClassName]);
+                    _selectedItem.SetItemType(0); 
                 }
-            } else {
-                 _selectedItem.SetItemType(EditorGUILayout.IntField("Subtype (Raw):", _selectedItem.GetItemType()));
-            }
 
+                // Subtype
+                List<string> subtypeNames = new List<string>();
+                List<string> subtypeDisplayNames = new List<string>();
+                
+                // Populate based on class (simplified list for brevity, can expand)
+                int classVal = _itemDatabase.InventoryTypeConstantsMap[classNames[newSelectedClassIndex]];
+                if (classVal == InventoryTypeConstants.GetValue("ItemTypeWeapon"))
+                {
+                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames, 
+                        new string[] { "CUTLASS", "SABRE", "BROADSWORD", "PISTOL", "MUSKET", "DAGGER", "GRENADE", "STAFF", "DOLL" });
+                }
+                else if (classVal == InventoryTypeConstants.GetValue("ItemTypeClothing"))
+                {
+                    AddSubtypesToDropdown(subtypeNames, subtypeDisplayNames, 
+                        new string[] { "SHIRT", "VEST", "COAT", "PANT", "BELT", "BOOTS", "HAT" });
+                }
+
+                int currentType = _selectedItem.GetItemType();
+                int typeIdx = subtypeNames.FindIndex(k => _itemDatabase.ItemSubtypeConstantsMap[k] == currentType);
+                
+                if (subtypeNames.Count > 0)
+                {
+                    if (typeIdx == -1) typeIdx = 0;
+                    int newTypeIdx = EditorGUILayout.Popup("Subtype:", typeIdx, subtypeDisplayNames.ToArray());
+                    if (newTypeIdx != typeIdx)
+                    {
+                        _selectedItem.SetItemType(_itemDatabase.ItemSubtypeConstantsMap[subtypeNames[newTypeIdx]]);
+                    }
+                }
+                else
+                {
+                    _selectedItem.SetItemType(EditorGUILayout.IntField("Subtype (Raw):", currentType));
+                }
+            }
             EditorGUILayout.Space();
         }
 
@@ -323,27 +458,16 @@ namespace POTCO.Editor.ItemCreator
             _selectedItem.SetFromLoot(EditorGUILayout.Toggle("From Loot:", _selectedItem.IsFromLoot()));
             _selectedItem.SetFromShop(EditorGUILayout.Toggle("From Shop:", _selectedItem.IsFromShop()));
             _selectedItem.SetFromQuest(EditorGUILayout.Toggle("From Quest:", _selectedItem.IsFromQuest()));
-            _selectedItem.SetFromPromo(EditorGUILayout.Toggle("From Promo:", _selectedItem.IsFromPromo()));
-            _selectedItem.SetFromPVP(EditorGUILayout.Toggle("From PVP:", _selectedItem.IsFromPVP()));
-            _selectedItem.SetFromNPC(EditorGUILayout.Toggle("From NPC:", _selectedItem.IsFromNPC()));
             EditorGUILayout.Space();
         }
 
         private void DrawGatingProgressionSection()
         {
             EditorGUILayout.LabelField("Gating / Progression", EditorStyles.boldLabel);
-            
             if (ItemColumnMapping.Mapping.ContainsKey("NOTORIETY_REQ"))
-            {
                 _selectedItem.SetNotorietyReq(EditorGUILayout.IntField("Notoriety Req:", _selectedItem.GetNotorietyReq()));
-            }
-            if (ItemColumnMapping.Mapping.ContainsKey("ITEM_NOTORIETY_REQ"))
-            {
-                _selectedItem.SetItemNotorietyReq(EditorGUILayout.IntField("Item Notoriety Req:", _selectedItem.GetItemNotorietyReq()));
-            }
-
+            
             _selectedItem.SetVelvetRope(EditorGUILayout.IntField("Velvet Rope:", _selectedItem.GetVelvetRope()));
-            // Holiday only if class supports it - needs HAS_HOLIDAY_DATA mapping from ItemGlobals.py (parse later)
             _selectedItem.SetHoliday(EditorGUILayout.IntField("Holiday:", _selectedItem.GetHoliday())); 
             EditorGUILayout.Space();
         }
@@ -352,10 +476,8 @@ namespace POTCO.Editor.ItemCreator
         {
             EditorGUILayout.LabelField("Presentation", EditorStyles.boldLabel);
             _selectedItem.SetItemIcon(EditorGUILayout.TextField("Item Icon:", _selectedItem.GetItemIcon()));
-            
             EditorGUILayout.LabelField("Flavor Text:");
             _selectedItem.SetFlavorText(EditorGUILayout.TextArea(_selectedItem.GetFlavorText(), GUILayout.Height(50)));
-            
             EditorGUILayout.Space();
         }
 
@@ -365,18 +487,8 @@ namespace POTCO.Editor.ItemCreator
             _selectedItem.SetItemModel(EditorGUILayout.TextField("Item Model:", _selectedItem.GetItemModel()));
             _selectedItem.SetMaleModelId(EditorGUILayout.TextField("Male Model ID:", _selectedItem.GetMaleModelId()));
             _selectedItem.SetFemaleModelId(EditorGUILayout.TextField("Female Model ID:", _selectedItem.GetFemaleModelId()));
-            _selectedItem.SetMaleTextureId(EditorGUILayout.IntField("Male Texture ID:", _selectedItem.GetMaleTextureId()));
-            _selectedItem.SetFemaleTextureId(EditorGUILayout.IntField("Female Texture ID:", _selectedItem.GetFemaleTextureId()));
             _selectedItem.SetPrimaryColor(EditorGUILayout.IntField("Primary Color:", _selectedItem.GetPrimaryColor()));
             _selectedItem.SetSecondaryColor(EditorGUILayout.IntField("Secondary Color:", _selectedItem.GetSecondaryColor()));
-            _selectedItem.SetMaleOrientation(EditorGUILayout.IntField("Male Orientation:", _selectedItem.GetMaleOrientation()));
-            _selectedItem.SetMaleOrientation2(EditorGUILayout.IntField("Male Orientation 2:", _selectedItem.GetMaleOrientation2()));
-            _selectedItem.SetFemaleOrientation(EditorGUILayout.IntField("Female Orientation:", _selectedItem.GetFemaleOrientation()));
-            _selectedItem.SetFemaleOrientation2(EditorGUILayout.IntField("Female Orientation 2:", _selectedItem.GetFemaleOrientation2()));
-            _selectedItem.SetCanDyeItem(EditorGUILayout.Toggle("Can Dye Item:", _selectedItem.CanDyeItem()));
-            
-            // TODO: Add 3D Model Preview
-            EditorGUILayout.LabelField("3D Model Preview: (Not Implemented)", EditorStyles.miniLabel);
             EditorGUILayout.Space();
         }
 
@@ -384,15 +496,9 @@ namespace POTCO.Editor.ItemCreator
         {
             EditorGUILayout.LabelField("Weapon Specific", EditorStyles.boldLabel);
             _selectedItem.SetPower(EditorGUILayout.IntField("Power:", _selectedItem.GetPower()));
-            _selectedItem.SetRating(EditorGUILayout.IntField("Rating:", _selectedItem.GetRating()));
             _selectedItem.SetWeaponReq(EditorGUILayout.IntField("Weapon Req:", _selectedItem.GetWeaponReq()));
-            _selectedItem.SetUseSkill(EditorGUILayout.IntField("Use Skill:", _selectedItem.GetUseSkill()));
-            _selectedItem.SetSpecialAttackRank(EditorGUILayout.IntField("Special Attack Rank:", _selectedItem.GetSpecialAttackRank()));
             _selectedItem.SetSpecialAttack(EditorGUILayout.IntField("Special Attack:", _selectedItem.GetSpecialAttack()));
-            _selectedItem.SetBarrels(EditorGUILayout.IntField("Barrels (Guns/Thrown):", _selectedItem.GetBarrels()));
-            _selectedItem.SetVfxType1(EditorGUILayout.IntField("VFX Type 1:", _selectedItem.GetVfxType1()));
-            _selectedItem.SetVfxType2(EditorGUILayout.IntField("VFX Type 2:", _selectedItem.GetVfxType2()));
-            _selectedItem.SetVfxOffset(EditorGUILayout.IntField("VFX Offset:", _selectedItem.GetVfxOffset()));
+            _selectedItem.SetBarrels(EditorGUILayout.IntField("Barrels:", _selectedItem.GetBarrels()));
             EditorGUILayout.Space();
         }
 
@@ -405,126 +511,50 @@ namespace POTCO.Editor.ItemCreator
 
         private void DrawAttributesBoostsSection()
         {
-            EditorGUILayout.LabelField("Attributes / Boosts (Not Implemented)", EditorStyles.boldLabel);
-            // TODO: Implement dynamic attribute/skill boost rows
+            EditorGUILayout.LabelField("Attributes (Raw IDs)", EditorStyles.boldLabel);
+            // Placeholder for future complex UI
             EditorGUILayout.Space();
         }
 
         private void CreateNewItem()
         {
-            if (_itemDatabase == null || _itemDatabase.AllItems == null || _itemDatabase.ColumnHeadings == null)
-            {
-                Debug.LogError("ItemDatabase not initialized. Cannot create new item.");
-                return;
-            }
-
+            if (_itemDatabase == null || _itemDatabase.AllItems == null) return;
             int newId = _itemDatabase.AllItems.Any() ? _itemDatabase.AllItems.Keys.Max() + 1 : 1;
-
-            // Initialize raw data list with a default size based on column headings
-            int columnCount = ItemColumnMapping.Mapping.Count;
-            List<object> newRawData = new List<object>(new object[columnCount]);
-
-            // Set some default values
-            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_CLASS", out int classIndex))
-            {
-                newRawData[classIndex] = InventoryTypeConstants.GetValue("ItemTypeWeapon");
-            }
-            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_NAME", out int nameIndex))
-            {
-                newRawData[nameIndex] = "u'New Item'";
-            }
-            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_ID", out int idIndex))
-            {
-                newRawData[idIndex] = newId;
-            }
-            string constantName = $"NEW_ITEM_{newId}";
-            if (ItemColumnMapping.Mapping.TryGetValue("CONSTANT_NAME", out int constantNameIndex))
-            {
-                newRawData[constantNameIndex] = $"u'{constantName}'";
-            }
-            // Add other sensible defaults here, e.g., Version, Rarity, GoldCost
-            if (ItemColumnMapping.Mapping.TryGetValue("VERSION", out int versionIndex)) newRawData[versionIndex] = 1;
-            if (ItemColumnMapping.Mapping.TryGetValue("RARITY", out int rarityIndex)) newRawData[rarityIndex] = 1; // COMMON
-            if (ItemColumnMapping.Mapping.TryGetValue("GOLD_COST", out int goldCostIndex)) newRawData[goldCostIndex] = 0;
-
-
-            ItemDataRow newItem = new ItemDataRow(newId, newRawData);
+            int colCount = ItemColumnMapping.Mapping.Count > 0 ? ItemColumnMapping.Mapping.Count : 50;
+            List<object> newRaw = new List<object>(new object[colCount]);
+            
+            // Fill defaults
+            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_ID", out int idIdx)) newRaw[idIdx] = newId;
+            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_NAME", out int nameIdx)) newRaw[nameIdx] = "New Item";
+            if (ItemColumnMapping.Mapping.TryGetValue("CONSTANT_NAME", out int cNameIdx)) newRaw[cNameIdx] = "NEW_ITEM_" + newId;
+            
+            ItemDataRow newItem = new ItemDataRow(newId, newRaw);
             _itemDatabase.AllItems.Add(newId, newItem);
-            _selectedItemId = newId;
-            _selectedItem = newItem;
-
-            Debug.Log($"Created new item with ID: {newId}");
-            EditorUtility.SetDirty(_itemDatabase); // Mark as dirty to save changes
+            UpdateSelection(newItem);
         }
 
         private void DuplicateSelectedItem()
         {
-            if (_selectedItem == null)
-            {
-                Debug.LogWarning("No item selected to duplicate.");
-                return;
-            }
-
-            if (_itemDatabase == null || _itemDatabase.AllItems == null || _itemDatabase.ColumnHeadings == null)
-            {
-                Debug.LogError("ItemDatabase not initialized. Cannot duplicate item.");
-                return;
-            }
-
-            int newId = _itemDatabase.AllItems.Any() ? _itemDatabase.AllItems.Keys.Max() + 1 : 1;
-
-            // Deep copy the raw data list
-            List<object> duplicatedRawData = _selectedItem.GetRawData().ConvertAll(item =>
-            {
-                if (item is string s) return s;
-                if (item is int i) return i;
-                if (item is float f) return f;
-                // Add other types if necessary
-                return item;
-            });
-
-
-            // Update ITEM_ID for the duplicated item
-            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_ID", out int idIndex))
-            {
-                duplicatedRawData[idIndex] = newId;
-            }
-
-            // Generate a new unique CONSTANT_NAME
-            string originalConstantName = _selectedItem.GetConstantName();
-            string newConstantName = $"DUPLICATE_OF_{originalConstantName.ToUpper().Replace("U'", "").Replace("'", "")}_{newId}";
-            if (ItemColumnMapping.Mapping.TryGetValue("CONSTANT_NAME", out int constantNameIndex))
-            {
-                duplicatedRawData[constantNameIndex] = $"u'{newConstantName}'";
-            }
-            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_NAME", out int nameIndex))
-            {
-                duplicatedRawData[nameIndex] = $"u'Duplicate of {_selectedItem.GetItemName().Replace("u'", "").Replace("'", "")}'";
-            }
-
-
-            ItemDataRow duplicatedItem = new ItemDataRow(newId, duplicatedRawData);
-            _itemDatabase.AllItems.Add(newId, duplicatedItem);
-            _selectedItemId = newId;
-            _selectedItem = duplicatedItem;
-
-            Debug.Log($"Duplicated item '{_selectedItem.GetItemName()}' with new ID: {newId}");
-            EditorUtility.SetDirty(_itemDatabase); // Mark as dirty to save changes
+            if (_selectedItem == null || _itemDatabase == null) return;
+            int newId = _itemDatabase.AllItems.Keys.Max() + 1;
+            List<object> copyRaw = new List<object>(_selectedItem.GetRawData());
+            
+            if (ItemColumnMapping.Mapping.TryGetValue("ITEM_ID", out int idIdx)) copyRaw[idIdx] = newId;
+            if (ItemColumnMapping.Mapping.TryGetValue("CONSTANT_NAME", out int cIdx)) copyRaw[cIdx] = _selectedItem.GetConstantName() + "_DUP";
+            
+            ItemDataRow dupItem = new ItemDataRow(newId, copyRaw);
+            _itemDatabase.AllItems.Add(newId, dupItem);
+            UpdateSelection(dupItem);
         }
 
-        private void AddSubtypesToDropdown(List<string> subtypeNames, List<string> subtypeDisplayNames, string[] constants)
+        private void AddSubtypesToDropdown(List<string> names, List<string> displayNames, string[] keys)
         {
-            foreach (string constantName in constants)
+            foreach (string k in keys)
             {
-                if (_itemDatabase.ItemSubtypeConstantsMap.ContainsKey(constantName))
+                if (_itemDatabase.ItemSubtypeConstantsMap.ContainsKey(k))
                 {
-                    subtypeNames.Add(constantName);
-                    // Optionally make display names more user-friendly
-                    subtypeDisplayNames.Add(constantName.Replace("_", " ").ToLowerInvariant().ToTitleCase()); 
-                }
-                else
-                {
-                    Debug.LogWarning($"Subtype constant '{constantName}' not found in ItemSubtypeConstantsMap.");
+                    names.Add(k);
+                    displayNames.Add(k.ToTitleCase());
                 }
             }
         }
