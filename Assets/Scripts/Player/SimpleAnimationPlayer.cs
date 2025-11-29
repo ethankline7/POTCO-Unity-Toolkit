@@ -59,6 +59,10 @@ namespace Player
         [SerializeField] private AnimationClip swimBackClip;
         [SerializeField] private AnimationClip swimLeftClip;
         [SerializeField] private AnimationClip swimRightClip;
+        [SerializeField] private AnimationClip swimLeftDiagonalClip;
+        [SerializeField] private AnimationClip swimRightDiagonalClip;
+        [SerializeField] private AnimationClip swimBackDiagonalLeftClip;
+        [SerializeField] private AnimationClip swimBackDiagonalRightClip;
 
         private POTCO.RuntimeAnimatorPlayer animComponent;
         private PlayerController playerController;
@@ -510,6 +514,10 @@ namespace Player
             if (swimBackClip == null) swimBackClip = FindAndLoadClip("swim_back", phases, searchPaths);
             if (swimLeftClip == null) swimLeftClip = FindAndLoadClip("swim_left", phases, searchPaths);
             if (swimRightClip == null) swimRightClip = FindAndLoadClip("swim_right", phases, searchPaths);
+            if (swimLeftDiagonalClip == null) swimLeftDiagonalClip = FindAndLoadClip("swim_left_diagonal", phases, searchPaths);
+            if (swimRightDiagonalClip == null) swimRightDiagonalClip = FindAndLoadClip("swim_right_diagonal", phases, searchPaths);
+            if (swimBackDiagonalLeftClip == null) swimBackDiagonalLeftClip = FindAndLoadClip("swim_back_diagonal_left", phases, searchPaths);
+            if (swimBackDiagonalRightClip == null) swimBackDiagonalRightClip = FindAndLoadClip("swim_back_diagonal_right", phases, searchPaths);
 
             // Add clips to RuntimeAnimatorPlayer and set wrap modes
             if (idleClip != null)
@@ -624,6 +632,26 @@ namespace Player
                 animComponent.AddClip(swimRightClip, "swim_right");
                 animComponent.SetWrapMode("swim_right", WrapMode.Loop);
             }
+            if (swimLeftDiagonalClip != null)
+            {
+                animComponent.AddClip(swimLeftDiagonalClip, "swim_left_diagonal");
+                animComponent.SetWrapMode("swim_left_diagonal", WrapMode.Loop);
+            }
+            if (swimRightDiagonalClip != null)
+            {
+                animComponent.AddClip(swimRightDiagonalClip, "swim_right_diagonal");
+                animComponent.SetWrapMode("swim_right_diagonal", WrapMode.Loop);
+            }
+            if (swimBackDiagonalLeftClip != null)
+            {
+                animComponent.AddClip(swimBackDiagonalLeftClip, "swim_back_diagonal_left");
+                animComponent.SetWrapMode("swim_back_diagonal_left", WrapMode.Loop);
+            }
+            if (swimBackDiagonalRightClip != null)
+            {
+                animComponent.AddClip(swimBackDiagonalRightClip, "swim_back_diagonal_right");
+                animComponent.SetWrapMode("swim_back_diagonal_right", WrapMode.Loop);
+            }
 
             // Check if we have minimum required animations
             if (idleClip != null && walkClip != null)
@@ -697,11 +725,25 @@ namespace Player
                 // Check if moving
                 if (input.magnitude > 0.1f || Mathf.Abs(strafeInput) > 0.1f)
                 {
-                     if (input.y > 0.1f) targetAnim = swimWalkClip != null ? "swim_walk" : "swim_idle";
-                     else if (input.y < -0.1f) targetAnim = swimBackClip != null ? "swim_back" : "swim_walk";
-                     else if (input.x < -0.1f || strafeInput < -0.1f) targetAnim = swimLeftClip != null ? "swim_left" : "swim_walk";
-                     else if (input.x > 0.1f || strafeInput > 0.1f) targetAnim = swimRightClip != null ? "swim_right" : "swim_walk";
-                     else targetAnim = "swim_walk";
+                    // Check for diagonal movement first
+                    bool isDiagonal = Mathf.Abs(input.x) > 0.1f && Mathf.Abs(input.y) > 0.1f;
+
+                    if (isDiagonal)
+                    {
+                        if (input.y > 0.1f && input.x < -0.1f) targetAnim = swimLeftDiagonalClip != null ? "swim_left_diagonal" : "swim_walk";
+                        else if (input.y > 0.1f && input.x > 0.1f) targetAnim = swimRightDiagonalClip != null ? "swim_right_diagonal" : "swim_walk";
+                        else if (input.y < -0.1f && input.x < -0.1f) targetAnim = swimBackDiagonalLeftClip != null ? "swim_back_diagonal_left" : "swim_back";
+                        else if (input.y < -0.1f && input.x > 0.1f) targetAnim = swimBackDiagonalRightClip != null ? "swim_back_diagonal_right" : "swim_back";
+                        else targetAnim = "swim_walk";
+                    }
+                    else
+                    {
+                         if (input.y > 0.1f) targetAnim = swimWalkClip != null ? "swim_walk" : "swim_idle";
+                         else if (input.y < -0.1f) targetAnim = swimBackClip != null ? "swim_back" : "swim_walk";
+                         else if (input.x < -0.1f || strafeInput < -0.1f) targetAnim = swimLeftClip != null ? "swim_left" : "swim_walk";
+                         else if (input.x > 0.1f || strafeInput > 0.1f) targetAnim = swimRightClip != null ? "swim_right" : "swim_walk";
+                         else targetAnim = "swim_walk";
+                    }
                 }
                 else
                 {

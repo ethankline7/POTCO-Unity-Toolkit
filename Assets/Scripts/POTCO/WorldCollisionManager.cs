@@ -32,6 +32,23 @@ namespace POTCO
         }
 
         /// <summary>
+        /// Helper to check if an object is under a parent with "wave_none" in the name
+        /// </summary>
+        private bool IsUnderWaveNoneParent(GameObject go)
+        {
+            Transform current = go.transform;
+            while (current != null)
+            {
+                if (current.name.IndexOf("wave_none", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+                current = current.parent;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Apply mesh colliders based on current settings
         /// </summary>
         public void ApplyColliders()
@@ -60,6 +77,10 @@ namespace POTCO
 
             foreach (MeshRenderer renderer in allRenderers)
             {
+                // NEW: Skip if under wave_none parent
+                if (IsUnderWaveNoneParent(renderer.gameObject))
+                    continue;
+
                 // Check if this renderer uses Collision-Material
                 bool usesCollisionMaterial = false;
                 if (renderer.sharedMaterials != null)
@@ -115,6 +136,10 @@ namespace POTCO
                     continue;
                 }
 
+                // NEW: Skip if under wave_none parent
+                if (IsUnderWaveNoneParent(objectInfo.gameObject))
+                    continue;
+
                 // Check root
                 if (objectInfo.GetComponent<Collider>() == null)
                 {
@@ -134,6 +159,10 @@ namespace POTCO
                         {
                             // Double check: Don't add collider if this child belongs to an NPC hierarchy
                             if (childMeshFilter.GetComponentInParent<NPCController>() != null)
+                                continue;
+
+                            // NEW: Skip children if under wave_none parent (even if parent wasn't)
+                            if (IsUnderWaveNoneParent(childMeshFilter.gameObject))
                                 continue;
 
                             if (childMeshFilter.GetComponent<Collider>() == null && childMeshFilter.sharedMesh != null)
