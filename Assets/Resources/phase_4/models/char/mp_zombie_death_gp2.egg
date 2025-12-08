@@ -2074,8 +2074,6 @@
                             <Table> def_left_shoulder {
                               <Xfm$Anim_S$> xform {
                                 <Scalar> fps { 24 }
-                                <S$Anim> y { <V> { -0.00312273995950818 } }
-                                <S$Anim> z { <V> { 0.00440840981900692 } }
                               }
                             }
                             <Table> zz_left_elbow {
@@ -2221,10 +2219,6 @@
                               <Table> def_left_elbow {
                                 <Xfm$Anim_S$> xform {
                                   <Scalar> fps { 24 }
-                                  <S$Anim> h { <V> { 0.196391999721527 } }
-                                  <S$Anim> p { <V> { -3.73303008079529 } }
-                                  <S$Anim> r { <V> { 0.0129137001931667 } }
-                                  <S$Anim> y { <V> { -0.000259986991295591 } }
                                 }
                                 <Table> def_left_forearm {
                                   <Xfm$Anim_S$> xform {
@@ -2472,9 +2466,6 @@
                                 <Table> def_left_wrist {
                                   <Xfm$Anim_S$> xform {
                                     <Scalar> fps { 24 }
-                                    <S$Anim> h { <V> { 0.0221909992396832 } }
-                                    <S$Anim> p { <V> { -3.72899007797241 } }
-                                    <S$Anim> r { <V> { 0.17425200343132 } }
                                   }
                                 }
                                 <Table> weapon_left {

@@ -93,6 +93,13 @@ namespace POTCO
         private float obstacleDetectionRange = 30f;
         private BoxCollider hullCollider;
 
+        // Collision check timer (optimization)
+        private float collisionCheckTimer = 0f;
+
+        // Cached avoidance results (optimization)
+        private Vector3 cachedAvoidanceDir;
+        private float cachedAvoidanceWeight;
+
         #endregion
 
         #region Enums
@@ -167,24 +174,30 @@ namespace POTCO
 
         private void Update()
         {
-            // Handle player collision ignore
-            if (hullCollider != null)
+            // OPTIMIZATION: Only check collision ignore once per second, not every frame
+            collisionCheckTimer += Time.deltaTime;
+            if (collisionCheckTimer > 1.0f)
             {
-                GameObject player = GameObject.FindGameObjectWithTag("Player");
-                if (player == null)
-                {
-                    Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
-                    if (pc != null) player = pc.gameObject;
-                }
+                collisionCheckTimer = 0f;
 
-                if (player != null)
+                if (hullCollider != null)
                 {
-                    Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
-                    foreach (Collider playerCollider in playerColliders)
+                    GameObject player = GameObject.FindGameObjectWithTag("Player");
+                    if (player == null)
                     {
-                        if (playerCollider != null && hullCollider != null)
+                        Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
+                        if (pc != null) player = pc.gameObject;
+                    }
+
+                    if (player != null)
+                    {
+                        Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
+                        foreach (Collider playerCollider in playerColliders)
                         {
-                            Physics.IgnoreCollision(hullCollider, playerCollider, true);
+                            if (playerCollider != null && hullCollider != null)
+                            {
+                                Physics.IgnoreCollision(hullCollider, playerCollider, true);
+                            }
                         }
                     }
                 }
@@ -684,6 +697,15 @@ namespace POTCO
         /// </summary>
         private void DetectObstacles()
         {
+            // OPTIMIZATION: Only run raycasts every 10 frames
+            // Use cached result for the frames in between
+            if (Time.frameCount % 10 != 0)
+            {
+                avoidanceDirection = cachedAvoidanceDir;
+                avoidanceWeight = cachedAvoidanceWeight;
+                return;
+            }
+
             avoidanceWeight = 0f;
             avoidanceDirection = Vector3.zero;
 
@@ -751,6 +773,10 @@ namespace POTCO
                 avoidanceDirection.Normalize();
                 avoidanceWeight = Mathf.Clamp01(avoidanceWeight);
             }
+
+            // Save to cache
+            cachedAvoidanceDir = avoidanceDirection;
+            cachedAvoidanceWeight = avoidanceWeight;
         }
 
         #endregion

@@ -6,6 +6,7 @@ using System.Linq;
 using WorldDataExporter.Data;
 using POTCO;
 using POTCO.Editor;
+using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataExporter.Utilities
 {

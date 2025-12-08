@@ -36,6 +36,13 @@ namespace POTCO.VisZones
         private Dictionary<string, GameObject> objectUidDict = new Dictionary<string, GameObject>();
         private Dictionary<string, GameObject> namedStaticDict = new Dictionary<string, GameObject>();
 
+        // Store original renderer states for Large objects and named statics (preserves character clothing, etc.)
+        private Dictionary<Renderer, bool> objectRendererStates = new Dictionary<Renderer, bool>();
+
+        // Cache of physically overlapping zones (generated at startup)
+        // Maps ZoneName -> List of names of other zones that physically intersect/overlap it
+        private Dictionary<string, List<string>> overlappingZoneMap = new Dictionary<string, List<string>>();
+
         private void Awake()
         {
             // Auto-detect VisZoneData if not set
@@ -48,6 +55,9 @@ namespace POTCO.VisZones
             BuildSectionDictionary();
             BuildObjectUidDictionary();
             BuildNamedStaticDictionary();
+            
+            // Build physical overlap map to ensure nested/overlapping zones are always visible together
+            BuildOverlappingZoneMap();
 
             // Initially hide all sections
             foreach (var section in zoneSections)
@@ -58,6 +68,67 @@ namespace POTCO.VisZones
             // NOTE: Large objects (tracked by UID) start VISIBLE by default
             // They will be hidden when entering zones that don't reference them
             // This matches POTCO behavior where Large objects are always visible unless explicitly hidden
+        }
+
+        /// <summary>
+        /// Build a map of which zones physically overlap/intersect each other.
+        /// This ensures that nested zones (e.g., a room inside a larger area) remain visible
+        /// even if the VisTable data doesn't explicitly link them.
+        /// </summary>
+        private void BuildOverlappingZoneMap()
+        {
+            overlappingZoneMap.Clear();
+            
+            if (zoneSections.Count == 0) return;
+
+            // O(N^2) check - fine for startup since N is usually small (<100)
+            for (int i = 0; i < zoneSections.Count; i++)
+            {
+                var sectionA = zoneSections[i];
+                if (sectionA == null || string.IsNullOrEmpty(sectionA.zoneName)) continue;
+
+                // Ensure list exists
+                if (!overlappingZoneMap.ContainsKey(sectionA.zoneName))
+                {
+                    overlappingZoneMap[sectionA.zoneName] = new List<string>();
+                }
+
+                Bounds boundsA = sectionA.zoneBounds;
+                // If bounds are zero/empty, try to get from collider
+                if (boundsA.size == Vector3.zero && sectionA.zoneCollider != null)
+                {
+                    boundsA = sectionA.zoneCollider.bounds;
+                }
+
+                for (int j = i + 1; j < zoneSections.Count; j++)
+                {
+                    var sectionB = zoneSections[j];
+                    if (sectionB == null || string.IsNullOrEmpty(sectionB.zoneName)) continue;
+
+                    Bounds boundsB = sectionB.zoneBounds;
+                    if (boundsB.size == Vector3.zero && sectionB.zoneCollider != null)
+                    {
+                        boundsB = sectionB.zoneCollider.bounds;
+                    }
+
+                    // Check intersection
+                    if (boundsA.Intersects(boundsB))
+                    {
+                        // Add bidirectional link
+                        overlappingZoneMap[sectionA.zoneName].Add(sectionB.zoneName);
+                        
+                        if (!overlappingZoneMap.ContainsKey(sectionB.zoneName))
+                        {
+                            overlappingZoneMap[sectionB.zoneName] = new List<string>();
+                        }
+                        overlappingZoneMap[sectionB.zoneName].Add(sectionA.zoneName);
+                        
+                        // Debug.Log($"[VisZoneManager] Overlap detected: {sectionA.zoneName} <-> {sectionB.zoneName}");
+                    }
+                }
+            }
+            
+            Debug.Log($"[VisZoneManager] Built overlap map for {overlappingZoneMap.Count} zones");
         }
 
         // Removed Start() - VisZoneSensor now detects the initial zone when player spawns
@@ -206,6 +277,18 @@ namespace POTCO.VisZones
 
             // Get complete visibility set for zone
             VisZoneData.VisibilitySet visSet = visZoneData.GetCompleteVisibilitySet(zoneName);
+
+            // Add physically overlapping zones (Nested/Intersecting zones)
+            if (overlappingZoneMap.TryGetValue(zoneName, out List<string> overlaps))
+            {
+                foreach (string overlapZone in overlaps)
+                {
+                    if (!visSet.zones.Contains(overlapZone))
+                    {
+                        visSet.zones.Add(overlapZone);
+                    }
+                }
+            }
 
             int zonesShown = 0, zonesHidden = 0;
             int uidsShown = 0, uidsHidden = 0;
@@ -449,6 +532,7 @@ namespace POTCO.VisZones
             // Collect visibility from ALL zones player is in (union)
             foreach (string zoneName in currentPlayerZones)
             {
+                // 1. Get standard logical visibility (VisTable)
                 VisZoneData.VisibilitySet visSet = visZoneData.GetCompleteVisibilitySet(zoneName);
 
                 foreach (string zone in visSet.zones)
@@ -459,6 +543,16 @@ namespace POTCO.VisZones
 
                 foreach (string staticName in visSet.namedStatics)
                     combinedStatics.Add(staticName);
+                    
+                // 2. Add physically overlapping zones (Nested/Intersecting zones)
+                // This ensures that if Zone B is inside Zone A, being in Zone A allows seeing Zone B
+                if (overlappingZoneMap.TryGetValue(zoneName, out List<string> overlaps))
+                {
+                    foreach (string overlapZone in overlaps)
+                    {
+                        combinedZones.Add(overlapZone);
+                    }
+                }
             }
 
             int zonesShown = 0, zonesHidden = 0;
@@ -628,6 +722,7 @@ namespace POTCO.VisZones
 
         /// <summary>
         /// Hide object by disabling renderers (preserves component data unlike SetActive)
+        /// Stores original renderer states to preserve character clothing, etc.
         /// </summary>
         private void HideObject(GameObject obj)
         {
@@ -635,25 +730,41 @@ namespace POTCO.VisZones
             Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
             foreach (Renderer renderer in renderers)
             {
-                if (renderer != null && renderer.enabled)
+                if (renderer != null)
                 {
+                    // Store original state before disabling (only if not already stored)
+                    if (!objectRendererStates.ContainsKey(renderer))
+                    {
+                        objectRendererStates[renderer] = renderer.enabled;
+                    }
+
                     renderer.enabled = false;
                 }
             }
         }
 
         /// <summary>
-        /// Show object by enabling renderers
+        /// Show object by restoring renderers to original state
+        /// Preserves character clothing by restoring stored states instead of blindly enabling all
         /// </summary>
         private void ShowObject(GameObject obj)
         {
-            // Enable all renderers on this object and its children
+            // Restore all renderers on this object and its children to original state
             Renderer[] renderers = obj.GetComponentsInChildren<Renderer>(true);
             foreach (Renderer renderer in renderers)
             {
-                if (renderer != null && !renderer.enabled)
+                if (renderer != null)
                 {
-                    renderer.enabled = true;
+                    // Restore original state if we have it stored, otherwise default to enabled
+                    if (objectRendererStates.TryGetValue(renderer, out bool originalState))
+                    {
+                        renderer.enabled = originalState;
+                    }
+                    else
+                    {
+                        // No stored state - this renderer was probably always visible
+                        renderer.enabled = true;
+                    }
                 }
             }
         }

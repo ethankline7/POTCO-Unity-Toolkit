@@ -927,12 +927,23 @@ namespace CharacterOG.Data.PureCSharpBackend
             var text = File.ReadAllText(genderFilePath);
 
             // Parse layer lists (these contain the OG patterns)
-            var layer1Patterns = ExtractLayerList(text, "layer1List");
-            var layer2Patterns = ExtractLayerList(text, "layer2List");
-            var layer3Patterns = ExtractLayerList(text, "layer3List");
-            var hairPatterns = ExtractLayerList(text, "hairList");
+            var layer1Patterns = ExtractLayerList(text, "self.clothingsLayer1");
+            var layer2Patterns = ExtractLayerList(text, "self.clothingsLayer2");
+            var layer3Patterns = ExtractLayerList(text, "self.clothingsLayer3");
+            
+            // Try to parse self.hairPieces (Male style - direct appends)
+            var hairPatterns = ExtractLayerList(text, "self.hairPieces");
+            
+            // If empty, try parsing 'hairList' (Female style - list variable)
+            if (hairPatterns.Count == 0)
+            {
+                hairPatterns = ExtractLayerList(text, "hairList");
+                Debug.Log("Used 'hairList' fallback for hair patterns");
+            }
 
             Debug.Log($"Extracted layer lists: layer1={layer1Patterns.Count}, layer2={layer2Patterns.Count}, layer3={layer3Patterns.Count}, hair={hairPatterns.Count}");
+            if (hairPatterns.Count > 0) Debug.Log($"First hair pattern: {hairPatterns[0]}");
+            if (hairPatterns.Count > 2) Debug.Log($"3rd hair pattern: {hairPatterns[2]}");
 
             // Parse append() calls for each slot to get layer indices and body hides
             ParseClothingAppends(catalog, text, "Shirt", Slot.Shirt, layer1Patterns);
@@ -946,18 +957,57 @@ namespace CharacterOG.Data.PureCSharpBackend
             // Parse hair (special case - no append(), just use hairList directly)
             ParseHairVariants(catalog, hairPatterns, text, gender);
 
+            // Parse hat hair cuts (cuts = [...])
+            ParseHairCuts(catalog, text, gender);
+
             // Parse beard and mustache patterns from Python source
             ParseBeardMustachePatterns(catalog, text, gender);
+
+            // MANUAL FIX: Ensure "Long Tucked Pants" (Index 0) has the correct pattern for MALES
+            // The parser sometimes fails to link the specific append index, so we force it here.
+            if (gender == "m")
+            {
+                var pant0 = catalog.GetVariant(Slot.Pant, 0);
+                if (pant0 != null)
+                {
+                    pant0.ogPatterns = new List<string> { "**/clothing_layer1_pant_tucked*" };
+                    Debug.Log("Manually forced pattern for Male Long Tucked Pants (Pant [0])");
+                }
+            }
+
+            // Build patterns from variant names (fallback for items not in lists)
+            BuildPatternsFromNames(catalog, gender);
         }
 
         private List<string> ExtractLayerList(string text, string listName)
         {
-            // Match listName = [ ... ]
-            var match = Regex.Match(text, $@"{listName}\s*=\s*\[(.*?)\]", RegexOptions.Singleline);
-            if (!match.Success)
-                return new List<string>();
+            // 1. Try to find static list definition: listName = [ ... ]
+            // Note: Escape dots in listName for regex (e.g. self.clothingsLayer1 -> self\.clothingsLayer1)
+            string safeListName = Regex.Escape(listName);
+            var match = Regex.Match(text, $@"{safeListName}\s*=\s*\[(.*?)\]", RegexOptions.Singleline);
+            
+            var patterns = new List<string>();
 
-            return ExtractPatternList(match.Groups[1].Value);
+            if (match.Success)
+            {
+                patterns.AddRange(ExtractPatternList(match.Groups[1].Value));
+            }
+
+            // 2. Also find dynamic appends: listName.append(geom.findAllMatches('pattern'))
+            // Regex handles both single and double quotes
+            // Matches: self.clothingsLayer1.append(geom.findAllMatches('**/clothing_layer1_pant_tucked_*'))
+            // Added \s* before ( to be safe, and * for content
+            var appendRx = new Regex($@"{safeListName}\.append\s*\(\s*geom\.findAllMatches\s*\(\s*['""]([^'""]*)['""]", RegexOptions.Compiled);
+            
+            foreach (Match m in appendRx.Matches(text))
+            {
+                string pattern = m.Groups[1].Value;
+                // Strip POTCO-specific ;+s suffix
+                pattern = pattern.Replace(";+s", "");
+                patterns.Add(pattern);
+            }
+
+            return patterns;
         }
 
         private void ParseClothingAppends(ClothingCatalog catalog, string text, string pySlotName, Slot slot, List<string> layerPatterns)
@@ -1068,20 +1118,76 @@ namespace CharacterOG.Data.PureCSharpBackend
         private void ParseHairVariants(ClothingCatalog catalog, List<string> hairPatterns, string text, string gender)
         {
             var variants = catalog.GetVariants(Slot.Hair);
-
-            // Both male and female use self.hairs.append([...]) arrays
-            // Parse self.hairs.append([...]) to get hair piece combinations
+            
+            // self.hairs.append([ [indices...], -hides... ])
+            // Use robust parsing to handle nested lists and newlines
+            var matches = Regex.Matches(text, @"self\.hairs\.append\s*\(");
             var hairCombos = new List<List<int>>();
-            var hairComboRx = new Regex(@"self\.hairs\.append\(\[([\d,\s]+)\]\)", RegexOptions.Compiled);
-            foreach (Match m in hairComboRx.Matches(text))
+
+            foreach (Match m in matches)
             {
-                var indices = new List<int>();
-                var numRx = new Regex(@"\d+");
-                foreach (Match nm in numRx.Matches(m.Groups[1].Value))
+                // Find the matching closing parenthesis
+                int startPos = m.Index + m.Length;
+                int depth = 1;
+                int endPos = startPos;
+
+                for (int i = startPos; i < text.Length && depth > 0; i++)
                 {
-                    if (int.TryParse(nm.Value, out var idx))
-                        indices.Add(idx);
+                    if (text[i] == '(') depth++;
+                    else if (text[i] == ')') depth--;
+                    endPos = i;
                 }
+
+                if (depth != 0) continue;
+
+                var fullPayload = text.Substring(startPos, endPos - startPos);
+
+                // Robustly extract list content by finding brackets manually
+                // Male: [ [ 0, 1 ], ... ] (Nested)
+                // Female: [ 0, 1, 2 ] (Flat)
+
+                string indicesContent = "";
+                int firstBracket = fullPayload.IndexOf('[');
+
+                if (firstBracket >= 0)
+                {
+                    // Check for nested '[' (ignoring whitespace)
+                    bool isNested = false;
+                    int contentStart = firstBracket + 1;
+
+                    for (int k = firstBracket + 1; k < fullPayload.Length; k++)
+                    {
+                        char c = fullPayload[k];
+                        if (char.IsWhiteSpace(c)) continue;
+                        
+                        if (c == '[')
+                        {
+                            isNested = true;
+                            contentStart = k + 1; // Start after the inner '['
+                        }
+                        break; 
+                    }
+
+                    // Find the matching closing ']'
+                    int contentEnd = fullPayload.IndexOf(']', contentStart);
+                    
+                    if (contentEnd > contentStart)
+                    {
+                        indicesContent = fullPayload.Substring(contentStart, contentEnd - contentStart);
+                    }
+                }
+
+                var indices = new List<int>();
+                if (!string.IsNullOrEmpty(indicesContent))
+                {
+                    var numRx = new Regex(@"\d+");
+                    foreach (Match nm in numRx.Matches(indicesContent))
+                    {
+                        if (int.TryParse(nm.Value, out var idx))
+                            indices.Add(idx);
+                    }
+                }
+                
                 hairCombos.Add(indices);
             }
 
@@ -1097,16 +1203,50 @@ namespace CharacterOG.Data.PureCSharpBackend
                 variants[i].ogPatterns = patterns;
 
                 if (i < 5)
+                {
                     Debug.Log($"Hair[{i}]: {string.Join(", ", patterns)} (indices: {string.Join(", ", hairCombos[i])})");
+                    if (patterns.Count == 0 && hairCombos[i].Count > 0)
+                    {
+                        Debug.LogWarning($"Hair[{i}] has indices but no patterns! Max hairPattern index: {hairPatterns.Count - 1}");
+                    }
+                }
             }
             Debug.Log($"Stored {hairCombos.Count} {gender} hair combinations from Python source (self.hairs.append)");
+        }
+
+        private void ParseHairCuts(ClothingCatalog catalog, string text, string gender)
+        {
+            // Find 'cuts = [...]' inside generateHairSets or global scope
+            // Use a more robust regex to capture the entire list content, including newlines
+            var match = Regex.Match(text, @"cuts\s*=\s*\[(.*?)\]", RegexOptions.Singleline);
+            
+            if (match.Success)
+            {
+                var cutList = ExtractPatternList(match.Groups[1].Value);
+                
+                // Clean up empty strings (POTCO uses '' for no cut)
+                for (int i = 0; i < cutList.Count; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(cutList[i]))
+                        cutList[i] = "cut_none"; // Use explict 'none' for logic consistency
+                }
+
+                catalog.hairHatCuts[gender] = cutList;
+                Debug.Log($"[ParseHairCuts] Parsed {cutList.Count} hair cut rules for {gender}");
+                if (cutList.Count > 0) Debug.Log($"[ParseHairCuts] First rule: '{cutList[0]}'");
+            }
+            else
+            {
+                Debug.LogWarning($"[ParseHairCuts] Could not find 'cuts = [...]' list for {gender}");
+            }
         }
 
         private void ParseBeardMustachePatterns(ClothingCatalog catalog, string text, string gender)
         {
             // Extract beard patterns from self.beards.append() calls (PirateMale.py lines 1829-1839)
             var beardPatterns = new List<string>();
-            var beardRx = new Regex(@"self\.beards\.append\(geom\.findAllMatches\('([^']+)'\)\)", RegexOptions.Compiled);
+            // Robust regex: handle whitespace, single/double quotes, empty strings
+            var beardRx = new Regex(@"self\.beards\.append\s*\(\s*geom\.findAllMatches\s*\(\s*['""]([^'""]*)['""]", RegexOptions.Compiled);
             foreach (Match m in beardRx.Matches(text))
             {
                 beardPatterns.Add(m.Groups[1].Value);
@@ -1114,7 +1254,7 @@ namespace CharacterOG.Data.PureCSharpBackend
 
             // Extract mustache patterns from self.mustaches.append() calls (PirateMale.py lines 1844-1850)
             var mustachePatterns = new List<string>();
-            var mustacheRx = new Regex(@"self\.mustaches\.append\(geom\.findAllMatches\('([^']+)'\)\)", RegexOptions.Compiled);
+            var mustacheRx = new Regex(@"self\.mustaches\.append\s*\(\s*geom\.findAllMatches\s*\(\s*['""]([^'""]*)['""]", RegexOptions.Compiled);
             foreach (Match m in mustacheRx.Matches(text))
             {
                 mustachePatterns.Add(m.Groups[1].Value);
@@ -1141,7 +1281,8 @@ namespace CharacterOG.Data.PureCSharpBackend
         {
             var patterns = new List<string>();
             // Match quoted strings like '**/hair_base' or '**/clothing_layer1_hat_tricorn;+s'
-            var stringRx = new Regex(@"['""]([^'""]+)['""]", RegexOptions.Compiled);
+            // Changed + to * to match empty strings ''
+            var stringRx = new Regex(@"['""]([^'""]*)['""]", RegexOptions.Compiled);
 
             foreach (Match m in stringRx.Matches(listContent))
             {
@@ -1281,8 +1422,6 @@ namespace CharacterOG.Data.PureCSharpBackend
 
                 case Slot.Pant:
                     // Pants are complex - use generic pattern for now
-                    if (variant.ogIndex == 0)
-                        return null;
                     return "**/clothing_layer1_pant*";
 
                 case Slot.Belt:
@@ -1306,18 +1445,18 @@ namespace CharacterOG.Data.PureCSharpBackend
                     // Hair will need special handling - multiple groups per style
                     if (variant.ogIndex == 0)
                         return "**/hair_none*";
-                    // For now, show all hair (will refine later)
-                    return "**/hair_*";
+                    // Safe fallback: don't show everything if pattern is missing
+                    return null;
 
                 case Slot.Beard:
                     if (variant.ogIndex == 0)
                         return "**/beard_none*";
-                    return "**/beard_*";
+                    return null;
 
                 case Slot.Mustache:
                     if (variant.ogIndex == 0)
                         return "**/mustache_none*";
-                    return "**/mustache_*";
+                    return null;
 
                 default:
                     return null;

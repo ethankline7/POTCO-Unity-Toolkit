@@ -36,6 +36,7 @@ namespace POTCO
         private Quaternion originalRotation;
         private Vector3 respawnPosition;
         private Quaternion respawnRotation;
+        private static GUIStyle cachedHealthStyle; // Static to share across all ships
 
         private void Start()
         {
@@ -223,9 +224,18 @@ namespace POTCO
                 Vector3 screenPos = Camera.main.WorldToScreenPoint(transform.position + Vector3.up * 10f);
                 if (screenPos.z > 0)
                 {
+                    // OPTIMIZATION: Initialize style once
+                    if (cachedHealthStyle == null)
+                    {
+                        cachedHealthStyle = new GUIStyle();
+                        cachedHealthStyle.alignment = TextAnchor.MiddleCenter;
+                        cachedHealthStyle.normal.textColor = Color.red;
+                    }
+
+                    // Use cached style
                     GUI.Label(new Rect(screenPos.x - 50, Screen.height - screenPos.y - 10, 100, 20),
                         $"HP: {currentHealth:F0}/{maxHealth:F0}",
-                        new GUIStyle() { alignment = TextAnchor.MiddleCenter, normal = new GUIStyleState() { textColor = Color.red } });
+                        cachedHealthStyle);
                 }
             }
         }

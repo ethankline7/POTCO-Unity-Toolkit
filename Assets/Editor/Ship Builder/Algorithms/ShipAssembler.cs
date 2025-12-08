@@ -106,6 +106,13 @@ namespace POTCO.ShipBuilder
                 }
             }
 
+            // Preserve specific locators for runtime effects (bowwave)
+            PreserveLocator(shipRoot.transform, locators, "location_bowwave");
+            
+            // Preserve other potential effect locators if needed
+            if (locators.ContainsKey("location_bowwave1"))
+                PreserveLocator(shipRoot.transform, locators, "location_bowwave1");
+
             // Clean up logic object (we only needed it for the transforms)
             Object.DestroyImmediate(logicObject);
 
@@ -262,6 +269,19 @@ namespace POTCO.ShipBuilder
             component.transform.position = locator.position;
             component.transform.rotation = locator.rotation;
             component.transform.localScale = locator.localScale;
+        }
+
+        private void PreserveLocator(Transform parent, Dictionary<string, Transform> locators, string locatorName)
+        {
+            if (locators.ContainsKey(locatorName))
+            {
+                Transform source = locators[locatorName];
+                GameObject preserved = new GameObject(locatorName);
+                preserved.transform.SetParent(parent);
+                preserved.transform.position = source.position;
+                preserved.transform.rotation = source.rotation;
+                preserved.transform.localScale = source.localScale;
+            }
         }
 
 
@@ -461,7 +481,7 @@ namespace POTCO.ShipBuilder
                         continue;
                     }
 
-                    Debug.Log($"  Old material: {sharedMats[i].name}, texture: {(sharedMats[i].mainTexture != null ? sharedMats[i].mainTexture.name : "null")}");
+                    Debug.Log($"  Old material: {sharedMats[i].name}, texture: {(sharedMats[i].HasProperty("_MainTex") && sharedMats[i].mainTexture != null ? sharedMats[i].mainTexture.name : "null")}");
 
                     // Copy the existing material (preserves shader, UVs, and all settings)
                     Material newMat = new Material(sharedMats[i]);
@@ -473,7 +493,7 @@ namespace POTCO.ShipBuilder
                         newMat.SetTexture("_BlendTex", texture);
                     }
 
-                    Debug.Log($"  New material: {newMat.name}, base texture: {(newMat.mainTexture != null ? newMat.mainTexture.name : "null")}, blend texture: {texture.name}");
+                    Debug.Log($"  New material: {newMat.name}, base texture: {(newMat.HasProperty("_MainTex") && newMat.mainTexture != null ? newMat.mainTexture.name : "null")}, blend texture: {texture.name}");
 
                     newMats[i] = newMat;
                     texturesApplied++;
@@ -574,7 +594,7 @@ namespace POTCO.ShipBuilder
                     bool isShipsStaticMaterial = false;
                     string debugInfo = $"Material '{sharedMats[i].name}'";
 
-                    if (sharedMats[i].mainTexture != null)
+                    if (sharedMats[i].HasProperty("_MainTex") && sharedMats[i].mainTexture != null)
                     {
                         string currentTexName = sharedMats[i].mainTexture.name;
                         debugInfo += $" has texture '{currentTexName}'";
@@ -582,7 +602,7 @@ namespace POTCO.ShipBuilder
                     }
                     else
                     {
-                        debugInfo += " has no mainTexture";
+                        debugInfo += " has no mainTexture or _MainTex property";
                         if (sharedMats[i].name.Contains("ships_static"))
                         {
                             // Material name contains ships_static even if texture isn't loaded yet
@@ -597,7 +617,10 @@ namespace POTCO.ShipBuilder
                         // Copy the existing material and replace texture
                         Material newMat = new Material(sharedMats[i]);
                         newMat.name = sharedMats[i].name + "_hull_styled";
-                        newMat.mainTexture = texture;
+                        if (newMat.HasProperty("_MainTex"))
+                        {
+                            newMat.mainTexture = texture;
+                        }
 
                         newMats[i] = newMat;
                         texturesApplied++;

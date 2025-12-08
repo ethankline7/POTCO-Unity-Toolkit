@@ -42,6 +42,7 @@ namespace CharacterOG.Models
         public int topColorIdx = 0;
         public int botColorIdx = 0;
         public int hatColorIdx = 0;
+        public int shoesColorIdx = 0;
 
         // Hair/facial hair
         public int hair = 0;
@@ -97,6 +98,7 @@ namespace CharacterOG.Models
                 topColorIdx = topColorIdx,
                 botColorIdx = botColorIdx,
                 hatColorIdx = hatColorIdx,
+                shoesColorIdx = shoesColorIdx,
                 hair = hair,
                 beard = beard,
                 mustache = mustache,

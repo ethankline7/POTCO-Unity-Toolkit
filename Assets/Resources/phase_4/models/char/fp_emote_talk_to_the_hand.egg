@@ -165,7 +165,6 @@
             <Table> def_hips {
               <Xfm$Anim_S$> xform {
                 <Scalar> fps { 24 }
-                <S$Anim> i { <V> { 0.932200014591217 } }
               }
             }
             <Table> def_hips_waistline {
@@ -271,8 +270,6 @@
                   <Table> def_left_thigh {
                     <Xfm$Anim_S$> xform {
                       <Scalar> fps { 24 }
-                      <S$Anim> j { <V> { 0.932200014591217 } }
-                      <S$Anim> k { <V> { 0.977400004863739 } }
                     }
                   }
                   <Table> zz_left_knee {
@@ -590,8 +587,6 @@
                   <Table> def_right_thigh {
                     <Xfm$Anim_S$> xform {
                       <Scalar> fps { 24 }
-                      <S$Anim> j { <V> { 0.932200014591217 } }
-                      <S$Anim> k { <V> { 0.977400004863739 } }
                     }
                   }
                   <Table> zz_right_knee {
@@ -826,7 +821,6 @@
               <Table> tr_sash01 {
                 <Xfm$Anim_S$> xform {
                   <Scalar> fps { 24 }
-                  <S$Anim> y { <V> { -0.0135599998757243 } }
                 }
                 <Table> zz_sash01 {
                   <Xfm$Anim_S$> xform {

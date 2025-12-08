@@ -25,8 +25,11 @@ namespace POTCO.VisZones
         // Cache renderers on first hide/show to avoid repeated GetComponentsInChildren calls
         private Renderer[] cachedRenderers;
 
+        // Store original renderer states to preserve character clothing, colliders, etc.
+        private System.Collections.Generic.Dictionary<Renderer, bool> originalRendererStates;
+
         /// <summary>
-        /// Show this section (enable all renderers, collisions stay active)
+        /// Show this section (restore renderers to original state, collisions stay active)
         /// Skips renderers marked with PermanentlyHiddenRenderer
         /// </summary>
         public void Show()
@@ -48,7 +51,16 @@ namespace POTCO.VisZones
                             continue;
                         }
 
-                        renderer.enabled = true;
+                        // Restore original state if we have it stored, otherwise default to enabled
+                        if (originalRendererStates != null && originalRendererStates.TryGetValue(renderer, out bool originalState))
+                        {
+                            renderer.enabled = originalState;
+                        }
+                        else
+                        {
+                            // No stored state - this renderer was probably always visible
+                            renderer.enabled = true;
+                        }
                     }
                 }
 
@@ -58,6 +70,7 @@ namespace POTCO.VisZones
 
         /// <summary>
         /// Hide this section (disable all renderers, collisions stay active)
+        /// Stores original renderer states before hiding to preserve character clothing, etc.
         /// Skips renderers marked with PermanentlyHiddenRenderer (already hidden)
         /// </summary>
         public void Hide()
@@ -69,6 +82,12 @@ namespace POTCO.VisZones
                     cachedRenderers = GetComponentsInChildren<Renderer>(true);
                 }
 
+                // Initialize state dictionary if first time hiding
+                if (originalRendererStates == null)
+                {
+                    originalRendererStates = new System.Collections.Generic.Dictionary<Renderer, bool>();
+                }
+
                 foreach (Renderer renderer in cachedRenderers)
                 {
                     if (renderer != null)
@@ -77,6 +96,12 @@ namespace POTCO.VisZones
                         if (renderer.GetComponent<PermanentlyHiddenRenderer>() != null)
                         {
                             continue;
+                        }
+
+                        // Store original state before disabling (only if not already stored)
+                        if (!originalRendererStates.ContainsKey(renderer))
+                        {
+                            originalRendererStates[renderer] = renderer.enabled;
                         }
 
                         renderer.enabled = false;

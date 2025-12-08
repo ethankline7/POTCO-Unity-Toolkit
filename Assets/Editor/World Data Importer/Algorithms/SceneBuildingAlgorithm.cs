@@ -9,6 +9,7 @@ using WorldDataImporter.Processors;
 using WorldDataImporter.Data;
 using POTCO;
 using POTCO.Editor;
+using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataImporter.Algorithms
 {
@@ -30,14 +31,29 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> holidayObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
+            HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
+            
+            // Optimization: Use HashSet for O(1) lookup of queued spawns
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> npcsSpawnedSet = new HashSet<ObjectData>();
+            
+            List<(GameObject go, ObjectData data)> creaturesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> creaturesSpawnedSet = new HashSet<ObjectData>();
+            
+            List<(GameObject go, ObjectData data)> enemiesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> enemiesSpawnedSet = new HashSet<ObjectData>();
 
             for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
             {
                 string line = lines[lineIndex];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                int indent = line.TakeWhile(char.IsWhiteSpace).Count();
+                // Optimized indent calculation
+                int indent = 0;
+                while (indent < line.Length && char.IsWhiteSpace(line[indent]))
+                {
+                    indent++;
+                }
 
                 while (parentStack.Count > 0 && indent <= parentStack.Peek().indent)
                 {
@@ -51,29 +67,31 @@ namespace WorldDataImporter.Algorithms
                 if (ParsingUtilities.IsObjectId(line, out string currentId))
                 {
                     var newGO = new GameObject(currentId);
-                    var newData = new ObjectData 
-                    { 
-                        id = currentId, 
-                        gameObject = newGO, 
-                        indent = indent 
+                    var newData = new ObjectData
+                    {
+                        id = currentId,
+                        gameObject = newGO,
+                        indent = indent
                     };
-                    
+
                     // Add ObjectListInfo component to store metadata only if ImportObjectListData is enabled
                     if (settings != null && settings.importObjectListData)
                     {
-                        var typeInfo = Undo.AddComponent<ObjectListInfo>(newGO);
+                        // Optimization: Use direct AddComponent instead of Undo.AddComponent for large imports to save memory/time
+                        var typeInfo = newGO.AddComponent<ObjectListInfo>();
                         typeInfo.objectId = currentId;
                     }
-                    
+
                     createdObjects[currentId] = newGO;
                     objectDataMap[currentId] = newData;
                     stats.totalObjects++;
 
-                    if (currentGO != null) 
+
+                    if (currentGO != null)
                     {
                         newGO.transform.SetParent(currentGO.transform, false);
                     }
-                    else 
+                    else
                     {
                         root = newGO;
                         rootData = newData;
@@ -85,8 +103,21 @@ namespace WorldDataImporter.Algorithms
 
                 if (ParsingUtilities.IsProperty(line, out string key, out string val) && currentGO != null)
                 {
+                    // Handle multi-line properties (value on next line)
+                    if (string.IsNullOrWhiteSpace(val) && lineIndex + 1 < lines.Length)
+                    {
+                        string nextLine = lines[lineIndex + 1].Trim();
+                        // Check if next line contains a quoted value
+                        if (nextLine.StartsWith("'") && nextLine.Contains("'"))
+                        {
+                            val = nextLine;
+                            lineIndex++; // Skip the next line since we've already processed it
+                            DebugLogger.LogWorldImporter($"📄 Multi-line property detected: {key} = {val}");
+                        }
+                    }
+
                     // Mark holiday objects for deletion after parsing (don't destroy during parsing)
-                    if (settings != null && !settings.importHolidayObjects && 
+                    if (settings != null && !settings.importHolidayObjects &&
                         key == "Holiday" && !string.IsNullOrEmpty(val))
                     {
                         string holiday = ParsingUtilities.ExtractStringValue(val);
@@ -120,7 +151,7 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     // Mark collision objects for deletion if collisions are disabled
-                    if (settings != null && !settings.importCollisions && 
+                    if (settings != null && !settings.importCollisions &&
                         key == "Type" && !string.IsNullOrEmpty(val))
                     {
                         string objectType = ParsingUtilities.ExtractStringValue(val);
@@ -135,16 +166,55 @@ namespace WorldDataImporter.Algorithms
                         }
                     }
 
+                    // Mark Island Game Area and Connector Tunnel objects for deletion if skipGameAreasAndTunnels is enabled
+                    if (settings != null && settings.skipGameAreasAndTunnels &&
+                        key == "Type" && !string.IsNullOrEmpty(val))
+                    {
+                        string objectType = ParsingUtilities.ExtractStringValue(val);
+                        if (objectType == "Island Game Area" || objectType == "Connector Tunnel")
+                        {
+                            // Mark this game area/tunnel object for deletion after parsing is complete
+                            if (currentGO != root)
+                            {
+                                DebugLogger.LogWorldImporter($"🚫 Marking game area/tunnel for deletion: {currentGO.name} (Type: {objectType})");
+                                gameAreaObjectsToDelete.Add(currentGO);
+                            }
+                        }
+                    }
+
                     PropertyProcessor.ProcessProperty(key, val, currentGO, root, useEgg, currentData, stats, settings);
 
                     // Check if NPC is ready for spawning after property processing
                     if (settings?.importNPCs == true && currentData != null &&
                         currentData.objectType == "Townsperson" &&
                         currentData.isReadyForNPCSpawn &&
-                        !npcsToSpawn.Any(npc => npc.data == currentData))
+                        !npcsSpawnedSet.Contains(currentData))
                     {
                         npcsToSpawn.Add((currentGO, currentData));
+                        npcsSpawnedSet.Add(currentData);
                         DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
+                    }
+
+                    // Check if Animal is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Animal" &&
+                        currentData.isReadyForCreatureSpawn &&
+                        !creaturesSpawnedSet.Contains(currentData))
+                    {
+                        creaturesToSpawn.Add((currentGO, currentData));
+                        creaturesSpawnedSet.Add(currentData);
+                        DebugLogger.LogWorldImporter($"📋 Added Animal to spawn queue: {currentData.id} ({currentData.species})");
+                    }
+
+                    // Check if Spawn Node is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Spawn Node" &&
+                        currentData.isReadyForEnemySpawn &&
+                        !enemiesSpawnedSet.Contains(currentData))
+                    {
+                        enemiesToSpawn.Add((currentGO, currentData));
+                        enemiesSpawnedSet.Add(currentData);
+                        DebugLogger.LogWorldImporter($"📋 Added Spawn Node to spawn queue: {currentData.id} ({currentData.spawnables})");
                     }
 
                     continue;
@@ -160,6 +230,32 @@ namespace WorldDataImporter.Algorithms
                     if (go != null && data != null && go.transform.childCount == 0)
                     {
                         PropertyProcessor.SpawnNPC(go, data, stats);
+                    }
+                }
+            }
+
+            // Spawn all Animals after all properties are processed
+            if (creaturesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🐾 Spawning {creaturesToSpawn.Count} Animals...");
+                foreach (var (go, data) in creaturesToSpawn)
+                {
+                    if (go != null && data != null && go.transform.childCount == 0)
+                    {
+                        PropertyProcessor.SpawnCreature(go, data, stats);
+                    }
+                }
+            }
+
+            // Create all Spawn Nodes after all properties are processed
+            if (enemiesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"⚔️ Creating {enemiesToSpawn.Count} Spawn Nodes...");
+                foreach (var (go, data) in enemiesToSpawn)
+                {
+                    if (go != null && data != null)
+                    {
+                        PropertyProcessor.SpawnEnemy(go, data, stats);
                     }
                 }
             }
@@ -203,6 +299,19 @@ namespace WorldDataImporter.Algorithms
                 }
             }
 
+            // Clean up game area and connector tunnel objects after parsing is complete
+            if (gameAreaObjectsToDelete.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🚫 Cleaning up {gameAreaObjectsToDelete.Count} game area/tunnel objects...");
+                foreach (var gameAreaObj in gameAreaObjectsToDelete)
+                {
+                    if (gameAreaObj != null)
+                    {
+                        Object.DestroyImmediate(gameAreaObj);
+                    }
+                }
+            }
+
             stats.importTime = (float)(System.DateTime.Now - startTime).TotalSeconds;
             LogImportStatistics(stats, path);
             DebugLogger.LogWorldImporter($"✅ Scene built successfully in {stats.importTime:F2} seconds.");
@@ -238,7 +347,17 @@ namespace WorldDataImporter.Algorithms
             HashSet<GameObject> holidayObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> nodeObjectsToDelete = new HashSet<GameObject>();
             HashSet<GameObject> collisionObjectsToDelete = new HashSet<GameObject>();
+            HashSet<GameObject> gameAreaObjectsToDelete = new HashSet<GameObject>();
+            
+            // Optimization: Use HashSet for O(1) lookup of queued spawns
             List<(GameObject go, ObjectData data)> npcsToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> npcsSpawnedSet = new HashSet<ObjectData>();
+            
+            List<(GameObject go, ObjectData data)> creaturesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> creaturesSpawnedSet = new HashSet<ObjectData>();
+            
+            List<(GameObject go, ObjectData data)> enemiesToSpawn = new List<(GameObject, ObjectData)>();
+            HashSet<ObjectData> enemiesSpawnedSet = new HashSet<ObjectData>();
 
             int objectsCreated = 0;
             
@@ -247,7 +366,12 @@ namespace WorldDataImporter.Algorithms
                 string line = lines[lineIndex];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                int indent = line.TakeWhile(char.IsWhiteSpace).Count();
+                // Optimized indent calculation
+                int indent = 0;
+                while (indent < line.Length && char.IsWhiteSpace(line[indent]))
+                {
+                    indent++;
+                }
 
                 while (parentStack.Count > 0 && indent <= parentStack.Peek().indent)
                 {
@@ -279,11 +403,11 @@ namespace WorldDataImporter.Algorithms
                     objectDataMap[currentId] = newData;
                     stats.totalObjects++;
 
-                    if (currentGO != null) 
+                    if (currentGO != null)
                     {
                         newGO.transform.SetParent(currentGO.transform, false);
                     }
-                    else 
+                    else
                     {
                         root = newGO;
                         rootData = newData;
@@ -291,20 +415,33 @@ namespace WorldDataImporter.Algorithms
 
                     parentStack.Push((newGO, newData, indent));
                     objectsCreated++;
-                    
+
                     // Add delay after creating objects (but not after every line parse)
                     if (settings != null && settings.useGenerationDelay && objectsCreated % 5 == 0) // Every 5 objects
                     {
                         yield return new WaitForSeconds(settings.delayBetweenObjects);
                     }
-                    
+
                     continue;
                 }
 
                 if (ParsingUtilities.IsProperty(line, out string key, out string val) && currentGO != null)
                 {
+                    // Handle multi-line properties (value on next line)
+                    if (string.IsNullOrWhiteSpace(val) && lineIndex + 1 < lines.Length)
+                    {
+                        string nextLine = lines[lineIndex + 1].Trim();
+                        // Check if next line contains a quoted value
+                        if (nextLine.StartsWith("'") && nextLine.Contains("'"))
+                        {
+                            val = nextLine;
+                            lineIndex++; // Skip the next line since we've already processed it
+                            DebugLogger.LogWorldImporter($"📄 Multi-line property detected: {key} = {val}");
+                        }
+                    }
+
                     // Mark holiday objects for deletion after parsing (don't destroy during parsing)
-                    if (settings != null && !settings.importHolidayObjects && 
+                    if (settings != null && !settings.importHolidayObjects &&
                         key == "Holiday" && !string.IsNullOrEmpty(val))
                     {
                         string holiday = ParsingUtilities.ExtractStringValue(val);
@@ -338,7 +475,7 @@ namespace WorldDataImporter.Algorithms
                     }
                     
                     // Mark collision objects for deletion if collisions are disabled
-                    if (settings != null && !settings.importCollisions && 
+                    if (settings != null && !settings.importCollisions &&
                         key == "Type" && !string.IsNullOrEmpty(val))
                     {
                         string objectType = ParsingUtilities.ExtractStringValue(val);
@@ -351,17 +488,56 @@ namespace WorldDataImporter.Algorithms
                             }
                         }
                     }
-                    
+
+                    // Mark Island Game Area and Connector Tunnel objects for deletion if skipGameAreasAndTunnels is enabled
+                    if (settings != null && settings.skipGameAreasAndTunnels &&
+                        key == "Type" && !string.IsNullOrEmpty(val))
+                    {
+                        string objectType = ParsingUtilities.ExtractStringValue(val);
+                        if (objectType == "Island Game Area" || objectType == "Connector Tunnel")
+                        {
+                            // Mark this game area/tunnel object for deletion after parsing is complete
+                            if (currentGO != root)
+                            {
+                                DebugLogger.LogWorldImporter($"🚫 Marking game area/tunnel for deletion: {currentGO.name} (Type: {objectType})");
+                                gameAreaObjectsToDelete.Add(currentGO);
+                            }
+                        }
+                    }
+
                     PropertyProcessor.ProcessProperty(key, val, currentGO, root, useEgg, currentData, stats, settings);
 
                     // Check if NPC is ready for spawning after property processing
                     if (settings?.importNPCs == true && currentData != null &&
                         currentData.objectType == "Townsperson" &&
                         currentData.isReadyForNPCSpawn &&
-                        !npcsToSpawn.Any(npc => npc.data == currentData))
+                        !npcsSpawnedSet.Contains(currentData))
                     {
                         npcsToSpawn.Add((currentGO, currentData));
+                        npcsSpawnedSet.Add(currentData);
                         DebugLogger.LogNPCImport($"📋 Added NPC to spawn queue: {currentData.id}");
+                    }
+
+                    // Check if Animal is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Animal" &&
+                        currentData.isReadyForCreatureSpawn &&
+                        !creaturesSpawnedSet.Contains(currentData))
+                    {
+                        creaturesToSpawn.Add((currentGO, currentData));
+                        creaturesSpawnedSet.Add(currentData);
+                        DebugLogger.LogWorldImporter($"📋 Added Animal to spawn queue: {currentData.id} ({currentData.species})");
+                    }
+
+                    // Check if Spawn Node is ready for spawning after property processing
+                    if (currentData != null &&
+                        currentData.objectType == "Spawn Node" &&
+                        currentData.isReadyForEnemySpawn &&
+                        !enemiesSpawnedSet.Contains(currentData))
+                    {
+                        enemiesToSpawn.Add((currentGO, currentData));
+                        enemiesSpawnedSet.Add(currentData);
+                        DebugLogger.LogWorldImporter($"📋 Added Spawn Node to spawn queue: {currentData.id} ({currentData.spawnables})");
                     }
                 }
             }
@@ -375,6 +551,32 @@ namespace WorldDataImporter.Algorithms
                     if (go != null && data != null && go.transform.childCount == 0)
                     {
                         PropertyProcessor.SpawnNPC(go, data, stats);
+                    }
+                }
+            }
+
+            // Spawn all Animals after all properties are processed
+            if (creaturesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🐾 Spawning {creaturesToSpawn.Count} Animals...");
+                foreach (var (go, data) in creaturesToSpawn)
+                {
+                    if (go != null && data != null && go.transform.childCount == 0)
+                    {
+                        PropertyProcessor.SpawnCreature(go, data, stats);
+                    }
+                }
+            }
+
+            // Create all Spawn Nodes after all properties are processed
+            if (enemiesToSpawn.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"⚔️ Creating {enemiesToSpawn.Count} Spawn Nodes...");
+                foreach (var (go, data) in enemiesToSpawn)
+                {
+                    if (go != null && data != null)
+                    {
+                        PropertyProcessor.SpawnEnemy(go, data, stats);
                     }
                 }
             }
@@ -420,7 +622,20 @@ namespace WorldDataImporter.Algorithms
                     }
                 }
             }
-            
+
+            // Clean up game area and connector tunnel objects after parsing is complete
+            if (gameAreaObjectsToDelete.Count > 0)
+            {
+                DebugLogger.LogWorldImporter($"🚫 Cleaning up {gameAreaObjectsToDelete.Count} game area/tunnel objects...");
+                foreach (var gameAreaObj in gameAreaObjectsToDelete)
+                {
+                    if (gameAreaObj != null)
+                    {
+                        Object.DestroyImmediate(gameAreaObj);
+                    }
+                }
+            }
+
             stats.importTime = (float)(System.DateTime.Now - startTime).TotalSeconds;
             LogImportStatistics(stats, path);
             DebugLogger.LogWorldImporter($"✅ Scene built successfully in {stats.importTime:F2} seconds with delays.");

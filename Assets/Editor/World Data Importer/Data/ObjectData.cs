@@ -45,6 +45,21 @@ namespace WorldDataImporter.Data
         public string npcGreetingAnim;  // Greeting Animation
         public string npcNoticeAnim1;   // Notice Animation 1
         public string npcNoticeAnim2;   // Notice Animation 2
+
+        // Animal properties (Type = "Animal")
+        public string species;          // Species (Chicken, Rooster, Pig, Alligator, etc.)
+        public bool? respawns;          // Respawns flag
+        public string startState;       // Start State (Idle, Walk, Patrol, etc.)
+        public float? patrolRadius;     // Patrol Radius
+        public bool isReadyForCreatureSpawn; // Track if all Animal properties are loaded
+
+        // Spawn Node properties (Type = "Spawn Node")
+        public string spawnables;       // Spawnables (enemy/creature type to spawn)
+        public float? aggroRadius;      // Aggro Radius
+        public float? spawnTimeBegin;   // Spawn time begin (in hours)
+        public float? spawnTimeEnd;     // Spawn time end (in hours)
+        public string team;             // Team (default, Villager, etc.)
+        public bool isReadyForEnemySpawn; // Track if all Spawn Node properties are loaded
     }
     
     [System.Serializable]

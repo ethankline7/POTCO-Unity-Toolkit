@@ -22,6 +22,9 @@ namespace CharacterOG.Runtime.Systems
 
         private BodyShapeDef currentShape;
 
+        // Shared list to avoid allocations during bone caching
+        private static List<Transform> s_sharedBoneList = new List<Transform>(200);
+
         /// <summary>
         /// Initialize applier.
         /// </summary>
@@ -34,21 +37,23 @@ namespace CharacterOG.Runtime.Systems
             this.headRoot = headRoot;
             this.bodyRoot = bodyRoot;
 
-            Debug.Log($"[BodyShapeApplier] Initialized with rigRoot='{rigRoot?.name}', headRoot='{headRoot?.name}' (should be def_head01), bodyRoot='{bodyRoot?.name}' (should be def_scale_jt)");
-
-            BuildBoneCache();
+            // Lazy initialization: Don't build cache in constructor to spread load
+            // Cache will be built on first ApplyBodyShape
         }
 
         /// <summary>Apply body shape definition</summary>
         public void ApplyBodyShape(BodyShapeDef shape)
         {
-            if (shape == null)
+            if (shape == null) return;
+
+            // Lazy cache build
+            if (boneCache.Count == 0)
             {
-                Debug.LogWarning("BodyShapeApplier: Null shape provided");
-                return;
+                BuildBoneCache();
             }
 
             currentShape = shape;
+            // ... rest of method ...
 
             Debug.Log($"[BodyShapeApplier] Applying shape '{shape.name}' with {shape.boneScales.Count} bone scales and {shape.boneOffsets.Count} offsets");
 
@@ -219,29 +224,23 @@ namespace CharacterOG.Runtime.Systems
 
         private void BuildBoneCache()
         {
-            if (rigRoot == null)
-            {
-                Debug.LogError("BodyShapeApplier: Rig root is null");
-                return;
-            }
+            if (rigRoot == null) return;
 
             boneCache.Clear();
+            s_sharedBoneList.Clear();
 
-            // Cache all transforms in hierarchy by name
-            var allTransforms = rigRoot.GetComponentsInChildren<Transform>(includeInactive: true);
+            // Allocation-free retrieval
+            rigRoot.GetComponentsInChildren<Transform>(true, s_sharedBoneList);
 
-            foreach (var t in allTransforms)
+            foreach (var t in s_sharedBoneList)
             {
                 if (!boneCache.ContainsKey(t.name))
                 {
                     boneCache[t.name] = t;
                 }
             }
-
-            Debug.Log($"[BodyShapeApplier] Cached {boneCache.Count} bones from rig root '{rigRoot.name}'");
-            // Log first 20 bone names for debugging
-            var boneNames = new System.Collections.Generic.List<string>(boneCache.Keys);
-            Debug.Log($"[BodyShapeApplier] Sample bones: {string.Join(", ", boneNames.Take(20))}");
+            
+            s_sharedBoneList.Clear(); // Release references
         }
 
         /// <summary>Get diagnostic info</summary>

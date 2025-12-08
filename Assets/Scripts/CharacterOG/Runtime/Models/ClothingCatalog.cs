@@ -67,6 +67,9 @@ namespace CharacterOG.Models
         /// <summary>Gender-specific underwear defaults</summary>
         public Dictionary<string, Dictionary<Slot, (int idx, int texIdx, int colorIdx)>> underwear = new();
 
+        /// <summary>Parsed hair cuts per hat index (Gender -> List of cut strings)</summary>
+        public Dictionary<string, List<string>> hairHatCuts = new();
+
         /// <summary>PHASE 4 OPTIMIZATION: Flag to track if patterns have been resolved</summary>
         [System.NonSerialized]
         private bool isPatternsResolved = false;

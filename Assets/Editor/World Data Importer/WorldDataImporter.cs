@@ -129,6 +129,12 @@ public class WorldSceneBuilderEditor : EditorWindow
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Create visibility sections and zone management (requires ObjectList data and Vis Table)", EditorStyles.miniLabel);
 
+            EditorGUILayout.BeginHorizontal();
+            settings.skipGameAreasAndTunnels = EditorGUILayout.Toggle("Skip Game Areas/Tunnels", settings.skipGameAreasAndTunnels);
+            if (settings.skipGameAreasAndTunnels) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Skip importing 'Island Game Area' and 'Connector Tunnel' objects", EditorStyles.miniLabel);
+
             GUILayout.Space(5);
             GUILayout.Label("Filtering Options", EditorStyles.boldLabel);
             EditorGUILayout.BeginHorizontal();

@@ -26,7 +26,7 @@ public class LightFlicker : MonoBehaviour
         
         void Update()
         {
-            if (lightComponent == null) return;
+            // Removed null check as Start handles it by disabling the component
             
             flickerTimer += Time.deltaTime;
             

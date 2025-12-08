@@ -57,10 +57,13 @@ namespace POTCO
 
         #region Private Variables
 
+        // Static animation cache - shared across ALL ships
+        private static Dictionary<string, AnimationClip> s_shipAnimCache = new Dictionary<string, AnimationClip>();
+
         // Mast animation data
         private class MastAnimationData
         {
-            public Animation animation;
+            public RuntimeAnimatorPlayer animation;
             public string mastType; // e.g., "main_tri", "fore_multi", "aft_tri"
             public AnimationClip tiedUpClip;
             public AnimationClip rollUpClip;
@@ -154,15 +157,16 @@ namespace POTCO
                         var meshFilter = actualMast.GetComponent<MeshFilter>();
                         Debug.Log($"[MAST DEBUG] Has SkinnedMeshRenderer: {skinnedMesh != null}, Has MeshFilter: {meshFilter != null}");
 
-                        Animation anim = actualMast.GetComponent<Animation>();
+                        RuntimeAnimatorPlayer anim = actualMast.GetComponent<RuntimeAnimatorPlayer>();
                         if (anim == null)
                         {
-                            anim = actualMast.gameObject.AddComponent<Animation>();
-                            Debug.Log($"[MAST DEBUG] Added Animation component to {actualMast.name}");
+                            anim = actualMast.gameObject.AddComponent<RuntimeAnimatorPlayer>();
+                            anim.Initialize();
+                            Debug.Log($"[MAST DEBUG] Added RuntimeAnimatorPlayer component to {actualMast.name}");
                         }
                         else
                         {
-                            Debug.Log($"[MAST DEBUG] Animation component already exists on {actualMast.name}");
+                            Debug.Log($"[MAST DEBUG] RuntimeAnimatorPlayer component already exists on {actualMast.name}");
                         }
 
                         // Create mast animation data
@@ -358,7 +362,13 @@ namespace POTCO
 
         private AnimationClip LoadAnimationFromResources(string path)
         {
-            Debug.Log($"[ANIM LOAD]   Attempting to load: {path}");
+            // OPTIMIZATION: Check cache first
+            if (s_shipAnimCache.TryGetValue(path, out AnimationClip cached))
+            {
+                return cached;
+            }
+
+            Debug.Log($"[ANIM LOAD] Attempting to load: {path}");
 
             // If path doesn't start with phase_, search all phases
             if (!path.StartsWith("phase_"))
@@ -371,6 +381,7 @@ namespace POTCO
                     if (foundClip != null)
                     {
                         Debug.Log($"[ANIM LOAD]   ✓ Found in {phase}");
+                        s_shipAnimCache[path] = foundClip; // Cache it!
                         return foundClip;
                     }
                 }
@@ -379,41 +390,34 @@ namespace POTCO
             }
             else
             {
-                return LoadAnimationFromResourcesDirect(path);
+                AnimationClip clip = LoadAnimationFromResourcesDirect(path);
+                if (clip != null)
+                {
+                    s_shipAnimCache[path] = clip; // Cache it!
+                }
+                return clip;
             }
         }
 
         private AnimationClip LoadAnimationFromResourcesDirect(string path)
         {
             // Try loading as prefab first
+            // Try to load AnimationClip directly first
+            AnimationClip directClip = Resources.Load<AnimationClip>(path);
+            if (directClip != null)
+            {
+                Debug.Log($"[ANIM LOAD]   ✓ Loaded AnimationClip directly: {directClip.name}");
+                return directClip;
+            }
+
+            // Fallback: Try GameObject (for bundled assets)
             GameObject animObj = Resources.Load<GameObject>(path);
             if (animObj != null)
             {
                 Debug.Log($"[ANIM LOAD]   Loaded GameObject from Resources");
 
-                // Check if it has an Animation component
-                Animation anim = animObj.GetComponent<Animation>();
-                if (anim != null && anim.clip != null)
-                {
-                    Debug.Log($"[ANIM LOAD]   ✓ Found Animation component with clip: {anim.clip.name}");
-                    return anim.clip;
-                }
-
-                // Check all clips in the Animation component
-                if (anim != null)
-                {
-                    Debug.Log($"[ANIM LOAD]   Animation component exists, checking all clips...");
-                    foreach (AnimationState state in anim)
-                    {
-                        Debug.Log($"[ANIM LOAD]   ✓ Found animation clip: {state.clip.name}");
-                        return state.clip;
-                    }
-                    Debug.Log($"[ANIM LOAD]   Animation component has no clips");
-                }
-                else
-                {
-                    Debug.Log($"[ANIM LOAD]   GameObject has no Animation component");
-                }
+                // Note: Animation component no longer used
+                // AnimationClips should be loaded directly from Resources
             }
 
             // Try loading as AnimationClip directly
@@ -514,32 +518,19 @@ namespace POTCO
                 Debug.Log($"[MAST ANIM] Playing on {mastData.animation.gameObject.name} (type: {mastData.mastType})");
                 Debug.Log($"[MAST ANIM]   Clip: {clip.name}, length: {clip.length}s");
 
-                // Stop all animations first
-                mastData.animation.Stop();
-
-                // Clear existing clips
-                mastData.animation.clip = clip;
-
-                // Remove old clip if exists
-                if (mastData.animation.GetClip(clipName) != null)
+                // Add clip if not already added
+                if (!mastData.animation.HasClip(clipName))
                 {
-                    mastData.animation.RemoveClip(clipName);
+                    mastData.animation.AddClip(clip, clipName);
+                    mastData.animation.SetWrapMode(clipName, wrapMode);
                 }
 
-                // Add and play new clip
-                mastData.animation.AddClip(clip, clipName);
-                mastData.animation[clipName].wrapMode = wrapMode;
-                mastData.animation[clipName].speed = 1.0f;
+                // Play the clip
                 mastData.animation.Play(clipName);
 
-                // Verify it's actually playing
-                bool isPlaying = mastData.animation.isPlaying;
-                Debug.Log($"[MAST ANIM]   Animation.isPlaying: {isPlaying}");
-
-                if (mastData.animation[clipName] != null)
-                {
-                    Debug.Log($"[MAST ANIM]   AnimationState - enabled: {mastData.animation[clipName].enabled}, weight: {mastData.animation[clipName].weight}");
-                }
+                // Verify it's playing
+                bool isPlaying = mastData.animation.IsPlaying(clipName);
+                Debug.Log($"[MAST ANIM]   IsPlaying: {isPlaying}");
 
                 played++;
             }
@@ -705,41 +696,36 @@ namespace POTCO
                 yield break;
             }
 
-            // Get or add Animation component
-            Animation anim = cannon.GetComponent<Animation>();
+            // Get or add RuntimeAnimatorPlayer component
+            RuntimeAnimatorPlayer anim = cannon.GetComponent<RuntimeAnimatorPlayer>();
             if (anim == null)
             {
-                Debug.Log($"[ShipCombatSystem] Adding Animation component to {cannon.name}");
-                anim = cannon.AddComponent<Animation>();
+                Debug.Log($"[ShipCombatSystem] Adding RuntimeAnimatorPlayer component to {cannon.name}");
+                anim = cannon.AddComponent<RuntimeAnimatorPlayer>();
+                anim.Initialize();
             }
-
-            // Disable auto-play to prevent looping
-            anim.playAutomatically = false;
 
             // Try to play animations if clips are available
             bool hasAnimations = cannonOpenClip != null && cannonFireClip != null && cannonCloseClip != null;
 
             if (hasAnimations)
             {
-                // Add clips to animation component with WrapMode.Once (no looping)
-                if (!anim.GetClip("open"))
+                // Add clips to RuntimeAnimatorPlayer with WrapMode.Once (no looping)
+                if (!anim.HasClip("open"))
                 {
                     anim.AddClip(cannonOpenClip, "open");
-                    anim["open"].wrapMode = WrapMode.Once;
+                    anim.SetWrapMode("open", WrapMode.Once);
                 }
-                if (!anim.GetClip("fire"))
+                if (!anim.HasClip("fire"))
                 {
                     anim.AddClip(cannonFireClip, "fire");
-                    anim["fire"].wrapMode = WrapMode.Once;
+                    anim.SetWrapMode("fire", WrapMode.Once);
                 }
-                if (!anim.GetClip("close"))
+                if (!anim.HasClip("close"))
                 {
                     anim.AddClip(cannonCloseClip, "close");
-                    anim["close"].wrapMode = WrapMode.Once;
+                    anim.SetWrapMode("close", WrapMode.Once);
                 }
-
-                // Stop any playing animations first
-                anim.Stop();
 
                 // Open cannons
                 anim.Play("open");
@@ -754,14 +740,38 @@ namespace POTCO
                     OnSpawnCannonball(muzzle, isPlayerControlled);
                 }
 
-                yield return new WaitForSeconds(cannonFireClip.length);
+                // 1. Spawn Muzzle Fire immediately
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject fire = new GameObject("CannonMuzzleFire");
+                    fire.transform.position = muzzle.position - muzzle.forward * 4.2f;
+                    fire.transform.rotation = lookOut * Quaternion.Euler(90, 0, 0);
+                    fire.transform.SetParent(muzzle, true); // Follow bobbing
+                    fire.AddComponent<POTCO.Effects.CannonMuzzleFireEffect>();
+                }
+
+                // 2. Wait 0.3s for Smoke delay
+                float smokeDelay = 0.3f;
+                yield return new WaitForSeconds(smokeDelay);
+
+                // 3. Spawn Blast Smoke
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject smoke = new GameObject("CannonBlastSmoke");
+                    smoke.transform.position = muzzle.position - muzzle.forward * 5.2f;
+                    smoke.transform.rotation = lookOut;
+                    smoke.AddComponent<POTCO.Effects.CannonBlastSmokeEffect>();
+                }
+
+                // 4. Wait remaining animation time
+                float remainingTime = cannonFireClip.length - smokeDelay;
+                if (remainingTime > 0) yield return new WaitForSeconds(remainingTime);
 
                 // Close cannons
                 anim.Play("close");
                 yield return new WaitForSeconds(cannonCloseClip.length);
-
-                // Stop animation completely when done
-                anim.Stop();
             }
             else
             {
@@ -775,7 +785,29 @@ namespace POTCO
                     OnSpawnCannonball(muzzle, isPlayerControlled);
                 }
 
+                // 1. Spawn Muzzle Fire immediately
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject fire = new GameObject("CannonMuzzleFire");
+                    fire.transform.position = muzzle.position - muzzle.forward * 4.2f;
+                    fire.transform.rotation = lookOut * Quaternion.Euler(90, 0, 0);
+                    fire.transform.SetParent(muzzle, true); // Follow bobbing
+                    fire.AddComponent<POTCO.Effects.CannonMuzzleFireEffect>();
+                }
+
+                // 2. Wait 0.3s
                 yield return new WaitForSeconds(0.3f);
+
+                // 3. Spawn Blast Smoke
+                if (muzzle != null)
+                {
+                    Quaternion lookOut = Quaternion.LookRotation(-muzzle.forward, muzzle.up);
+                    GameObject smoke = new GameObject("CannonBlastSmoke");
+                    smoke.transform.position = muzzle.position - muzzle.forward * 5.2f;
+                    smoke.transform.rotation = lookOut;
+                    smoke.AddComponent<POTCO.Effects.CannonBlastSmokeEffect>();
+                }
             }
         }
 

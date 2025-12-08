@@ -589,13 +589,21 @@ public class ProceduralCaveGenerator : EditorWindow
     
     void GenerateCaveWithEnhancements()
     {
-        if (root != null) DestroyImmediate(root);
+        if (root != null) 
+        {
+            DestroyImmediate(root);
+            root = null;
+        }
         
-        // Initialize
-        root = new GameObject("GeneratedCaveSystem");
+        // Initialize with final name immediately to avoid renaming issues
+        root = new GameObject("pir_m_are_cav_startingPlane");
+        
         openConnectors.Clear();
         connectorData.Clear();
         generatedPieces.Clear();
+        // Ensure cache is valid but doesn't grow indefinitely if prefabs changed
+        if (connectorCountCache == null) connectorCountCache = new Dictionary<GameObject, int>();
+        
         currentIndex = 1;
         
         // Set seed
@@ -634,9 +642,6 @@ public class ProceduralCaveGenerator : EditorWindow
         
         var firstPrefab = GetWeightedRandomPrefab(startPrefabs);
         if (firstPrefab == null) return;
-        
-        // Set root name to starting plane
-        root.name = "pir_m_are_cav_startingPlane";
         
         // Place first piece
         var firstNode = PlaceCavePiece(firstPrefab, Vector3.zero, Quaternion.identity, 0);
@@ -951,14 +956,26 @@ public class ProceduralCaveGenerator : EditorWindow
         return node;
     }
 
+    // Cache for connector counts to avoid expensive instantiation
+    private Dictionary<GameObject, int> connectorCountCache = new Dictionary<GameObject, int>();
+
     int GetConnectorCount(GameObject prefab)
     {
+        if (prefab == null) return 0;
+        
+        if (connectorCountCache.ContainsKey(prefab))
+        {
+            return connectorCountCache[prefab];
+        }
+
         var tempInstance = Instantiate(prefab);
         var connectors = tempInstance.GetComponentsInChildren<Transform>()
             .Where(t => t.name.StartsWith("cave_connector_"))
             .ToList();
         int count = connectors.Count;
         DestroyImmediate(tempInstance);
+        
+        connectorCountCache[prefab] = count;
         return count;
     }
 
@@ -1773,6 +1790,7 @@ public class ProceduralCaveGenerator : EditorWindow
     void LoadAllPrefabs()
     {
         allFoundPrefabs = new List<GameObject>();
+        connectorCountCache.Clear();
         
         if (settings.useEggFiles)
         {

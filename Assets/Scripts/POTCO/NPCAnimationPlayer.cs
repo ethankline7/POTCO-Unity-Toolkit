@@ -10,8 +10,12 @@ namespace POTCO
     /// </summary>
     [RequireComponent(typeof(NPCController))]
     [RequireComponent(typeof(NPCData))]
+    [RequireComponent(typeof(RuntimeAnimatorPlayer))]
     public class NPCAnimationPlayer : MonoBehaviour
     {
+        // Static animation cache - shared across ALL NPCs
+        private static Dictionary<string, AnimationClip> s_globalClipCache = new Dictionary<string, AnimationClip>();
+
         [Header("Animation Transitions")]
         [SerializeField] private float transitionDuration = 0.15f;
 
@@ -35,7 +39,7 @@ namespace POTCO
         [Header("Props (From CustomAnims.py)")]
         [SerializeField] private GameObject attachedProp;
 
-        private Animation animComponent;
+        private RuntimeAnimatorPlayer animComponent;
         private NPCController npcController;
         private NPCData npcData;
         private string currentAnim = "";
@@ -48,15 +52,7 @@ namespace POTCO
         private bool isPlayingOutof = false;
         private float outofStartTime = 0f;
 
-        // def_ bone protection system
-        private struct BoneTransformData
-        {
-            public Transform bone;
-            public Vector3 localPosition;
-            public Quaternion localRotation;
-            public Vector3 localScale;
-        }
-        private List<BoneTransformData> lockedDefBones = new List<BoneTransformData>();
+        // def_ bone protection system - REMOVED (no longer needed - animations don't touch def_ bones)
 
         private void Awake()
         {
@@ -69,58 +65,47 @@ namespace POTCO
 
         private void Start()
         {
-            // Find Animation component - should be on character root
-            Debug.Log($"🔍 NPCAnimationPlayer searching for Animation component on: {gameObject.name}");
-
-            // PRIORITY 1: Check if there's a "Model" wrapper (created by NPCController)
-            Transform modelChild = transform.Find("Model");
-            if (modelChild != null && modelChild.childCount > 0)
-            {
-                GameObject characterRoot = modelChild.GetChild(0).gameObject;
-                Debug.Log($"   Found character under Model wrapper: {characterRoot.name}");
-                animComponent = characterRoot.GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on character root: {characterRoot.name}");
-                }
-            }
-
-            // PRIORITY 2: Check first direct child
+            // Find RuntimeAnimatorPlayer component - should be on character root
+            // PRIORITY 1: Check first direct child
             if (animComponent == null && transform.childCount > 0)
             {
                 GameObject firstChild = transform.GetChild(0).gameObject;
-                Debug.Log($"   Checking first child: {firstChild.name}");
-                animComponent = firstChild.GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on first child: {firstChild.name}");
-                }
+                animComponent = firstChild.GetComponent<RuntimeAnimatorPlayer>();
             }
 
-            // PRIORITY 3: Check this object (fallback)
+            // PRIORITY 2: Check this object (fallback)
             if (animComponent == null)
             {
-                animComponent = GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on this object");
-                }
+                animComponent = GetComponent<RuntimeAnimatorPlayer>();
             }
 
-            // PRIORITY 4: Search all children (last resort)
+            // PRIORITY 3: Search all children (last resort)
             if (animComponent == null)
             {
-                animComponent = GetComponentInChildren<Animation>();
-                if (animComponent != null)
+                animComponent = GetComponentInChildren<RuntimeAnimatorPlayer>();
+            }
+
+            // PRIORITY 4: Create RuntimeAnimatorPlayer dynamically if not found
+            if (animComponent == null)
+            {
+                GameObject targetObject = null;
+
+                if (transform.childCount > 0)
                 {
-                    Debug.Log($"✅ Found Animation component on descendant: {animComponent.gameObject.name}");
+                    targetObject = transform.GetChild(0).gameObject;
                 }
+                else
+                {
+                    targetObject = gameObject;
+                }
+
+                animComponent = targetObject.AddComponent<RuntimeAnimatorPlayer>();
+                animComponent.Initialize();
             }
 
             if (animComponent == null)
             {
-                Debug.LogError($"❌ No Animation component found on NPC: {gameObject.name}");
-                Debug.LogError($"   Children: {string.Join(", ", GetComponentsInChildren<Transform>().Select(t => t.name))}");
+                DebugLogger.LogErrorNPCAnimation($"❌ Failed to find or create RuntimeAnimatorPlayer on NPC: {gameObject.name}");
                 return;
             }
 
@@ -130,12 +115,8 @@ namespace POTCO
             // Load animations using CustomAnims.py
             LoadAnimations();
 
-            // Lock def_ bones to prevent animations from modifying body shape
-            LockDefBones();
-
             if (isInitialized)
             {
-                Debug.Log($"✅ NPCAnimationPlayer initialized with gender prefix: {genderPrefix}");
                 string initialAnim = GetIdleAnimation();
                 PlayAnimation(initialAnim);
             }
@@ -149,7 +130,7 @@ namespace POTCO
             {
                 if (Time.time - lastUpdateLog > 5f)
                 {
-                    Debug.LogWarning($"⚠️ NPCAnimationPlayer Update() running but not initialized on {gameObject.name}");
+                    DebugLogger.LogWarningNPCAnimation($"⚠️ NPCAnimationPlayer Update() running but not initialized on {gameObject.name}");
                     lastUpdateLog = Time.time;
                 }
                 return;
@@ -158,31 +139,9 @@ namespace POTCO
             UpdateAnimation();
         }
 
-        private void LateUpdate()
-        {
-            // Force def_ bones back to their original transforms every frame
-            // This prevents animations from permanently modifying body shape
-            // Only update bones that have actually changed for better performance
-            foreach (var boneData in lockedDefBones)
-            {
-                if (boneData.bone != null)
-                {
-                    // Only set if changed (avoids unnecessary transform updates)
-                    if (boneData.bone.localPosition != boneData.localPosition)
-                    {
-                        boneData.bone.localPosition = boneData.localPosition;
-                    }
-                    if (boneData.bone.localRotation != boneData.localRotation)
-                    {
-                        boneData.bone.localRotation = boneData.localRotation;
-                    }
-                    if (boneData.bone.localScale != boneData.localScale)
-                    {
-                        boneData.bone.localScale = boneData.localScale;
-                    }
-                }
-            }
-        }
+        // LateUpdate() removed - def_ bones are no longer animated thanks to AnimationProcessor filtering
+        // Animations imported from .egg files now skip all bones starting with "def_"
+        // This eliminated the need to lock bone transforms every frame (was causing ~30ms overhead)
 
         /// <summary>
         /// Detect gender from CharacterGenderData, hierarchy, or mesh names
@@ -196,7 +155,7 @@ namespace POTCO
             {
                 string gender = genderData.GetGender();
                 genderPrefix = genderData.GetGenderPrefix();
-                Debug.Log($"🎭 Detected {(gender == "f" ? "FEMALE" : "MALE")} NPC from CharacterGenderData ({genderPrefix})");
+                DebugLogger.LogNPCAnimation($"🎭 Detected {(gender == "f" ? "FEMALE" : "MALE")} NPC from CharacterGenderData ({genderPrefix})");
                 return;
             }
 
@@ -208,51 +167,23 @@ namespace POTCO
                 if (childName.Contains("fp_") || childName.Contains("female"))
                 {
                     genderPrefix = "fp_";
-                    Debug.Log($"🎭 Detected FEMALE NPC from child: '{child.name}' (fp_ prefix)");
+                    DebugLogger.LogNPCAnimation($"🎭 Detected FEMALE NPC from child: '{child.name}' (fp_ prefix)");
                     return;
                 }
                 else if (childName.Contains("mp_") || childName.Contains("male"))
                 {
                     genderPrefix = "mp_";
-                    Debug.Log($"🎭 Detected MALE NPC from child: '{child.name}' (mp_ prefix)");
+                    DebugLogger.LogNPCAnimation($"🎭 Detected MALE NPC from child: '{child.name}' (mp_ prefix)");
                     return;
                 }
             }
 
             // Default to male
             genderPrefix = "mp_";
-            Debug.LogWarning("⚠️ Could not detect NPC gender. Using default MALE (mp_ prefix)");
+            DebugLogger.LogWarningNPCAnimation("⚠️ Could not detect NPC gender. Using default MALE (mp_ prefix)");
         }
 
-        /// <summary>
-        /// Find all def_ bones and lock their initial transforms
-        /// </summary>
-        private void LockDefBones()
-        {
-            Transform[] allTransforms = GetComponentsInChildren<Transform>(true);
-            int lockedCount = 0;
-
-            foreach (Transform t in allTransforms)
-            {
-                if (t.name.StartsWith("def_"))
-                {
-                    BoneTransformData boneData = new BoneTransformData
-                    {
-                        bone = t,
-                        localPosition = t.localPosition,
-                        localRotation = t.localRotation,
-                        localScale = t.localScale
-                    };
-                    lockedDefBones.Add(boneData);
-                    lockedCount++;
-                }
-            }
-
-            if (lockedCount > 0)
-            {
-                Debug.Log($"🔒 Locked {lockedCount} def_ bones to prevent body shape corruption");
-            }
-        }
+        // LockDefBones() method REMOVED - no longer needed since animations don't touch def_ bones
 
         /// <summary>
         /// Load animations using CustomAnims.py definitions
@@ -262,14 +193,14 @@ namespace POTCO
             string[] phases = { "phase_2", "phase_3", "phase_4", "phase_5", "phase_6" };
             string[] searchPaths = { "char", "models/char" };
 
-            Debug.Log($"🎬 Loading animations with gender prefix: {genderPrefix}");
+            DebugLogger.LogNPCAnimation($"🎬 Loading animations with gender prefix: {genderPrefix}");
 
             // Check for custom model prefix (e.g., "js" from "models/char/js_2000")
             string customModelPrefix = GetCustomModelPrefix();
             if (!string.IsNullOrEmpty(customModelPrefix))
             {
-                Debug.Log($"✅ Detected custom model prefix: {customModelPrefix}");
-                Debug.Log($"   Will load animations as: {customModelPrefix}_idle, {customModelPrefix}_walk, etc.");
+                DebugLogger.LogNPCAnimation($"✅ Detected custom model prefix: {customModelPrefix}");
+                DebugLogger.LogNPCAnimation($"   Will load animations as: {customModelPrefix}_idle, {customModelPrefix}_walk, etc.");
             }
 
             // Load required animations (idle/walk/spin) with custom model prefix if available
@@ -282,17 +213,17 @@ namespace POTCO
             if (npcData != null && !string.IsNullOrEmpty(npcData.animSet) && npcData.animSet != "default")
             {
                 string animSetName = npcData.animSet;
-                Debug.Log($"📋 Loading AnimSet from CustomAnims.py: {animSetName}");
+                DebugLogger.LogNPCAnimation($"📋 Loading AnimSet from CustomAnims.py: {animSetName}");
 
                 CustomAnimData animData = CustomAnimsParser.GetAnimSet(animSetName);
                 if (animData != null)
                 {
-                    Debug.Log($"✅ Found AnimSet definition in CustomAnims.py: {animSetName}");
-                    Debug.Log($"   Idles: {string.Join(", ", animData.idles)}");
-                    Debug.Log($"   InteractInto: {string.Join(", ", animData.interactInto)}");
-                    Debug.Log($"   Interact: {string.Join(", ", animData.interact)}");
-                    Debug.Log($"   InteractOutof: {string.Join(", ", animData.interactOutof)}");
-                    Debug.Log($"   Props: {animData.props.Count}");
+                    DebugLogger.LogNPCAnimation($"✅ Found AnimSet definition in CustomAnims.py: {animSetName}");
+                    DebugLogger.LogNPCAnimation($"   Idles: {string.Join(", ", animData.idles)}");
+                    DebugLogger.LogNPCAnimation($"   InteractInto: {string.Join(", ", animData.interactInto)}");
+                    DebugLogger.LogNPCAnimation($"   Interact: {string.Join(", ", animData.interact)}");
+                    DebugLogger.LogNPCAnimation($"   InteractOutof: {string.Join(", ", animData.interactOutof)}");
+                    DebugLogger.LogNPCAnimation($"   Props: {animData.props.Count}");
 
                     // Load animations from CustomAnimData
                     if (animData.idles.Count > 0)
@@ -316,7 +247,7 @@ namespace POTCO
                     if (animSetIdle != null || animSetIntoLook != null || animSetLookIdle != null || animSetOutofLook != null)
                     {
                         npcData.isStationary = true;
-                        Debug.Log($"   Marking NPC as STATIONARY (has AnimSet variations)");
+                        DebugLogger.LogNPCAnimation($"   Marking NPC as STATIONARY (has AnimSet variations)");
                     }
 
                     // Attach props to weapon_right joint
@@ -327,7 +258,7 @@ namespace POTCO
                 }
                 else
                 {
-                    Debug.LogWarning($"⚠️ AnimSet '{animSetName}' not found in CustomAnims.py");
+                    DebugLogger.LogWarningNPCAnimation($"⚠️ AnimSet '{animSetName}' not found in CustomAnims.py");
                 }
             }
 
@@ -345,97 +276,94 @@ namespace POTCO
                 }
             }
 
-            // Add clips to Animation component
+            // Add clips to RuntimeAnimatorPlayer
             if (idleClip != null)
             {
                 animComponent.AddClip(idleClip, "idle");
-                animComponent["idle"].wrapMode = WrapMode.Loop;
-                Debug.Log($"   Added 'idle' clip to Animation component");
+                animComponent.SetWrapMode("idle", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'idle' clip to RuntimeAnimatorPlayer");
             }
 
             if (walkClip != null)
             {
                 animComponent.AddClip(walkClip, "walk");
-                animComponent["walk"].wrapMode = WrapMode.Loop;
-                Debug.Log($"   Added 'walk' clip to Animation component");
+                animComponent.SetWrapMode("walk", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'walk' clip to RuntimeAnimatorPlayer");
             }
 
             if (spinLeftClip != null)
             {
                 animComponent.AddClip(spinLeftClip, "spin_left");
-                animComponent["spin_left"].wrapMode = WrapMode.Loop;
-                Debug.Log($"   Added 'spin_left' clip to Animation component");
+                animComponent.SetWrapMode("spin_left", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'spin_left' clip to RuntimeAnimatorPlayer");
             }
 
             if (spinRightClip != null)
             {
                 animComponent.AddClip(spinRightClip, "spin_right");
-                animComponent["spin_right"].wrapMode = WrapMode.Loop;
-                Debug.Log($"   Added 'spin_right' clip to Animation component");
+                animComponent.SetWrapMode("spin_right", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'spin_right' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetIdle != null)
             {
                 animComponent.AddClip(animSetIdle, "animset_idle");
-                animComponent["animset_idle"].wrapMode = WrapMode.Loop;
-                Debug.Log($"   Added 'animset_idle' clip to Animation component");
+                animComponent.SetWrapMode("animset_idle", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_idle' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetIntoLook != null)
             {
                 animComponent.AddClip(animSetIntoLook, "animset_into_look");
-                animComponent["animset_into_look"].wrapMode = WrapMode.Once;
-                Debug.Log($"   Added 'animset_into_look' clip to Animation component");
+                animComponent.SetWrapMode("animset_into_look", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_into_look' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetLookIdle != null)
             {
                 animComponent.AddClip(animSetLookIdle, "animset_look_idle");
-                animComponent["animset_look_idle"].wrapMode = WrapMode.Loop;
-                Debug.Log($"   Added 'animset_look_idle' clip to Animation component");
+                animComponent.SetWrapMode("animset_look_idle", WrapMode.Loop);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_look_idle' clip to RuntimeAnimatorPlayer");
             }
 
             if (animSetOutofLook != null)
             {
                 animComponent.AddClip(animSetOutofLook, "animset_outof_look");
-                animComponent["animset_outof_look"].wrapMode = WrapMode.Once;
-                Debug.Log($"   Added 'animset_outof_look' clip to Animation component");
+                animComponent.SetWrapMode("animset_outof_look", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'animset_outof_look' clip to RuntimeAnimatorPlayer");
             }
 
             if (greetingClip != null)
             {
                 animComponent.AddClip(greetingClip, "greeting");
-                animComponent["greeting"].wrapMode = WrapMode.Once;
-                Debug.Log($"   Added 'greeting' clip to Animation component");
+                animComponent.SetWrapMode("greeting", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'greeting' clip to RuntimeAnimatorPlayer");
             }
 
             if (noticeClip != null)
             {
                 animComponent.AddClip(noticeClip, "notice");
-                animComponent["notice"].wrapMode = WrapMode.Once;
-                Debug.Log($"   Added 'notice' clip to Animation component");
+                animComponent.SetWrapMode("notice", WrapMode.Once);
+                DebugLogger.LogNPCAnimation($"   Added 'notice' clip to RuntimeAnimatorPlayer");
             }
 
-            // Enable Animation component
-            animComponent.playAutomatically = false;
-            animComponent.enabled = true;
-            Debug.Log($"✅ Animation component enabled: {animComponent.enabled}");
+            DebugLogger.LogNPCAnimation($"✅ RuntimeAnimatorPlayer initialized");
 
             // Check if we have minimum required animations
             bool hasAnimSet = (animSetIdle != null || animSetIntoLook != null || animSetLookIdle != null || animSetOutofLook != null);
             if (idleClip != null || hasAnimSet)
             {
                 isInitialized = true;
-                Debug.Log($"✅ NPCAnimationPlayer initialized successfully!");
-                Debug.Log($"   AnimSet ({npcData?.animSet}): {(hasAnimSet ? "✓" : "✗")}");
-                Debug.Log($"   Idle: {(idleClip != null ? "✓" : "✗")}");
-                Debug.Log($"   Walk: {(walkClip != null ? "✓" : "✗")}");
-                Debug.Log($"   Greeting: {(greetingClip != null ? "✓" : "✗")}");
-                Debug.Log($"   Notice: {(noticeClip != null ? "✓" : "✗")}");
+                DebugLogger.LogNPCAnimation($"✅ NPCAnimationPlayer initialized successfully!");
+                DebugLogger.LogNPCAnimation($"   AnimSet ({npcData?.animSet}): {(hasAnimSet ? "✓" : "✗")}");
+                DebugLogger.LogNPCAnimation($"   Idle: {(idleClip != null ? "✓" : "✗")}");
+                DebugLogger.LogNPCAnimation($"   Walk: {(walkClip != null ? "✓" : "✗")}");
+                DebugLogger.LogNPCAnimation($"   Greeting: {(greetingClip != null ? "✓" : "✗")}");
+                DebugLogger.LogNPCAnimation($"   Notice: {(noticeClip != null ? "✓" : "✗")}");
             }
             else
             {
-                Debug.LogError($"❌ Failed to load required animations for NPC! Check that {genderPrefix}idle exists in Resources/phase_*/char/");
+                DebugLogger.LogErrorNPCAnimation($"❌ Failed to load required animations for NPC! Check that {genderPrefix}idle exists in Resources/phase_*/char/");
                 isInitialized = false;
             }
         }
@@ -445,13 +373,13 @@ namespace POTCO
         /// </summary>
         private void AttachProp(PropData propData)
         {
-            Debug.Log($"🎯 Attempting to attach prop: {propData.modelPath}");
+            DebugLogger.LogNPCAnimation($"🎯 Attempting to attach prop: {propData.modelPath}");
 
             // Find weapon_right joint in skeleton
             Transform weaponRight = FindWeaponRightJoint();
             if (weaponRight == null)
             {
-                Debug.LogWarning($"⚠️ Could not find weapon_right joint in character rig - skipping prop attachment");
+                DebugLogger.LogWarningNPCAnimation($"⚠️ Could not find weapon_right joint in character rig - skipping prop attachment");
                 return;
             }
 
@@ -459,7 +387,7 @@ namespace POTCO
             GameObject propPrefab = FindAndLoadProp(propData.modelPath);
             if (propPrefab == null)
             {
-                Debug.Log($"ℹ️ Prop not found in any phase folder: {propData.modelPath}");
+                DebugLogger.LogNPCAnimation($"ℹ️ Prop not found in any phase folder: {propData.modelPath}");
                 return;
             }
 
@@ -470,7 +398,7 @@ namespace POTCO
             attachedProp.transform.localScale = Vector3.one;
             attachedProp.name = $"Prop_{propData.modelPath.Substring(propData.modelPath.LastIndexOf('/') + 1)}";
 
-            Debug.Log($"✅ Attached prop to weapon_right: {attachedProp.name}");
+            DebugLogger.LogNPCAnimation($"✅ Attached prop to weapon_right: {attachedProp.name}");
         }
 
         /// <summary>
@@ -488,7 +416,7 @@ namespace POTCO
                 GameObject propPrefab = Resources.Load<GameObject>(fullPath);
                 if (propPrefab != null)
                 {
-                    Debug.Log($"✅ Loaded prop from: {fullPath}");
+                    DebugLogger.LogNPCAnimation($"✅ Loaded prop from: {fullPath}");
                     return propPrefab;
                 }
             }
@@ -497,11 +425,11 @@ namespace POTCO
             GameObject directProp = Resources.Load<GameObject>(propPath);
             if (directProp != null)
             {
-                Debug.Log($"✅ Loaded prop from: {propPath}");
+                DebugLogger.LogNPCAnimation($"✅ Loaded prop from: {propPath}");
                 return directProp;
             }
 
-            Debug.LogWarning($"⚠️ Could not find prop in any phase: {propPath}");
+            DebugLogger.LogWarningNPCAnimation($"⚠️ Could not find prop in any phase: {propPath}");
             return null;
         }
 
@@ -516,18 +444,31 @@ namespace POTCO
             {
                 if (t.name.ToLower() == "weapon_right" || t.name.ToLower() == "weaponright")
                 {
-                    Debug.Log($"✅ Found weapon_right joint: {t.name}");
+                    DebugLogger.LogNPCAnimation($"✅ Found weapon_right joint: {t.name}");
                     return t;
                 }
             }
 
-            Debug.LogWarning($"⚠️ weapon_right joint not found in {gameObject.name}");
+            DebugLogger.LogWarningNPCAnimation($"⚠️ weapon_right joint not found in {gameObject.name}");
             return null;
         }
 
         private AnimationClip FindAndLoadClip(string animName, string[] phases, string[] searchPaths, string customModelPrefix = null)
         {
-            // PRIORITY 1: Try with custom model prefix (e.g., "js_idle")
+            // GENERATE CACHE KEYS
+            // We need unique keys for custom vs generic animations
+            string customKey = !string.IsNullOrEmpty(customModelPrefix) ? $"CUSTOM_{customModelPrefix}_{animName}" : null;
+            string genderKey = $"{genderPrefix}{animName}";
+            string genericKey = animName;
+
+            // CHECK CACHE FIRST (Instant return)
+            if (customKey != null && s_globalClipCache.TryGetValue(customKey, out var cachedCustom)) return cachedCustom;
+            if (s_globalClipCache.TryGetValue(genderKey, out var cachedGender)) return cachedGender;
+            if (s_globalClipCache.TryGetValue(genericKey, out var cachedGeneric)) return cachedGeneric;
+
+            // --- EXPENSIVE SEARCH LOGIC (Run only once per animation type) ---
+
+            // PRIORITY 1: Custom Model
             if (!string.IsNullOrEmpty(customModelPrefix))
             {
                 string customPrefixedName = $"{customModelPrefix}_{animName}";
@@ -539,14 +480,15 @@ namespace POTCO
                         AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
                         if (clip != null)
                         {
-                            Debug.Log($"✅ Loaded custom model anim: {fullPath}");
+                            DebugLogger.LogNPCAnimation($"✅ [CACHE MISS] Loaded custom model anim: {fullPath}");
+                            s_globalClipCache[customKey] = clip; // Cache it!
                             return clip;
                         }
                     }
                 }
             }
 
-            // PRIORITY 2: Try with gender prefix (e.g., "mp_idle")
+            // PRIORITY 2: Gender Prefix
             string genderPrefixedName = genderPrefix + animName;
             foreach (string phase in phases)
             {
@@ -556,13 +498,14 @@ namespace POTCO
                     AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
                     if (clip != null)
                     {
-                        Debug.Log($"✅ Loaded NPC anim: {fullPath}");
+                        DebugLogger.LogNPCAnimation($"✅ [CACHE MISS] Loaded NPC anim: {fullPath}");
+                        s_globalClipCache[genderKey] = clip; // Cache it!
                         return clip;
                     }
                 }
             }
 
-            // PRIORITY 3: Try without prefix as fallback
+            // PRIORITY 3: No Prefix
             foreach (string phase in phases)
             {
                 foreach (string path in searchPaths)
@@ -571,14 +514,14 @@ namespace POTCO
                     AnimationClip clip = Resources.Load<AnimationClip>(fullPath);
                     if (clip != null)
                     {
-                        Debug.Log($"✅ Loaded NPC anim (no prefix): {fullPath}");
+                        DebugLogger.LogNPCAnimation($"✅ [CACHE MISS] Loaded NPC anim (no prefix): {fullPath}");
+                        s_globalClipCache[genericKey] = clip; // Cache it!
                         return clip;
                     }
                 }
             }
 
-            string prefixInfo = !string.IsNullOrEmpty(customModelPrefix) ? $"{customModelPrefix}_, " : "";
-            Debug.LogWarning($"⚠️ Could not find NPC animation: {prefixInfo}{genderPrefixedName} or {animName}");
+            DebugLogger.LogWarningNPCAnimation($"⚠️ Could not find NPC animation: {animName}");
             return null;
         }
 
@@ -773,33 +716,32 @@ namespace POTCO
 
         private void PlayAnimation(string animName)
         {
-            if (!animComponent.GetClip(animName))
+            if (!animComponent.HasClip(animName))
             {
-                Debug.LogWarning($"⚠️ Animation clip '{animName}' not found on {gameObject.name}");
+                DebugLogger.LogWarningNPCAnimation($"⚠️ Animation clip '{animName}' not found on {gameObject.name}");
                 string fallbackAnim = GetIdleAnimation();
-                if (animName != fallbackAnim && animComponent.GetClip(fallbackAnim))
+                if (animName != fallbackAnim && animComponent.HasClip(fallbackAnim))
                 {
-                    Debug.Log($"   Falling back to {fallbackAnim} animation");
+                    DebugLogger.LogNPCAnimation($"   Falling back to {fallbackAnim} animation");
                     animName = fallbackAnim;
                 }
                 else
                 {
-                    Debug.LogError($"❌ No animations available!");
+                    DebugLogger.LogErrorNPCAnimation($"❌ No animations available!");
                     return;
                 }
             }
 
-            Debug.Log($"🎬 Playing animation: {animName} on {gameObject.name}");
-            animComponent.Stop();
-            animComponent.Play(animName);
+            DebugLogger.LogNPCAnimation($"🎬 Playing animation: {animName} on {gameObject.name}");
+            animComponent.CrossFade(animName, transitionDuration);
 
             if (animComponent.IsPlaying(animName))
             {
-                Debug.Log($"✅ Animation '{animName}' is NOW PLAYING");
+                DebugLogger.LogNPCAnimation($"✅ Animation '{animName}' is NOW PLAYING");
             }
             else
             {
-                Debug.LogError($"❌ Animation '{animName}' FAILED TO PLAY!");
+                DebugLogger.LogNPCAnimation($"🔄 Animation '{animName}' queued for playback");
             }
 
             currentAnim = animName;

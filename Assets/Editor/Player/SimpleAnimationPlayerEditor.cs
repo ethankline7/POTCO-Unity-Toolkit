@@ -31,7 +31,6 @@ namespace PlayerEditor
         private SerializedProperty jumpClipProp;
         private SerializedProperty swimClipProp;
 
-        private Animation animComponent;
         private AnimationClip lastPreviewedClip;
 
         private void OnEnable()
@@ -56,25 +55,8 @@ namespace PlayerEditor
             jumpClipProp = serializedObject.FindProperty("jumpClip");
             swimClipProp = serializedObject.FindProperty("swimClip");
 
-            // Find Animation component
-            SimpleAnimationPlayer player = (SimpleAnimationPlayer)target;
-
-            // Check Model child first
-            Transform modelChild = player.transform.Find("Model");
-            if (modelChild != null)
-            {
-                animComponent = modelChild.GetComponent<Animation>();
-            }
-
-            if (animComponent == null)
-            {
-                animComponent = player.GetComponent<Animation>();
-            }
-
-            if (animComponent == null)
-            {
-                animComponent = player.GetComponentInChildren<Animation>();
-            }
+            // Note: Animation preview removed - not compatible with RuntimeAnimatorPlayer
+            // Use Animation Window for previewing clips instead
         }
 
         public override void OnInspectorGUI()
@@ -94,56 +76,11 @@ namespace PlayerEditor
 
             EditorGUILayout.Space(5);
 
-            // Preview section
-            EditorGUILayout.LabelField("Animation Preview", EditorStyles.boldLabel);
-
-            if (animComponent == null)
-            {
-                EditorGUILayout.HelpBox("No Animation component found. Make sure the character has an Animation component.", MessageType.Warning);
-            }
-            else
-            {
-                EditorGUILayout.BeginHorizontal();
-
-                if (GUILayout.Button("Preview Idle"))
-                    PreviewAnimation(idleClipProp.objectReferenceValue as AnimationClip, "idle");
-
-                if (GUILayout.Button("Preview Walk"))
-                    PreviewAnimation(walkClipProp.objectReferenceValue as AnimationClip, "walk");
-
-                if (GUILayout.Button("Preview Run"))
-                    PreviewAnimation(runClipProp.objectReferenceValue as AnimationClip, "run");
-
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.BeginHorizontal();
-
-                if (GUILayout.Button("Preview Jump"))
-                    PreviewAnimation(jumpClipProp.objectReferenceValue as AnimationClip, "jump");
-
-                if (GUILayout.Button("Preview Strafe L"))
-                    PreviewAnimation(strafeLeftClipProp.objectReferenceValue as AnimationClip, "strafe_left");
-
-                if (GUILayout.Button("Preview Strafe R"))
-                    PreviewAnimation(strafeRightClipProp.objectReferenceValue as AnimationClip, "strafe_right");
-
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.Space(5);
-
-                if (GUILayout.Button("Stop Preview"))
-                {
-                    StopPreview();
-                }
-            }
+            // Note: Animation preview removed - not compatible with RuntimeAnimatorPlayer
+            // Use Unity's Animation Window (Window > Animation > Animation) to preview clips
+            EditorGUILayout.HelpBox("To preview animations, use Unity's Animation Window (Window > Animation > Animation)", MessageType.Info);
 
             serializedObject.ApplyModifiedProperties();
-
-            // Auto-preview when clips change
-            if (GUI.changed && animComponent != null)
-            {
-                AutoPreviewOnChange();
-            }
         }
 
         private void AutoFillAnimations()
@@ -246,67 +183,7 @@ namespace PlayerEditor
             return null;
         }
 
-        private void PreviewAnimation(AnimationClip clip, string clipName)
-        {
-            if (clip == null || animComponent == null)
-            {
-                Debug.LogWarning($"Cannot preview {clipName}: clip or Animation component is null");
-                return;
-            }
-
-            // Stop any existing animation mode
-            if (AnimationMode.InAnimationMode())
-            {
-                AnimationMode.StopAnimationMode();
-            }
-
-            // Start Animation mode (allows animation in Edit mode)
-            AnimationMode.StartAnimationMode();
-
-            // Sample the animation at time 0
-            AnimationMode.BeginSampling();
-            AnimationMode.SampleAnimationClip(animComponent.gameObject, clip, 0f);
-            AnimationMode.EndSampling();
-
-            lastPreviewedClip = clip;
-
-            Debug.Log($"▶️ Previewing: {clipName} (sample at time 0)");
-        }
-
-        private void StopPreview()
-        {
-            if (AnimationMode.InAnimationMode())
-            {
-                AnimationMode.StopAnimationMode();
-                Debug.Log("⏹️ Preview stopped");
-            }
-        }
-
-        private void AutoPreviewOnChange()
-        {
-            // Auto-preview when user changes a clip
-            if (idleClipProp.objectReferenceValue != null && idleClipProp.objectReferenceValue != lastPreviewedClip)
-            {
-                PreviewAnimation(idleClipProp.objectReferenceValue as AnimationClip, "idle");
-            }
-            else if (walkClipProp.objectReferenceValue != null && walkClipProp.objectReferenceValue != lastPreviewedClip)
-            {
-                PreviewAnimation(walkClipProp.objectReferenceValue as AnimationClip, "walk");
-            }
-            else if (runClipProp.objectReferenceValue != null && runClipProp.objectReferenceValue != lastPreviewedClip)
-            {
-                PreviewAnimation(runClipProp.objectReferenceValue as AnimationClip, "run");
-            }
-            else if (jumpClipProp.objectReferenceValue != null && jumpClipProp.objectReferenceValue != lastPreviewedClip)
-            {
-                PreviewAnimation(jumpClipProp.objectReferenceValue as AnimationClip, "jump");
-            }
-        }
-
-        private void OnDisable()
-        {
-            // Stop preview when inspector is closed
-            StopPreview();
-        }
+        // Preview methods removed - not compatible with RuntimeAnimatorPlayer
+        // Use Unity's Animation Window for previewing animations
     }
 }

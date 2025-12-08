@@ -73,7 +73,7 @@ namespace CharacterOG.Runtime.Systems
             }
 
             // STEP 1: Disable all groups owned by this slot (slot exclusive behavior)
-            DisableAllGroupsForSlot(slot);
+            DisableActiveVariant(slot);
 
             // STEP 2: Enable only the chosen variant's exact groups
             rendererCache.EnableExactMany(variant.showGroups, true);
@@ -123,22 +123,20 @@ namespace CharacterOG.Runtime.Systems
         /// <summary>Clear a slot (disable all variants for that slot)</summary>
         public void ClearSlot(Slot slot)
         {
-            DisableAllGroupsForSlot(slot);
+            DisableActiveVariant(slot);
             currentSlots[slot] = (null, 0, null);
             RecomputeBodyVisibilityInternal();
         }
 
-        /// <summary>Disable all mesh groups owned by a slot (from all variants)</summary>
-        private void DisableAllGroupsForSlot(Slot slot)
+        /// <summary>Disable the currently active variant for a slot</summary>
+        private void DisableActiveVariant(Slot slot)
         {
-            var variants = catalog.GetVariants(slot);
-            int totalDisabled = 0;
-            foreach (var variant in variants)
+            var (variant, _, _) = currentSlots[slot];
+            if (variant != null)
             {
                 rendererCache.EnableExactMany(variant.showGroups, false);
-                totalDisabled += variant.showGroups.Count;
+                Debug.Log($"[DisableActiveVariant] {slot}: Disabled {variant.showGroups.Count} groups for '{variant.displayName}'");
             }
-            Debug.Log($"[DisableAllGroupsForSlot] {slot}: Disabled {totalDisabled} mesh groups from {variants.Count} variants");
         }
 
         /// <summary>Get renderers for an exact group name</summary>
@@ -267,6 +265,15 @@ namespace CharacterOG.Runtime.Systems
             {
                 Debug.Log($"[RecomputeBodyVisibility] No body parts hidden (toHide was empty)");
             }
+        }
+
+        /// <summary>
+        /// Permanently remove unused meshes to save memory/CPU.
+        /// Only use for static NPCs!
+        /// </summary>
+        public void OptimizeForStatic()
+        {
+            rendererCache.StripHidden();
         }
 
         /// <summary>Get diagnostic info</summary>

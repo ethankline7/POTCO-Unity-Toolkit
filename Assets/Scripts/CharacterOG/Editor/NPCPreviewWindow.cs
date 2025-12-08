@@ -444,9 +444,12 @@ namespace CharacterOG.Editor
                 }
 
                 // Store applied colors for persistence
-                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                colorPersistence.StoreColors(skin, hair, top, bot);
-                DebugLogger.LogNPCImport($"Added CharacterColorPersistence to '{dna.name}' with colors: skin={skin}, hair={hair}, top={top}, bot={bot}");
+                var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot, shoe);
+                DebugLogger.LogNPCImport($"Added CharacterColorPersistence to '{dna.name}' with colors: skin={skin}, hair={hair}, top={top}, bot={bot}, shoe={shoe}");
+
+                // Setup as NPC with all required components
+                SetupAsNPC(character, dna);
 
                 // Select the spawned character
                 Selection.activeGameObject = character;
@@ -594,8 +597,11 @@ namespace CharacterOG.Editor
                         }
 
                         // Store applied colors for persistence
-                        var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                        colorPersistence.StoreColors(skin, hair, top, bot);
+                        var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                        colorPersistence.StoreColors(skin, hair, top, bot, shoe);
+
+                        // Setup as NPC with all required components
+                        SetupAsNPC(character, dna);
 
                         successCount++;
 
@@ -669,8 +675,8 @@ namespace CharacterOG.Editor
                 }
 
                 // Store applied colors for persistence
-                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                colorPersistence.StoreColors(skin, hair, top, bot);
+                var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                 DebugLogger.LogNPCImport($"Successfully applied NPC '{dna.name}' to {selectedCharacter.name}");
                 EditorUtility.DisplayDialog("Success", $"Applied NPC '{dna.name}' to {selectedCharacter.name}", "OK");
@@ -898,6 +904,72 @@ namespace CharacterOG.Editor
             EditorUtility.DisplayDialog("Bone Dump Complete", $"Dumped {allTransforms.Length} total bones\n\nExpected facial bones: {foundCount}/{expectedBones.Length} found\n\nFacial-related bones in model: {facialBones.Count}\n\nSee Console for full list.", "OK");
         }
 
+        private void SetupAsNPC(GameObject character, PirateDNA dna)
+        {
+            if (character == null) return;
+
+            Debug.Log($"🤖 Setting up '{character.name}' as NPC with interaction...");
+
+            // Add CharacterController for movement
+            CharacterController controller = character.GetComponent<CharacterController>();
+            if (controller == null)
+            {
+                controller = character.AddComponent<CharacterController>();
+                controller.height = 1.8f;
+                controller.radius = 0.3f;
+                controller.center = new Vector3(0f, 0.9f, 0f);
+                Debug.Log("✅ Added CharacterController");
+            }
+
+            // Add CharacterGenderData for animation system
+            CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+            if (genderData == null)
+            {
+                genderData = character.AddComponent<CharacterOG.Runtime.CharacterGenderData>();
+            }
+            genderData.SetGender(dna.gender);
+            Debug.Log($"✅ Set gender data: {dna.gender}");
+
+            // Add NPCData component
+            POTCO.NPCData npcData = character.GetComponent<POTCO.NPCData>();
+            if (npcData == null)
+            {
+                npcData = character.AddComponent<POTCO.NPCData>();
+                npcData.npcId = dna.name;
+                npcData.category = "Commoner";
+                npcData.team = "Villager";
+                npcData.startState = "LandRoam";
+                npcData.patrolRadius = 12f;
+                npcData.aggroRadius = 0f;
+                npcData.animSet = "default";
+                // Set gender-aware greeting animation
+                string genderPrefix = dna.gender == "f" ? "fp_" : "mp_";
+                npcData.greetingAnimation = genderPrefix + "wave";
+                npcData.noticeAnimation1 = "";
+                npcData.noticeAnimation2 = "";
+                Debug.Log($"✅ Added NPCData with default settings (greeting: {npcData.greetingAnimation})");
+            }
+
+            // Add NPCController for AI behavior
+            POTCO.NPCController npcController = character.GetComponent<POTCO.NPCController>();
+            if (npcController == null)
+            {
+                npcController = character.AddComponent<POTCO.NPCController>();
+                Debug.Log("✅ Added NPCController");
+            }
+
+            // Add NPCAnimationPlayer for animation management
+            POTCO.NPCAnimationPlayer npcAnimPlayer = character.GetComponent<POTCO.NPCAnimationPlayer>();
+            if (npcAnimPlayer == null)
+            {
+                npcAnimPlayer = character.AddComponent<POTCO.NPCAnimationPlayer>();
+                Debug.Log("✅ Added NPCAnimationPlayer");
+            }
+
+            EditorUtility.SetDirty(character);
+            Debug.Log($"✅ '{character.name}' setup as fully functional NPC complete!");
+        }
+
         private void SpawnAllCombinations()
         {
             if (selectedNpcDna == null)
@@ -1034,8 +1106,8 @@ namespace CharacterOG.Editor
                     }
 
                     // Store applied colors for persistence
-                    var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                    colorPersistence.StoreColors(skin, hair, top, bot);
+                    var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                    colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                     // Add text label
                     GameObject label = new GameObject("Label");

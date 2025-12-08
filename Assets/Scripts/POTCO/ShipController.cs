@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 namespace POTCO
 {
@@ -63,8 +64,7 @@ namespace POTCO
         private float shipAvoidanceWeight = 0f;
         private float shipCollisionDetectionRange = 40f;
         private float minShipDistance = 15f;
-        private BoxCollider hullCollider;
-
+        
         // Unified ship combat system (masts, cannons, broadsides)
         private ShipCombatSystem combatSystem;
 
@@ -79,6 +79,9 @@ namespace POTCO
 
         // Movement acceleration
         private float currentSpeed = 0f;
+
+        // Cached wake material
+        private static Material _cachedWakeMaterial;
 
         void Start()
         {
@@ -122,8 +125,7 @@ namespace POTCO
             }
 
             CreateCameraPoint();
-            AddDeckColliders();
-            AddShipHullCollider();
+            AddShipColliders(); // Replaces AddDeckColliders and AddShipHullCollider
 
             // Initialize bobbing
             basePosition = transform.position;
@@ -148,34 +150,12 @@ namespace POTCO
             {
                 Debug.Log($"ShipController: Wheel found at {wheelTransform.position}");
             }
+
+            SetupShipWake();
         }
 
         void Update()
         {
-            // Continuously re-check player collision ignore every frame until successful
-            if (hullCollider != null)
-            {
-                GameObject player = GameObject.FindGameObjectWithTag("Player");
-                if (player == null)
-                {
-                    Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
-                    if (pc != null) player = pc.gameObject;
-                }
-
-                // If player exists, ignore collision every frame (ensures it stays ignored)
-                if (player != null)
-                {
-                    Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
-                    foreach (Collider playerCollider in playerColliders)
-                    {
-                        if (playerCollider != null && hullCollider != null)
-                        {
-                            Physics.IgnoreCollision(hullCollider, playerCollider, true);
-                        }
-                    }
-                }
-            }
-
             // Apply bobbing motion always
             if (enableBobbing)
             {
@@ -195,6 +175,9 @@ namespace POTCO
             }
         }
 
+        // Cached material for cannonball trails to prevent memory leaks
+        private static Material _cachedTrailMaterial;
+
         /// <summary>
         /// Spawn cannonball for player-controlled ship (fires straight forward)
         /// </summary>
@@ -204,7 +187,7 @@ namespace POTCO
 
             if (cannonballPrefab == null)
             {
-                Debug.LogWarning("Cannot fire - cannonball prefab not assigned!");
+                // Debug.LogWarning("Cannot fire - cannonball prefab not assigned!"); // Commented out for perf
                 return;
             }
 
@@ -256,7 +239,14 @@ namespace POTCO
                 trail.time = 1.5f;
                 trail.startWidth = 0.8f;
                 trail.endWidth = 0.2f;
-                trail.material = new Material(Shader.Find("Sprites/Default"));
+                
+                // Optimize: Use cached material
+                if (_cachedTrailMaterial == null)
+                {
+                    _cachedTrailMaterial = new Material(Shader.Find("Sprites/Default"));
+                }
+                trail.material = _cachedTrailMaterial;
+
                 trail.startColor = new Color(0.5f, 0.7f, 1f, 1f); // Start more blue
                 trail.endColor = new Color(0.9f, 0.95f, 1f, 0f); // Fade to whiter transparent
                 trail.numCornerVertices = 5;
@@ -272,12 +262,19 @@ namespace POTCO
             pointLight.range = 15f;
             pointLight.shadows = LightShadows.None;
 
-            // Make material emissive if possible
+            // Make material emissive if possible - Use PropertyBlock or sharedMaterial if possible, 
+            // but for single instance modification on Instantiate, direct access is "okay" but costly.
+            // Optimized to check first.
             Renderer renderer = cannonball.GetComponent<Renderer>();
-            if (renderer != null && renderer.material != null)
+            if (renderer != null && renderer.sharedMaterial != null) // Check shared first
             {
+                // Only modify if we really need to. Accessing .material creates a copy.
+                // Given this is a projectile that dies quickly, maybe it's acceptable, 
+                // but let's use MaterialPropertyBlock if we can. 
+                // However, emission keyword usually requires material modification.
+                // We will leave it as is but add a comment that it's a potential hotspot.
                 renderer.material.EnableKeyword("_EMISSION");
-                renderer.material.SetColor("_EmissionColor", new Color(1f, 0.6f, 0.3f) * 2f); // Orange/yellow explosion emission
+                renderer.material.SetColor("_EmissionColor", new Color(1f, 0.6f, 0.3f) * 2f); 
             }
 
             // Ignore collisions with ALL colliders on this ship
@@ -292,7 +289,7 @@ namespace POTCO
                 }
             }
 
-            Debug.Log($"[Player] Fired cannonball from {muzzle.name}");
+            // Debug.Log($"[Player] Fired cannonball from {muzzle.name}"); // Removed for perf
         }
 
         private void CreateCameraPoint()
@@ -311,40 +308,48 @@ namespace POTCO
         {
             if (wheelTransform == null)
             {
-                Debug.LogWarning("ShipController: Wheel transform is null");
+                // Debug.LogWarning("ShipController: Wheel transform is null"); // Reduced spam
                 return;
             }
 
             if (mainCamera == null)
             {
-                Debug.LogWarning("ShipController: Main camera is null");
+                // Debug.LogWarning("ShipController: Main camera is null");
                 return;
             }
 
-            // Find player
+            // Find player - Optimized retry
             if (playerTransform == null)
             {
-                playerTransform = FindPlayer();
-                if (playerTransform == null)
+                if (Time.frameCount % 60 == 0)
                 {
-                    Debug.LogWarning("ShipController: Could not find player");
+                    playerTransform = FindPlayer();
+                    if (playerTransform == null)
+                    {
+                        // Debug.LogWarning("ShipController: Could not find player");
+                    }
+                }
+                else
+                {
                     return;
                 }
             }
+
+            if (playerTransform == null) return;
 
             // Check distance to wheel
             float distance = Vector3.Distance(playerTransform.position, wheelTransform.position);
 
             // Debug distance check every few frames
-            if (Time.frameCount % 60 == 0)
+            if (Time.frameCount % 300 == 0) // Reduced log freq
             {
-                Debug.Log($"Distance to wheel: {distance:F2} (interaction range: {interactionDistance})");
+                DebugLogger.LogShipController($"Distance to wheel: {distance:F2} (interaction range: {interactionDistance})");
             }
 
             if (distance <= interactionDistance)
             {
                 // Show on-screen prompt
-                if (Time.frameCount % 30 == 0)
+                if (Time.frameCount % 120 == 0) // Reduced log freq
                 {
                     Debug.Log($"Press {enterControlKey} to control the ship!");
                 }
@@ -477,25 +482,25 @@ namespace POTCO
                 }
 
                 // Get the Animation component from Model child (or player itself)
-                Animation playerAnim = null;
+                RuntimeAnimatorPlayer playerAnim = null;
                 Transform modelChild = playerTransform.Find("Model");
                 if (modelChild != null)
                 {
                     Debug.Log($"Found Model child: {modelChild.name}");
-                    playerAnim = modelChild.GetComponent<Animation>();
+                    playerAnim = modelChild.GetComponent<RuntimeAnimatorPlayer>();
                     if (playerAnim != null)
                     {
-                        Debug.Log("✅ Found Animation component on Model child");
+                        Debug.Log("✅ Found RuntimeAnimatorPlayer component on Model child");
                     }
                 }
 
                 if (playerAnim == null)
                 {
-                    Debug.Log("Searching for Animation in children...");
-                    playerAnim = playerTransform.GetComponentInChildren<Animation>();
+                    Debug.Log("Searching for RuntimeAnimatorPlayer in children...");
+                    playerAnim = playerTransform.GetComponentInChildren<RuntimeAnimatorPlayer>();
                     if (playerAnim != null)
                     {
-                        Debug.Log($"✅ Found Animation component on: {playerAnim.gameObject.name}");
+                        Debug.Log($"✅ Found RuntimeAnimatorPlayer component on: {playerAnim.gameObject.name}");
                     }
                 }
 
@@ -531,28 +536,19 @@ namespace POTCO
                 {
                     Debug.Log($"✅ Loaded wheel_idle clip: {wheelIdleClip.name}, length: {wheelIdleClip.length}s");
 
-                    // Stop all current animations
-                    playerAnim.Stop();
-                    Debug.Log("Stopped all current animations");
-
-                    // Remove old wheel_idle clip if it exists
-                    if (playerAnim.GetClip("wheel_idle") != null)
+                    // Add and play wheel_idle animation
+                    if (!playerAnim.HasClip("wheel_idle"))
                     {
-                        playerAnim.RemoveClip("wheel_idle");
-                        Debug.Log("Removed old wheel_idle clip");
+                        playerAnim.AddClip(wheelIdleClip, "wheel_idle");
+                        playerAnim.SetWrapMode("wheel_idle", WrapMode.Loop);
+                        Debug.Log("Added wheel_idle clip");
                     }
 
-                    // Add and play wheel_idle animation
-                    playerAnim.AddClip(wheelIdleClip, "wheel_idle");
-                    playerAnim["wheel_idle"].wrapMode = WrapMode.Loop;
-                    playerAnim["wheel_idle"].enabled = true;
-                    playerAnim["wheel_idle"].weight = 1.0f;
                     playerAnim.Play("wheel_idle");
 
                     // Verify it's playing
                     bool isPlaying = playerAnim.IsPlaying("wheel_idle");
                     Debug.Log($"🎬 Animation playing status: {isPlaying}");
-                    Debug.Log($"🎬 Animation state - enabled: {playerAnim["wheel_idle"].enabled}, weight: {playerAnim["wheel_idle"].weight}");
                     Debug.Log($"✅ Playing {wheelIdleAnimName} animation on character at wheel");
                 }
                 else
@@ -566,8 +562,13 @@ namespace POTCO
             // Disable player movement but keep collision enabled (parenting handles position)
             if (playerTransform != null)
             {
-                // Keep CharacterController ENABLED so collision stays active and follows the ship
-                // This ensures the player's collision capsule moves with the rocking ship
+                // Disable CharacterController to prevent it from overriding parent movement (sliding off)
+                var characterController = playerTransform.GetComponent<CharacterController>();
+                if (characterController != null)
+                {
+                    characterController.enabled = false;
+                    Debug.Log("Disabled CharacterController to prevent sliding");
+                }
 
                 // Disable Player.PlayerController (movement script)
                 var newPlayerController = playerTransform.GetComponent<Player.PlayerController>();
@@ -583,6 +584,14 @@ namespace POTCO
                 {
                     playerCamera.enabled = false;
                     Debug.Log("Disabled Player.PlayerCamera");
+                }
+
+                // Disable NPCController if present (prevents AI trying to move while driving)
+                var npcController = playerTransform.GetComponent<POTCO.NPCController>();
+                if (npcController != null)
+                {
+                    npcController.enabled = false;
+                    Debug.Log("Disabled POTCO.NPCController");
                 }
 
                 // Parent player to ship so they move together
@@ -799,10 +808,14 @@ namespace POTCO
                 // Position player in front of the wheel (relative to the wheel's facing direction)
                 // Use the wheel's forward direction to place player correctly regardless of ship rotation
                 Vector3 exitOffset = wheelTransform.forward * 2.5f; // 2.5 units in front of wheel
-                playerTransform.position = wheelTransform.position + Vector3.up * 0.5f + exitOffset;
+                // Bump Y up to 2.0f to ensure we CLEAR the mesh collider deck completely
+                playerTransform.position = wheelTransform.position + Vector3.up * 2.0f + exitOffset;
 
                 // Face player in same direction as wheel
                 playerTransform.rotation = wheelTransform.rotation;
+
+                // FORCE physics update to prevent CharacterController from waking up stuck
+                Physics.SyncTransforms();
 
                 Debug.Log($"Player exited ship control at position: {playerTransform.position}");
             }
@@ -819,30 +832,21 @@ namespace POTCO
             if (playerTransform != null)
             {
                 // Reset to idle animation before re-enabling SimpleAnimationPlayer
-                Animation playerAnim = null;
+                RuntimeAnimatorPlayer playerAnim = null;
                 Transform modelChild = playerTransform.Find("Model");
                 if (modelChild != null)
                 {
-                    playerAnim = modelChild.GetComponent<Animation>();
+                    playerAnim = modelChild.GetComponent<RuntimeAnimatorPlayer>();
                 }
                 if (playerAnim == null)
                 {
-                    playerAnim = playerTransform.GetComponentInChildren<Animation>();
+                    playerAnim = playerTransform.GetComponentInChildren<RuntimeAnimatorPlayer>();
                 }
 
                 if (playerAnim != null)
                 {
-                    // Stop wheel_idle animation
-                    playerAnim.Stop();
-
-                    // Remove wheel_idle clip
-                    if (playerAnim.GetClip("wheel_idle") != null)
-                    {
-                        playerAnim.RemoveClip("wheel_idle");
-                    }
-
                     // Play idle animation if it exists
-                    if (playerAnim.GetClip("idle") != null)
+                    if (playerAnim.HasClip("idle"))
                     {
                         playerAnim.Play("idle");
                         Debug.Log("Reset player to idle animation");
@@ -857,12 +861,28 @@ namespace POTCO
                     Debug.Log("Re-enabled Player.PlayerController");
                 }
 
+                // Re-enable CharacterController
+                var characterController = playerTransform.GetComponent<CharacterController>();
+                if (characterController != null)
+                {
+                    characterController.enabled = true;
+                    Debug.Log("Re-enabled CharacterController");
+                }
+
                 // Re-enable Player.PlayerCamera
                 var playerCamera = Camera.main?.GetComponent<Player.PlayerCamera>();
                 if (playerCamera != null)
                 {
                     playerCamera.enabled = true;
                     Debug.Log("Re-enabled Player.PlayerCamera");
+                }
+
+                // Re-enable NPCController
+                var npcController = playerTransform.GetComponent<POTCO.NPCController>();
+                if (npcController != null)
+                {
+                    npcController.enabled = true;
+                    Debug.Log("Re-enabled POTCO.NPCController");
                 }
 
                 // Re-enable SimpleAnimationPlayer to restore normal animations
@@ -907,34 +927,22 @@ namespace POTCO
         private AnimationClip LoadAnimationFromResourcesDirect(string path)
         {
             // Try loading as prefab first
+            // Try to load AnimationClip directly first
+            AnimationClip directClip = Resources.Load<AnimationClip>(path);
+            if (directClip != null)
+            {
+                Debug.Log($"[ANIM LOAD]   ✓ Loaded AnimationClip directly: {directClip.name}");
+                return directClip;
+            }
+
+            // Fallback: Try GameObject (for bundled assets)
             GameObject animObj = Resources.Load<GameObject>(path);
             if (animObj != null)
             {
                 Debug.Log($"[ANIM LOAD]   Loaded GameObject from Resources");
 
-                // Check if it has an Animation component
-                Animation anim = animObj.GetComponent<Animation>();
-                if (anim != null && anim.clip != null)
-                {
-                    Debug.Log($"[ANIM LOAD]   ✓ Found Animation component with clip: {anim.clip.name}");
-                    return anim.clip;
-                }
-
-                // Check all clips in the Animation component
-                if (anim != null)
-                {
-                    Debug.Log($"[ANIM LOAD]   Animation component exists, checking all clips...");
-                    foreach (AnimationState state in anim)
-                    {
-                        Debug.Log($"[ANIM LOAD]   ✓ Found animation clip: {state.clip.name}");
-                        return state.clip;
-                    }
-                    Debug.Log($"[ANIM LOAD]   Animation component has no clips");
-                }
-                else
-                {
-                    Debug.Log($"[ANIM LOAD]   GameObject has no Animation component");
-                }
+                // Note: Animation component no longer used
+                // AnimationClips should be loaded directly from Resources
             }
 
             // Try loading as AnimationClip directly
@@ -963,112 +971,34 @@ namespace POTCO
             return null;
         }
 
-        private void AddDeckColliders()
+        private void AddShipColliders()
         {
-            Debug.Log("🔧 Adding colliders to ship deck...");
+            Debug.Log("🔧 Adding mesh colliders to ship...");
             int colliderCount = 0;
 
             // Add colliders to all mesh renderers on the ship (deck, hull, etc.)
             MeshFilter[] meshFilters = GetComponentsInChildren<MeshFilter>();
             foreach (MeshFilter meshFilter in meshFilters)
             {
-                // Skip if already has a collider
-                if (meshFilter.GetComponent<Collider>() != null)
-                    continue;
-
-                // Skip masts and cannons (they shouldn't have collision)
+                // Skip masts, cannons, and sails
                 if (meshFilter.name.ToLower().Contains("mast") ||
                     meshFilter.name.ToLower().Contains("cannon") ||
                     meshFilter.name.ToLower().Contains("sail"))
                     continue;
 
-                // Add mesh collider to deck/hull pieces
-                if (meshFilter.sharedMesh != null)
+                // Get or Add mesh collider
+                Collider col = meshFilter.GetComponent<Collider>();
+                if (col == null && meshFilter.sharedMesh != null)
                 {
                     MeshCollider meshCollider = meshFilter.gameObject.AddComponent<MeshCollider>();
                     meshCollider.sharedMesh = meshFilter.sharedMesh;
-                    meshCollider.convex = false;
+                    meshCollider.convex = false; // Use actual mesh shape
+                    col = meshCollider;
                     colliderCount++;
                 }
             }
 
-            Debug.Log($"✅ Added {colliderCount} colliders to ship deck - player can now walk on it");
-        }
-
-        private void AddShipHullCollider()
-        {
-            // Check if hull collider already exists on root
-            hullCollider = GetComponent<BoxCollider>();
-            if (hullCollider != null)
-            {
-                Debug.Log("Ship hull collider already exists");
-                IgnorePlayerCollision(hullCollider);
-                return;
-            }
-
-            // Calculate bounds from all mesh renderers
-            Renderer[] renderers = GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0)
-            {
-                Debug.LogWarning("No renderers found to calculate ship bounds");
-                return;
-            }
-
-            Bounds combinedBounds = renderers[0].bounds;
-            foreach (Renderer renderer in renderers)
-            {
-                // Skip masts and sails for hull calculation
-                if (renderer.name.ToLower().Contains("mast") ||
-                    renderer.name.ToLower().Contains("sail"))
-                    continue;
-
-                combinedBounds.Encapsulate(renderer.bounds);
-            }
-
-            // Add box collider to root (where Rigidbody is)
-            hullCollider = gameObject.AddComponent<BoxCollider>();
-            hullCollider.center = transform.InverseTransformPoint(combinedBounds.center);
-            hullCollider.size = new Vector3(
-                combinedBounds.size.x / transform.lossyScale.x,
-                combinedBounds.size.y / transform.lossyScale.y,
-                combinedBounds.size.z / transform.lossyScale.z
-            );
-
-            // Ignore collision with player
-            IgnorePlayerCollision(hullCollider);
-
-            Debug.Log($"✅ Added ship hull collider - Size: {hullCollider.size}, Center: {hullCollider.center}");
-        }
-
-        private void IgnorePlayerCollision(Collider shipCollider)
-        {
-            if (shipCollider == null) return;
-
-            // Find player and ignore collision with hull
-            GameObject player = GameObject.FindGameObjectWithTag("Player");
-            if (player == null)
-            {
-                Player.PlayerController pc = FindAnyObjectByType<Player.PlayerController>();
-                if (pc != null) player = pc.gameObject;
-            }
-
-            if (player != null)
-            {
-                // Get all colliders on player (CharacterController and any others)
-                Collider[] playerColliders = player.GetComponentsInChildren<Collider>();
-                foreach (Collider playerCollider in playerColliders)
-                {
-                    if (playerCollider != null)
-                    {
-                        Physics.IgnoreCollision(shipCollider, playerCollider, true);
-                    }
-                }
-            }
-            else
-            {
-                // Player not found yet - will retry in Update()
-                Debug.LogWarning("Player not found for collision ignore - will retry");
-            }
+            Debug.Log($"✅ Added {colliderCount} new mesh colliders - player can now walk on deck and hull");
         }
 
         /// <summary>
@@ -1076,6 +1006,9 @@ namespace POTCO
         /// </summary>
         private void DetectShipCollisions()
         {
+            // Optimization: Run only every 5 frames
+            if (Time.frameCount % 5 != 0) return;
+
             shipAvoidanceWeight = 0f;
             shipAvoidanceDirection = Vector3.zero;
 
@@ -1123,7 +1056,7 @@ namespace POTCO
                         shipAvoidanceDirection += avoidDir * weight;
                         shipAvoidanceWeight += weight;
 
-                        Debug.DrawRay(transform.position + Vector3.up * 5f, direction * hit.distance, Color.red);
+                        // Debug.DrawRay(transform.position + Vector3.up * 5f, direction * hit.distance, Color.red);
                     }
                 }
             }
@@ -1147,6 +1080,149 @@ namespace POTCO
             // Draw ship collision detection range
             Gizmos.color = Color.cyan;
             Gizmos.DrawWireSphere(transform.position, shipCollisionDetectionRange);
+        }
+
+        private void SetupShipWake()
+        {
+            // 1. Add ShipWake component if missing
+            ShipWake wake = GetComponent<ShipWake>();
+            if (wake == null)
+            {
+                wake = gameObject.AddComponent<ShipWake>();
+            }
+
+            // 2. Create/Cache Material
+            if (_cachedWakeMaterial == null)
+            {
+                Shader s = Shader.Find("POTCO/WakeShader");
+                if (s != null)
+                {
+                    _cachedWakeMaterial = new Material(s);
+                    
+                    // Load RGB texture
+                    Texture tex = Resources.Load<Texture>("phase_2/maps/Wake");
+                    if (tex != null) _cachedWakeMaterial.mainTexture = tex;
+
+                    // Load Alpha texture (Wake_a)
+                    Texture texAlpha = Resources.Load<Texture>("phase_2/maps/Wake_a");
+                    if (texAlpha != null) 
+                    {
+                        _cachedWakeMaterial.SetTexture("_AlphaTex", texAlpha);
+                    }
+                }
+            }
+
+            // Calculate Ship Dimensions
+            Bounds shipBounds = new Bounds(transform.position, Vector3.zero);
+            bool boundsInit = false;
+            Renderer[] allRenderers = GetComponentsInChildren<Renderer>();
+            
+            foreach (var r in allRenderers)
+            {
+                if (r is ParticleSystemRenderer || r is TrailRenderer) continue;
+                if (r.name.Contains("Wake") || r.name.Contains("Bow")) continue;
+                
+                if (!boundsInit)
+                {
+                    shipBounds = r.bounds;
+                    boundsInit = true;
+                }
+                else
+                {
+                    shipBounds.Encapsulate(r.bounds);
+                }
+            }
+            
+            float shipLength = shipBounds.size.z;
+            
+            // Determine Class and Settings based on length
+            // POTCO Source values:
+            // Warship (L3): Offset 125, Scale 0.6
+            // Merchant (L2): Offset 80, Scale 0.5
+            // Interceptor (L1): Offset 22.5, Scale 0.18
+            
+            float wakeOffsetZ;
+            float wakeScale;
+            
+            if (shipLength > 450f) // Large (Warship) - observed ~616
+            {
+                wakeOffsetZ = 125.0f;
+                wakeScale = 0.6f;
+            }
+            else if (shipLength > 150f) // Medium (Merchant/Brig) - observed ~312
+            {
+                wakeOffsetZ = 80.0f;
+                wakeScale = 0.5f;
+            }
+            else // Small (Sloop/Interceptor)
+            {
+                wakeOffsetZ = 22.5f;
+                wakeScale = 0.18f;
+            }
+
+            Debug.Log($"[ShipController] SetupWake: Length={shipLength:F1} -> Offset={wakeOffsetZ}, Scale={wakeScale}");
+
+            // 3. Setup Stern Wake (Using wake_zero.egg)
+            if (wake.sternAnchor == null)
+            {
+                Transform t = FindChildRecursive(transform, "SternWake");
+                if (t == null)
+                {
+                    GameObject prefab = Resources.Load<GameObject>("phase_2/models/sea/wake_zero");
+                    if (prefab != null)
+                    {
+                        GameObject go = Instantiate(prefab, transform);
+                        go.name = "SternWake";
+                        
+                        // Position: Aft centerline at waterline with per-class Z offset
+                        // Assuming ship origin is center, Stern is -Z.
+                        // User said "move +Z ... behind stern" which was ambiguous, 
+                        // but standard POTCO "wake_offset_y" usually means distance from origin.
+                        // We will place it at -wakeOffsetZ.
+                        go.transform.localPosition = new Vector3(0, 0.5f, -wakeOffsetZ);
+                        go.transform.localRotation = Quaternion.identity;
+                        
+                        // Scale: Uniform per class
+                        go.transform.localScale = Vector3.one * wakeScale;
+                        
+                        Renderer[] renderers = go.GetComponentsInChildren<Renderer>();
+                        wake.wakeRenderers = renderers;
+                        wake.sternAnchor = go.transform;
+                        
+                        // Find Bones
+                        Transform[] bones = new Transform[4];
+                        bones[0] = FindChildRecursive(go.transform, "def_wake_1");
+                        bones[1] = FindChildRecursive(go.transform, "def_wake_2");
+                        bones[2] = FindChildRecursive(go.transform, "def_wake_3");
+                        bones[3] = FindChildRecursive(go.transform, "def_wake_4");
+                        wake.wakeBones = bones;
+                        
+                        if (_cachedWakeMaterial != null)
+                        {
+                            foreach (var wakeR in renderers) wakeR.material = _cachedWakeMaterial;
+                        }
+                        t = go.transform;
+                    }
+                }
+                else
+                {
+                    wake.wakeRenderers = t.GetComponentsInChildren<Renderer>();
+                    wake.sternAnchor = t;
+                    
+                    // Re-find bones
+                    Transform[] bones = new Transform[4];
+                    bones[0] = FindChildRecursive(t, "def_wake_1");
+                    bones[1] = FindChildRecursive(t, "def_wake_2");
+                    bones[2] = FindChildRecursive(t, "def_wake_3");
+                    bones[3] = FindChildRecursive(t, "def_wake_4");
+                    wake.wakeBones = bones;
+                }
+            }
+            
+            wake.UpdateColor();
+            
+            // Force wake to recapture the new positions we just set
+            wake.RecaptureOffsets();
         }
     }
 }

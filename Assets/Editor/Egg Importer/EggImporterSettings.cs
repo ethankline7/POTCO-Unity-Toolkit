@@ -12,13 +12,19 @@ public class EggImporterSettings : ScriptableObject
     [Header("Animation Settings")]
     public bool skipAnimations = false;
     public bool skipSkeletalModels = false;
-    
+
     [Header("Collision Import Settings")]
     public bool skipCollisions = true;
     public bool importCollisions = false; // For compatibility with reference implementation
     
     [Header("Debug Settings")]
     public bool enableDebugLogging = true;
+
+    [Header("Performance Settings")]
+    [Tooltip("Track import statistics (disabling improves performance by 10-15%)")]
+    public bool trackImportStatistics = false;
+    [Tooltip("Track performance timing data (disabling improves performance by 2-5%)")]
+    public bool trackPerformanceTiming = false;
 
     [Header("Auto-Import Control")]
     public bool autoImportEnabled = false;

@@ -23,17 +23,17 @@ namespace POTCO.Ocean
         public string reflectionMatrixName = "_ReflectionMatrix";
 
         [Header("Reflection Settings")]
-        [Tooltip("Use screen resolution for reflection (better quality, worse performance)")]
-        public bool useScreenResolution = true;
+        [Tooltip("Use screen resolution for reflection (HIGH PERFORMANCE COST - Keep False)")]
+        public bool useScreenResolution = false;
 
-        [Tooltip("Resolution of reflection texture (only used if not using screen resolution)")]
-        public int textureSize = 256;
+        [Tooltip("Resolution of reflection texture. 128 is best for performance.")]
+        public int textureSize = 128;
 
-        [Tooltip("Update reflection every N frames (0 = every frame)")]
-        [Range(0, 10)]
-        public int updateInterval = 0;
+        [Tooltip("Update reflection every N frames. 1 = every frame, 2 = every other frame, etc.")]
+        [Range(1, 10)]
+        public int updateInterval = 3;
 
-        [Tooltip("Layers to render in reflection")]
+        [Tooltip("Layers to render in reflection. Uncheck small details!")]
         public LayerMask reflectionLayers = -1;
 
         [Tooltip("Clip plane offset to avoid artifacts")]
@@ -47,7 +47,17 @@ namespace POTCO.Ocean
         {
             // Get or create reflection camera
             reflectionCamera = GetComponent<Camera>();
+            if (reflectionCamera == null)
+            {
+                // If no camera exists, create a child object for it so we don't mess up the main object
+                GameObject go = new GameObject("Reflection Camera", typeof(Camera), typeof(Skybox));
+                go.transform.SetParent(transform);
+                reflectionCamera = go.GetComponent<Camera>();
+            }
+            
             reflectionCamera.enabled = false;
+            reflectionCamera.allowHDR = false; // Disable HDR for performance
+            reflectionCamera.allowMSAA = false; // Disable MSAA for performance
 
             // Create reflection render texture
             CreateReflectionTexture();
@@ -56,6 +66,50 @@ namespace POTCO.Ocean
             if (mainCamera == null)
             {
                 mainCamera = Camera.main;
+                if (mainCamera == null)
+                {
+                    Debug.LogWarning($"[PlanarReflection] Main Camera not found! Reflection disabled on {gameObject.name}.");
+                    enabled = false;
+                    return;
+                }
+            }
+            
+            // Check for water material
+            if (waterMaterial == null)
+            {
+                // Try to find it on the renderer
+                Renderer renderer = GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    waterMaterial = renderer.sharedMaterial;
+                }
+                
+                if (waterMaterial == null)
+                {
+                    Debug.LogWarning($"[PlanarReflection] Water Material not assigned! Reflection disabled on {gameObject.name}.");
+                    enabled = false;
+                    return;
+                }
+            }
+            
+            // Optimization: Set default layer mask if it's everything (-1)
+            // We try to exclude Water (4), UI (5), and potentially small props if layers exist
+            if (reflectionLayers.value == -1)
+            {
+                // Default: Everything EXCEPT Water(4) and UI(5)
+                reflectionLayers = ~(1 << 4 | 1 << 5);
+            }
+        }
+
+        void OnValidate()
+        {
+            // Ensure we don't run this before Start
+            if (!Application.isPlaying) return;
+
+            // Recreate texture if size changed
+            if (reflectionTexture != null && reflectionTexture.width != textureSize)
+            {
+                CreateReflectionTexture();
             }
         }
 
@@ -72,21 +126,21 @@ namespace POTCO.Ocean
         {
             if (mainCamera == null || waterMaterial == null) return;
 
-            // Recreate texture if screen resolution changed
+            // Recreate texture if screen resolution changed (only if using screen res)
             if (useScreenResolution && reflectionTexture != null &&
                 (reflectionTexture.width != Screen.width || reflectionTexture.height != Screen.height))
             {
                 CreateReflectionTexture();
             }
 
-            // Update interval optimization
-            if (updateInterval > 0)
+            // Time-Slicing Optimization
+            // Frame 1: Update, Frame 2: Skip, Frame 3: Skip...
+            frameCounter++;
+            if (frameCounter < updateInterval)
             {
-                frameCounter++;
-                if (frameCounter < updateInterval)
-                    return;
-                frameCounter = 0;
+                return;
             }
+            frameCounter = 0;
 
             UpdateReflection();
         }
@@ -242,15 +296,6 @@ namespace POTCO.Ocean
             projection[14] = c.w - projection[15];
 
             return projection;
-        }
-
-        void OnValidate()
-        {
-            // Recreate texture if size changed
-            if (reflectionTexture != null && reflectionTexture.width != textureSize)
-            {
-                CreateReflectionTexture();
-            }
         }
     }
 }

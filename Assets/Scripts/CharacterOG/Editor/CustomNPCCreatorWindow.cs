@@ -294,6 +294,7 @@ namespace CharacterOG.Editor
             // Player Controller checkbox
             EditorGUILayout.BeginHorizontal();
             addPlayerController = EditorGUILayout.Toggle("Player Controller", addPlayerController);
+            EditorGUILayout.LabelField(addPlayerController ? "(Playable Character)" : "(Interactive NPC)", EditorStyles.miniLabel, GUILayout.Width(150));
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.EndVertical();
@@ -1097,8 +1098,9 @@ namespace CharacterOG.Editor
                 case Slot.Coat:
                     return customDna.topColorIdx;
                 case Slot.Pant:
-                case Slot.Shoe:
                     return customDna.botColorIdx;
+                case Slot.Shoe:
+                    return customDna.shoesColorIdx;
                 default: return 0;
             }
         }
@@ -1114,8 +1116,10 @@ namespace CharacterOG.Editor
                     customDna.topColorIdx = value;
                     break;
                 case Slot.Pant:
-                case Slot.Shoe:
                     customDna.botColorIdx = value;
+                    break;
+                case Slot.Shoe:
+                    customDna.shoesColorIdx = value;
                     break;
             }
         }
@@ -1137,13 +1141,9 @@ namespace CharacterOG.Editor
                 Debug.Log("✅ Added CharacterController");
             }
 
-            // Add Animation component
-            Animation animComponent = character.GetComponent<Animation>();
-            if (animComponent == null)
-            {
-                animComponent = character.AddComponent<Animation>();
-                Debug.Log("✅ Added Animation component");
-            }
+            // DON'T add Animation component in Edit Mode - it will be created dynamically in Play Mode
+            // by SimpleAnimationPlayer.Start() after PlayerController.SetupModelHierarchy() finishes
+            // This prevents bone binding issues from hierarchy changes during Edit→Play transition
 
             // CharacterGenderData already added by ApplyToCharacter, but ensure it's set
             CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
@@ -1209,6 +1209,70 @@ namespace CharacterOG.Editor
             EditorUtility.SetDirty(playerCamera);
         }
 
+        private void SetupAsNPC(GameObject character, PirateDNA dna)
+        {
+            if (character == null) return;
+
+            Debug.Log($"🤖 Setting up '{character.name}' as NPC with interaction...");
+
+            // Add CharacterController for movement
+            CharacterController controller = character.GetComponent<CharacterController>();
+            if (controller == null)
+            {
+                controller = character.AddComponent<CharacterController>();
+                controller.height = 1.8f;
+                controller.radius = 0.3f;
+                controller.center = new Vector3(0f, 0.9f, 0f);
+                Debug.Log("✅ Added CharacterController");
+            }
+
+            // CharacterGenderData already added by ApplyToCharacter, but ensure it's set
+            CharacterOG.Runtime.CharacterGenderData genderData = character.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
+            if (genderData != null)
+            {
+                genderData.SetGender(customDna.gender);
+            }
+
+            // Add NPCData component
+            POTCO.NPCData npcData = character.GetComponent<POTCO.NPCData>();
+            if (npcData == null)
+            {
+                npcData = character.AddComponent<POTCO.NPCData>();
+                npcData.npcId = dna.name;
+                npcData.category = "Commoner";
+                npcData.team = "Villager";
+                npcData.startState = "LandRoam";
+                npcData.patrolRadius = 12f;
+                npcData.aggroRadius = 0f;
+                npcData.animSet = "default";
+                // Set gender-aware greeting animation
+                string genderPrefix = dna.gender == "f" ? "fp_" : "mp_";
+                npcData.greetingAnimation = genderPrefix + "wave";
+                npcData.noticeAnimation1 = "";
+                npcData.noticeAnimation2 = "";
+                Debug.Log($"✅ Added NPCData with default settings (greeting: {npcData.greetingAnimation})");
+            }
+
+            // Add NPCController for AI behavior
+            POTCO.NPCController npcController = character.GetComponent<POTCO.NPCController>();
+            if (npcController == null)
+            {
+                npcController = character.AddComponent<POTCO.NPCController>();
+                Debug.Log("✅ Added NPCController");
+            }
+
+            // Add NPCAnimationPlayer for animation management
+            POTCO.NPCAnimationPlayer npcAnimPlayer = character.GetComponent<POTCO.NPCAnimationPlayer>();
+            if (npcAnimPlayer == null)
+            {
+                npcAnimPlayer = character.AddComponent<POTCO.NPCAnimationPlayer>();
+                Debug.Log("✅ Added NPCAnimationPlayer");
+            }
+
+            EditorUtility.SetDirty(character);
+            Debug.Log($"✅ '{character.name}' setup as fully functional NPC complete!");
+        }
+
         private void SpawnNewCharacter()
         {
             string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
@@ -1236,13 +1300,69 @@ namespace CharacterOG.Editor
             Selection.activeGameObject = character;
             ApplyToCharacter();
 
-            // Setup as player controller if checkbox is enabled
+            // Setup as player controller if checkbox is enabled, otherwise setup as NPC
             if (addPlayerController)
             {
                 SetupAsPlayerController(character);
             }
+            else
+            {
+                SetupAsNPC(character, customDna);
+            }
 
             DebugLogger.LogNPCImport($"Spawned new character '{character.name}'");
+        }
+
+        private void RespawnCharacter()
+        {
+            if (selectedCharacter == null)
+            {
+                SpawnNewCharacter();
+                return;
+            }
+
+            // Capture state
+            Vector3 oldPos = selectedCharacter.transform.position;
+            Quaternion oldRot = selectedCharacter.transform.rotation;
+            string oldName = selectedCharacter.name;
+
+            // Destroy old
+            GameObject.DestroyImmediate(selectedCharacter);
+            selectedCharacter = null;
+            dnaApplier = null;
+            cachedCharacter = null;
+
+            // Spawn new
+            string modelPath = customDna.gender == "f" ? FEMALE_MODEL_PATH : MALE_MODEL_PATH;
+            GameObject modelPrefab = Resources.Load<GameObject>(modelPath);
+
+            if (modelPrefab != null)
+            {
+                GameObject character = PrefabUtility.InstantiatePrefab(modelPrefab) as GameObject;
+                if (character == null)
+                    character = GameObject.Instantiate(modelPrefab);
+
+                character.name = oldName;
+                character.transform.position = oldPos;
+                character.transform.rotation = oldRot;
+
+                selectedCharacter = character;
+                Selection.activeGameObject = character;
+
+                // Apply DNA and setup
+                ApplyToCharacter();
+
+                if (addPlayerController)
+                {
+                    SetupAsPlayerController(character);
+                }
+                else
+                {
+                    SetupAsNPC(character, customDna);
+                }
+
+                DebugLogger.LogNPCImport($"Respawned character '{character.name}' to fix rendering state");
+            }
         }
 
         private void ApplyToCharacter()
@@ -1315,8 +1435,8 @@ namespace CharacterOG.Editor
                 }
 
                 // Store applied colors for persistence (from DnaApplier)
-                var (skin, hair, top, bot) = dnaApplier.GetAppliedColors();
-                colorPersistence.StoreColors(skin, hair, top, bot);
+                var (skin, hair, top, bot, shoe) = dnaApplier.GetAppliedColors();
+                colorPersistence.StoreColors(skin, hair, top, bot, shoe);
 
                 // Add CharacterGenderData component to persist gender information for animation system
                 var genderData = selectedCharacter.GetComponent<CharacterOG.Runtime.CharacterGenderData>();
@@ -1331,10 +1451,14 @@ namespace CharacterOG.Editor
 
                 DebugLogger.LogNPCImport($"Applied DNA to '{selectedCharacter.name}' with color and gender persistence");
 
-                // Setup as player controller if checkbox is enabled
+                // Setup as player controller if checkbox is enabled, otherwise setup as NPC
                 if (addPlayerController)
                 {
                     SetupAsPlayerController(selectedCharacter);
+                }
+                else
+                {
+                    SetupAsNPC(selectedCharacter, customDna);
                 }
             }
             catch (System.Exception ex)
@@ -1512,6 +1636,7 @@ namespace CharacterOG.Editor
             // Randomize colors
             customDna.topColorIdx = random.Next(palettes.dye.Count);
             customDna.botColorIdx = random.Next(palettes.dye.Count);
+            customDna.shoesColorIdx = random.Next(palettes.dye.Count);
             customDna.hatColorIdx = random.Next(palettes.dye.Count);
 
             // Randomize hair/facial hair (some chance for none)
@@ -1532,7 +1657,7 @@ namespace CharacterOG.Editor
 
             customDna.hairColorIdx = random.Next(palettes.hair.Count);
 
-            if (autoApply) ApplyToCharacter();
+            if (autoApply) RespawnCharacter();
 
             DebugLogger.LogNPCImport("Randomized all character features including facial morphs");
         }
@@ -1557,6 +1682,7 @@ namespace CharacterOG.Editor
             customDna.skinColorIdx = random.Next(palettes.skin.Count);
             customDna.topColorIdx = random.Next(palettes.dye.Count);
             customDna.botColorIdx = random.Next(palettes.dye.Count);
+            customDna.shoesColorIdx = random.Next(palettes.dye.Count);
             customDna.hatColorIdx = random.Next(palettes.dye.Count);
             customDna.hairColorIdx = random.Next(palettes.hair.Count);
             customDna.eyeColorIdx = random.Next(palettes.irisTextures.Count);
@@ -1682,6 +1808,7 @@ namespace CharacterOG.Editor
             customDna.beard = 1;
             customDna.topColorIdx = 15; // Red
             customDna.botColorIdx = 5; // Black
+            customDna.shoesColorIdx = 5; // Black
             if (autoApply) ApplyToCharacter();
         }
 
@@ -1695,6 +1822,7 @@ namespace CharacterOG.Editor
             customDna.beard = 0;
             customDna.topColorIdx = 10; // Blue
             customDna.botColorIdx = 10;
+            customDna.shoesColorIdx = 5; // Black shoes for officer
             if (autoApply) ApplyToCharacter();
         }
 
@@ -1709,6 +1837,7 @@ namespace CharacterOG.Editor
             customDna.mustache = 1;
             customDna.topColorIdx = 20; // Brown
             customDna.botColorIdx = 5;
+            customDna.shoesColorIdx = 5;
             if (autoApply) ApplyToCharacter();
         }
 
@@ -1723,6 +1852,7 @@ namespace CharacterOG.Editor
             customDna.beard = 0;
             customDna.topColorIdx = 25; // Purple/fancy
             customDna.botColorIdx = 5;
+            customDna.shoesColorIdx = 5;
             if (autoApply) ApplyToCharacter();
         }
     }

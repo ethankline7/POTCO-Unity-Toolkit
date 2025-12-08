@@ -13,6 +13,9 @@ namespace CharacterOG.Runtime.Systems
 {
     public class DnaApplier
     {
+        // Static cache for gender-specific hide lists
+        private static Dictionary<string, List<string>> s_genderHideCache = new Dictionary<string, List<string>>();
+
         private BodyShapeApplier bodyShapeApplier;
         private FacialMorphApplier facialMorphApplier;
         private CharacterAssembler assembler;
@@ -32,6 +35,7 @@ namespace CharacterOG.Runtime.Systems
         private Color currentSkinColor = Color.white;
         private Color currentTopColor = Color.white;
         private Color currentBotColor = Color.white;
+        private Color currentShoeColor = Color.white;
 
         public DnaApplier(
             GameObject characterRoot,
@@ -127,22 +131,53 @@ namespace CharacterOG.Runtime.Systems
             }
 
             // Only override underwear if index > 0 (0 means keep underwear default)
-            Debug.Log($"[DNA Values] shirt={dna.shirt}, vest={dna.vest}, coat={dna.coat}, pants={dna.pants}");
-
-            if (dna.shirt > 0)
-                ApplyClothingSlot(Slot.Shirt, dna.shirt, dna.shirtTex, dna.topColorIdx);
-
-            if (dna.vest > 0)
-                ApplyClothingSlot(Slot.Vest, dna.vest, dna.vestTex, dna.topColorIdx);
-
-            if (dna.coat > 0)
-                ApplyClothingSlot(Slot.Coat, dna.coat, dna.coatTex, dna.topColorIdx);
-
-            if (dna.belt > 0)
-                ApplyClothingSlot(Slot.Belt, dna.belt, dna.beltTex, -1);
-
-            if (dna.pants > 0)
-                ApplyClothingSlot(Slot.Pant, dna.pants, dna.pantsTex, dna.botColorIdx);
+                        Debug.Log($"[DNA Values] shirt={dna.shirt}, vest={dna.vest}, coat={dna.coat}, pants={dna.pants}");
+            
+                                    ApplyClothingSlot(Slot.Shirt, dna.shirt, dna.shirtTex, dna.topColorIdx);
+            
+                        
+            
+                                                ApplyClothingSlot(Slot.Vest, dna.vest, dna.vestTex, dna.topColorIdx);
+            
+                        
+            
+                                    
+            
+                        
+            
+                                                            ApplyClothingSlot(Slot.Coat, dna.coat, dna.coatTex, dna.topColorIdx);
+            
+                        
+            
+                                    
+            
+                        
+            
+                                                
+            
+                        
+            
+                                    
+            
+                        
+            
+                                                            ApplyClothingSlot(Slot.Belt, dna.belt, dna.beltTex, -1);
+            
+                        
+            
+                                    
+            
+                        
+            
+                                                
+            
+                        
+            
+                                    
+            
+                        
+            
+                                                            ApplyClothingSlot(Slot.Pant, dna.pants, dna.pantsTex, dna.botColorIdx);
 
             // Male pants 4 (EITC) and 5 (Navy) hide shoes (hardcoded from PirateMale.py line 3513)
             bool hideShoes = false;
@@ -152,8 +187,8 @@ namespace CharacterOG.Runtime.Systems
                 Debug.Log($"DnaApplier: Hiding shoes because male pants {dna.pants} (EITC/Navy) hide shoes (hardcoded from POTCO source)");
             }
 
-            if (dna.shoes > 0 && !hideShoes)
-                ApplyClothingSlot(Slot.Shoe, dna.shoes, dna.shoesTex, dna.botColorIdx);
+            if (!hideShoes)
+                ApplyClothingSlot(Slot.Shoe, dna.shoes, dna.shoesTex, dna.shoesColorIdx);
 
             // 4. Apply hair/facial hair (with hair color palette, not dye palette)
             ApplyHairSlot(Slot.Hair, dna.hair, dna.hairColorIdx);
@@ -222,6 +257,18 @@ namespace CharacterOG.Runtime.Systems
             Debug.Log($"DnaApplier: Applied DNA for '{dna.name}' ({dna.gender}, {dna.bodyShape})");
         }
 
+        /// <summary>
+        /// Permanently remove unused clothing meshes. 
+        /// Call this for NPCs that will never change clothes.
+        /// </summary>
+        public void OptimizeForStatic()
+        {
+            if (assembler != null)
+            {
+                assembler.OptimizeForStatic();
+            }
+        }
+
         /// <summary>Get currently applied DNA</summary>
         public PirateDNA GetCurrentDNA() => currentDna;
 
@@ -240,84 +287,45 @@ namespace CharacterOG.Runtime.Systems
         /// <summary>Get facial morph applier for advanced manipulation</summary>
         public FacialMorphApplier GetFacialMorphApplier() => facialMorphApplier;
 
-        /// <summary>Get applied colors for persistence (skin, hair, top, bot)</summary>
-        public (Color skin, Color hair, Color top, Color bot) GetAppliedColors()
+        /// <summary>Get applied colors for persistence (skin, hair, top, bot, shoe)</summary>
+        public (Color skin, Color hair, Color top, Color bot, Color shoe) GetAppliedColors()
         {
-            return (currentSkinColor, currentHairColor ?? Color.white, currentTopColor, currentBotColor);
+            return (currentSkinColor, currentHairColor ?? Color.white, currentTopColor, currentBotColor, currentShoeColor);
         }
 
         private void HideAllClothing()
         {
-            // STEP 1: Explicitly disable ALL clothing, hair, beard, mustache, and jewelry meshes (except eyebrows)
-            int clothingDisabled = 0;
-            int hairDisabled = 0;
-            int beardDisabled = 0;
-            int mustacheDisabled = 0;
-            int jewelryDisabled = 0;
+            // Disable cache optimization to ensure correctness.
+            // Iterating all strings is fast enough and guarantees we hit every mesh currently on the model.
+            var allNames = rendererCache.AllNames();
 
-            foreach (var name in rendererCache.AllNames())
+            foreach (var name in allNames)
             {
-                if (name.StartsWith("clothing_layer"))
+                if (name.StartsWith("clothing_layer") ||
+                   (name.StartsWith("hair_") && !name.StartsWith("hair_eyebrow_")) ||
+                    name.StartsWith("beard_") ||
+                    name.StartsWith("mustache_") ||
+                    name.StartsWith("acc_"))
                 {
                     rendererCache.EnableExact(name, false);
-                    clothingDisabled++;
-                }
-                else if (name.StartsWith("hair_") && !name.StartsWith("hair_eyebrow_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    hairDisabled++;
-                }
-                else if (name.StartsWith("beard_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    beardDisabled++;
-                }
-                else if (name.StartsWith("mustache_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    mustacheDisabled++;
-                }
-                else if (name.StartsWith("acc_"))
-                {
-                    rendererCache.EnableExact(name, false);
-                    jewelryDisabled++;
                 }
             }
 
-            Debug.Log($"DnaApplier: Disabled {clothingDisabled} clothing, {hairDisabled} hair, {beardDisabled} beard, {mustacheDisabled} mustache, {jewelryDisabled} jewelry meshes");
-
-            // STEP 2: Clear all slots (this will disable all clothing groups via CharacterAssembler)
+            // STEP 2: Clear all slots
             assembler.ClearAllSlots();
 
-            // STEP 3: Show all body parts (will be hidden later based on equipped clothing)
+            // STEP 3: Show all body parts
             var bodyParts = ClothingCatalog.GetBodyIndexToGroup(currentDna.gender);
             foreach (var name in bodyParts)
             {
                 rendererCache.EnableExact(name, true);
             }
 
-            // STEP 4: Enable eyebrows (PirateMale.py line 1852: self.eyeBrows.unstash())
-            var leftEyebrowRenderers = rendererCache.GetExact("hair_eyebrow_left");
-            var rightEyebrowRenderers = rendererCache.GetExact("hair_eyebrow_right");
-
-            Debug.Log($"[DnaApplier] Eyebrow check: Found {leftEyebrowRenderers.Count} left and {rightEyebrowRenderers.Count} right eyebrow renderers");
-
-            // Check for any eyebrow-related meshes in the cache
-            var allNames = rendererCache.AllNames();
-            var eyebrowNames = allNames.Where(n => n.ToLower().Contains("eyebrow") || n.ToLower().Contains("brow")).ToList();
-            if (eyebrowNames.Count > 0)
-            {
-                Debug.Log($"[DnaApplier] Found {eyebrowNames.Count} eyebrow-related meshes: {string.Join(", ", eyebrowNames)}");
-            }
-            else
-            {
-                Debug.LogWarning("[DnaApplier] No eyebrow meshes found in character model!");
-            }
-
+            // STEP 4: Enable eyebrows
             rendererCache.EnableExact("hair_eyebrow_left", true);
             rendererCache.EnableExact("hair_eyebrow_right", true);
 
-            // STEP 5: Hide gh_master_face (zombie PVP face)
+            // STEP 5: Hide zombie face
             rendererCache.EnableExact("gh_master_face", false);
 
             Debug.Log("DnaApplier: Cleared all clothing slots, showed all body parts, enabled eyebrows, hid zombie face");
@@ -349,9 +357,13 @@ namespace CharacterOG.Runtime.Systems
                 {
                     currentTopColor = dye.Value;
                 }
-                else if (slot == Slot.Pant || slot == Slot.Shoe)
+                else if (slot == Slot.Pant)
                 {
                     currentBotColor = dye.Value;
+                }
+                else if (slot == Slot.Shoe)
+                {
+                    currentShoeColor = dye.Value;
                 }
             }
 
@@ -678,6 +690,7 @@ namespace CharacterOG.Runtime.Systems
                 else if (coatVariant.ogIndex == 4)
                 {
                     // handleLayer3Hiding(clothingsLayer2, layerVest, layerShirt, True) - hideAll=True
+                    // OVERRIDE: Force hide ALL vest parts for EITC coat to fix Unity rendering
                     if (vestVariant != null) HideRenderersNotContaining(vestVariant, new string[0]);
                     if (shirtVariant != null) HideRenderersNotContaining(shirtVariant, new string[0]);
                     // handleLayer3Hiding(clothingsLayer2, layerBelt, None, True) - hideAll=True
@@ -981,71 +994,20 @@ namespace CharacterOG.Runtime.Systems
 
         private void ApplyHairCutsForHat(int hatIndex)
         {
-            // Hat cuts mapping - GENDER SPECIFIC!
-            // Males from PirateMale.py lines 4310-4335
-            // Females from PirateFemale.py lines 4442-4466
-            string[] maleCuts = new[]
+            // Get parsed cuts from catalog (loaded from PirateMale/Female.py)
+            if (!catalog.hairHatCuts.TryGetValue(currentDna.gender, out var cuts) || cuts == null)
             {
-                "cut_none",          // 0 - No hat
-                "cut_captain",       // 1
-                "cut_tricorn",       // 2
-                "cut_navy",          // 3
-                "cut_admiral",       // 4
-                "cut_admiral",       // 5
-                "cut_bandanna_full", // 6
-                "cut_bandanna",      // 7
-                "cut_beanie",        // 8
-                "cut_admiral",       // 9
-                "cut_bandanna_full", // 10
-                "cut_bandanna_full", // 11
-                "cut_bandanna_full", // 12
-                "cut_bandanna_full", // 13
-                "cut_bandanna_full", // 14
-                "cut_bandanna_full", // 15
-                "cut_bandanna_full", // 16
-                "cut_bandanna_full", // 17
-                "cut_bandanna_full", // 18
-                "cut_bandanna_full"  // 19
-            };
+                Debug.LogWarning($"DnaApplier: No hair cuts found in catalog for gender {currentDna.gender}");
+                return;
+            }
 
-            string[] femaleCuts = new[]
-            {
-                "",       // 0 - No hat
-                "cut_c",  // 1
-                "cut_c",  // 2
-                "cut_c",  // 3
-                "cut_e",  // 4
-                "cut_c",  // 5
-                "cut_d",  // 6 - bandanna_reg (with cut_c fallback)
-                "cut_c",  // 7
-                "cut_c",  // 8
-                "cut_c",  // 9
-                "cut_c",  // 10
-                "cut_c",  // 11
-                "cut_c",  // 12
-                "cut_c",  // 13
-                "cut_c",  // 14
-                "cut_c",  // 15
-                "cut_c",  // 16
-                "cut_c",  // 17
-                "cut_c",  // 18
-                "cut_c",  // 19
-                "cut_c",  // 20
-                "cut_c",  // 21
-                "cut_c",  // 22
-                "cut_c"   // 23
-            };
-
-            // Select cuts array based on gender
-            string[] cuts = (currentDna?.gender == "f") ? femaleCuts : maleCuts;
-
-            if (hatIndex < 0 || hatIndex >= cuts.Length)
+            if (hatIndex < 0 || hatIndex >= cuts.Count)
                 return;
 
             string cutName = cuts[hatIndex];
 
-            // If no hat (hatIndex == 0), show all hair normally
-            if (hatIndex == 0)
+            // If no cut ("cut_none" or empty), show all hair normally
+            if (string.IsNullOrEmpty(cutName) || cutName == "cut_none")
                 return;
 
             // PirateMale.py logic (lines 4360-4380):
@@ -1060,37 +1022,48 @@ namespace CharacterOG.Runtime.Systems
 
             // Debug: Log all hair-related meshes
             var hairMeshes = allNames.Where(n => n.StartsWith("hair_")).ToList();
-            Debug.Log($"DnaApplier: Found {hairMeshes.Count} hair meshes for hat {hatIndex}: {string.Join(", ", hairMeshes)}");
+            // Debug.Log($"DnaApplier: Found {hairMeshes.Count} hair meshes for hat {hatIndex}: {string.Join(", ", hairMeshes)}");
 
             // Track which hair pieces are equipped (part of current hair style)
-            // These are the pieces that were enabled before we apply hat cuts
-            var equippedHairPieces = new List<string>();
+            // Use Assembler as source of truth instead of scene state
+            var equippedHairPieces = new HashSet<string>();
+            var currentHairVariant = assembler.GetCurrentVariant(Slot.Hair);
+            
+            if (currentHairVariant != null)
+            {
+                foreach (var group in currentHairVariant.showGroups)
+                {
+                    equippedHairPieces.Add(group);
+                }
+                // Debug.Log($"DnaApplier: Identified {equippedHairPieces.Count} equipped hair pieces from variant '{currentHairVariant.displayName}'");
+            }
+            else
+            {
+                // Fallback if no variant (shouldn't happen with correct catalog)
+                Debug.LogWarning("DnaApplier: No active hair variant found in assembler");
+            }
 
             // First pass: identify which hair pieces are currently enabled (part of hair style)
-            foreach (var name in allNames)
-            {
-                // Only check full hair meshes (not cuts)
-                if (!name.StartsWith("hair_") || name.Contains("_cut") || name.StartsWith("hair_eyebrow_"))
-                    continue;
-
-                if (name.Contains("hair_base") || name.Contains("hair_none"))
-                    continue;
-
-                // Check if this hair piece is currently enabled (part of the hair style)
-                var renderers = rendererCache.GetExact(name);
-                if (renderers.Count > 0 && renderers.Any(r => r != null && r.enabled))
-                {
-                    equippedHairPieces.Add(name);
-                    Debug.Log($"DnaApplier: Hair piece '{name}' is equipped (part of current style)");
-                }
-            }
+            // (Loop removed - we now use assembler state directly)
 
             // Step 1: Process all non-cut hair pieces
             foreach (var name in allNames)
             {
-                // Only process full hair meshes (not cuts, not eyebrows, not beard/mustache)
-                if (!name.StartsWith("hair_") || name.Contains("_cut") || name.StartsWith("hair_eyebrow_"))
+                // Skip unrelated meshes
+                if (!name.StartsWith("hair_") || name.StartsWith("hair_eyebrow_"))
                     continue;
+
+                // If it's a CUT version, skip Step 1 (it's handled in Step 2)
+                if (name.Contains("_cut"))
+                    continue;
+
+                // CRITICAL FIX: Only process hair pieces that are part of the current style!
+                if (!equippedHairPieces.Contains(name))
+                {
+                    // Ensure unequipped pieces stay hidden (fixes "hair_c0 appearing uninvited" bug)
+                    rendererCache.EnableExact(name, false);
+                    continue;
+                }
 
                 // Male-specific: hair_base (index 1) always shows (PirateMale.py line 4364: partIdx == 1)
                 // Females don't have hair_base
@@ -1098,7 +1071,7 @@ namespace CharacterOG.Runtime.Systems
                 {
                     equippedHairPieces.Add(name);
                     rendererCache.EnableExact(name, true);
-                    Debug.Log($"DnaApplier: Keeping base hair '{name}' visible (always shown)");
+                    // Debug.Log($"DnaApplier: Keeping base hair '{name}' visible (always shown)");
                     continue;
                 }
 
@@ -1111,16 +1084,16 @@ namespace CharacterOG.Runtime.Systems
 
                 // For other hair pieces, check if cut version exists
                 // Python does substring search: hairCut[j].getName().find(cuts[hatIdx]) >= 0
-                // So we look for any cut mesh containing both the hair piece name and the cut name
-                // e.g., "hair_m0" in mesh name and "cut_d" in mesh name
                 bool hasCutVersion = allNames.Any(n => n.StartsWith(name + "_") && n.Contains(cutName));
 
-                // Female special case: hat index 6 (bandanna_reg) can also use cut_c
-                // PirateFemale.py line 4512-4516: if hatIdx == 6, also check cuts[7] (cut_c)
-                if (!hasCutVersion && currentDna?.gender == "f" && hatIndex == 6)
+                // Female special case: hat index 6 (bandanna_reg) can also use cut_c if cut_d missing
+                // This logic needs to be dynamic based on cuts list content if possible, but index 6 logic is specific in python
+                // In python: if hatIdx == 6: if hairCut[j].getName().find(cuts[hatIdx + 1]) >= 0
+                // cuts[7] is usually 'cut_c'
+                if (!hasCutVersion && currentDna?.gender == "f" && hatIndex == 6 && cuts.Count > 7)
                 {
-                    // For hat 6, also check if cut_c exists
-                    hasCutVersion = allNames.Any(n => n.StartsWith(name + "_") && n.Contains("cut_c"));
+                    string fallbackCut = cuts[7]; // Typically 'cut_c'
+                    hasCutVersion = allNames.Any(n => n.StartsWith(name + "_") && n.Contains(fallbackCut));
                 }
 
                 if (hasCutVersion)
@@ -1140,7 +1113,7 @@ namespace CharacterOG.Runtime.Systems
                     {
                         // Show full hair_c0 (female base hair)
                         rendererCache.EnableExact(name, true);
-                        Debug.Log($"DnaApplier: Keeping female hair_c0 '{name}' visible (partIdx 2 fallback)");
+                        // Debug.Log($"DnaApplier: Keeping female hair_c0 '{name}' visible (partIdx 2 fallback)");
                     }
                     else
                     {
@@ -1152,30 +1125,20 @@ namespace CharacterOG.Runtime.Systems
             }
 
             // Step 2: Show only cut versions that match this hat
-            // (Color was already applied in ApplyHairSlot to all hair meshes)
-            // Match Python logic from PirateFemale.py lines 4506-4516
-
-            // Debug: Log all cut versions found
-            var cutVersions = allNames.Where(n => n.Contains("_cut")).ToList();
-            if (cutVersions.Count > 0)
-            {
-                Debug.Log($"DnaApplier: Found {cutVersions.Count} cut versions: {string.Join(", ", cutVersions)}");
-            }
-
             foreach (var name in allNames)
             {
                 if (!name.Contains("_cut"))
                     continue;
 
-                // CRITICAL: Only show cut versions of hair pieces that are EQUIPPED (part of current style)
-                // Python loops through hairParts (e.g., [12] for style 18), only processes those pieces
+                // CRITICAL: Only show cut versions of hair pieces that are EQUIPPED
                 bool belongsToEquippedPiece = false;
                 string basePieceName = "";
                 foreach (var equipped in equippedHairPieces)
                 {
-                    // Check if this cut mesh belongs to an equipped hair piece
-                    // e.g., "hair_m0_cut_c" belongs to "hair_m0"
-                    if (name.StartsWith(equipped + "_cut"))
+                    // Normalize base name: strip '_reg' if present (handles hair_o0_reg -> hair_o0_cut mismatch)
+                    string baseName = equipped.EndsWith("_reg") ? equipped.Substring(0, equipped.Length - 4) : equipped;
+
+                    if (name.StartsWith(baseName + "_cut"))
                     {
                         belongsToEquippedPiece = true;
                         basePieceName = equipped;
@@ -1185,22 +1148,18 @@ namespace CharacterOG.Runtime.Systems
 
                 if (!belongsToEquippedPiece)
                 {
-                    // This cut belongs to a hair piece that's not equipped - hide it
                     rendererCache.EnableExact(name, false);
                     continue;
                 }
 
                 // Python line 4507: if hairCut[j].getName().find(cuts[hatIdx]) >= 0
-                // This checks if the cut mesh name contains the cut string (e.g., "cut_d")
                 bool shouldShow = name.Contains(cutName);
 
-                // Python line 4512-4513: Female hat 6 fallback
-                // if hatIdx == 6: if hairCut[j].getName().find(cuts[hatIdx + 1]) >= 0
-                // This adds cut_c meshes as fallback for hat 6 (in addition to cut_d if it exists)
-                if (!shouldShow && currentDna?.gender == "f" && hatIndex == 6)
+                // Python line 4512-4513: Female hat 6 fallback (bandanna_reg)
+                if (!shouldShow && currentDna?.gender == "f" && hatIndex == 6 && cuts.Count > 7)
                 {
-                    // cuts[6+1] = cuts[7] = 'cut_c'
-                    shouldShow = name.Contains("cut_c");
+                    string fallbackCut = cuts[7]; // 'cut_c'
+                    shouldShow = name.Contains(fallbackCut);
                 }
 
                 rendererCache.EnableExact(name, shouldShow);

@@ -10,6 +10,7 @@ public class MaterialHandler
 {
     // Cache frequently used shaders to avoid repeated Shader.Find calls
     private static Shader _vertexColorShader;
+    private static Shader _vertexColorTransparentShader;
     private static Shader _legacyDiffuseShader;
     private static Shader _standardShader;
     
@@ -25,25 +26,54 @@ public class MaterialHandler
     private static Dictionary<string, Texture2D> _textureCache;
     private static bool _textureCacheInitialized = false;
     
-    // New overload that accepts alpha textures specified by .egg files
-    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
+    // New overload that accepts alpha textures and wrap modes specified by .egg files
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO, string assetPath = "")
     {
         DebugLogger.LogEggImporter($"Creating materials from {texturePaths.Count} texture paths and {alphaPaths.Count} alpha paths");
         var materials = new List<Material>(texturePaths.Count + 1);
         var createdMaterialNames = new HashSet<string>(); // Track what we've created
+
+        // Check if we should use ParticleGUI shader based on asset path
+        bool useParticleGUI = false;
+        if (!string.IsNullOrEmpty(assetPath))
+        {
+            string lowerPath = assetPath.ToLowerInvariant();
+            if (lowerPath.Contains("/effects/") || 
+                lowerPath.Contains("/fonts/") || 
+                lowerPath.Contains("/gui/") || 
+                lowerPath.Contains("/texturecards/") ||
+                lowerPath.Contains("/sky/"))
+            {
+                useParticleGUI = true;
+                DebugLogger.LogEggImporter($"[Shader] Using ParticleGUI shader for asset: {assetPath}");
+            }
+        }
 
         foreach (var kvp in texturePaths)
         {
             string materialName = kvp.Key;
             string texturePath = kvp.Value;
 
-            DebugLogger.LogEggImporter($"Creating material: {materialName} with texture: {texturePath}");
+            // Check for alpha blend marker
+            bool needsAlphaBlend = materialName.EndsWith("_ALPHABLEND");
+            string cleanMatName = needsAlphaBlend ? materialName.Substring(0, materialName.Length - 11) : materialName;
 
-            // Check if this material has an alpha texture specified
-            string alphaPath = alphaPaths.TryGetValue(materialName, out string alpha) ? alpha : null;
+            DebugLogger.LogEggImporter($"Creating material: {cleanMatName} with texture: {texturePath}");
+
+            // Check if this material has an alpha texture specified (use clean name)
+            string alphaPath = alphaPaths.TryGetValue(cleanMatName, out string alpha) ? alpha : null;
+
+            // Get wrap mode for this texture
+            TextureWrapData wrapData = textureWrapModes.TryGetValue(cleanMatName, out TextureWrapData wrap) ? wrap : new TextureWrapData();
 
             Material mat;
             Texture2D colorTex = FindTextureInProject(texturePath);
+
+            // Ensure texture is set to repeat mode (we control wrap per-material)
+            if (colorTex)
+            {
+                ApplyWrapModeToTexture(colorTex, wrapData);
+            }
 
             Texture2D alphaTex = null;
             if (!string.IsNullOrEmpty(alphaPath))
@@ -56,18 +86,38 @@ public class MaterialHandler
                     DebugLogger.LogWarningEggImporter($"[AlphaMask] Could not load alpha texture: {alphaPath}");
             }
 
-            // Always use the unified vertex color material
-            mat = CreateVertexColorMaterial(materialName);
+            // Create material with appropriate shader
+            if (useParticleGUI)
+            {
+                Shader guiShader = Shader.Find("EggImporter/ParticleGUI");
+                if (guiShader == null)
+                {
+                    DebugLogger.LogWarningEggImporter("Shader 'EggImporter/ParticleGUI' not found! Falling back to standard.");
+                    guiShader = GetCachedVertexColorShader();
+                }
+                
+                mat = new Material(guiShader);
+                mat.name = materialName;
+                mat.enableInstancing = true;
+                
+                // Ensure tint is white by default for GUI
+                if (mat.HasProperty("_Color"))
+                    mat.SetColor("_Color", Color.white);
+            }
+            else
+            {
+                mat = CreateVertexColorMaterial(materialName, needsAlphaBlend);
+            }
 
             if (colorTex)
             {
                 mat.mainTexture = colorTex;
-                DebugLogger.LogEggImporter($"Assigned texture {texturePath} to material {materialName}");
+                DebugLogger.LogEggImporter($"Assigned texture {texturePath} to material {cleanMatName}");
             }
             else
             {
                 DebugLogger.LogWarningEggImporter($"Could not find texture: {texturePath}");
-                mat.color = GetDefaultColorForMaterial(materialName);
+                mat.color = GetDefaultColorForMaterial(cleanMatName);
             }
 
             // Set alpha texture if available
@@ -78,21 +128,48 @@ public class MaterialHandler
                 // Set culling to off so both sides are visible for alpha-masked materials
                 mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
                 mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
-                DebugLogger.LogEggImporter($"[AlphaMask] Assigned alpha texture to {materialName}: {alphaTex.name} (Cull: Off)");
+                DebugLogger.LogEggImporter($"[AlphaMask] Assigned alpha texture to {cleanMatName}: {alphaTex.name} (Cull: Off)");
             }
             else
             {
-                // Set culling to back for regular materials (only show front faces)
-                mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Back);
-                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
-                DebugLogger.LogEggImporter($"[Standard] Material {materialName} set to back-face culling (Cull: Back)");
+                // For ParticleGUI, default cull is Off (0), but for standard meshes default is Back (2)
+                // Only set Back culling if NOT using ParticleGUI (as GUI often needs double-sided or explicit control)
+                // Actually, particles usually need Cull Off.
+                if (!useParticleGUI)
+                {
+                    mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Back);
+                    mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+                    DebugLogger.LogEggImporter($"[Standard] Material {cleanMatName} set to back-face culling (Cull: Back)");
+                }
+                else
+                {
+                    // Ensure ParticleGUI materials render in transparent queue
+                    mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                }
             }
 
-            // Use cached property IDs for better performance
-            if (mat.HasProperty(MetallicPropertyId))
-                mat.SetFloat(MetallicPropertyId, 0.0f);
-            if (mat.HasProperty(GlossinessPropertyId))
-                mat.SetFloat(GlossinessPropertyId, 0.1f);
+            // Use cached property IDs for better performance (only for standard shaders)
+            if (!useParticleGUI)
+            {
+                if (mat.HasProperty(MetallicPropertyId))
+                    mat.SetFloat(MetallicPropertyId, 0.0f);
+                if (mat.HasProperty(GlossinessPropertyId))
+                    mat.SetFloat(GlossinessPropertyId, 0.1f);
+            }
+
+            // Don't apply wrap mode in shader - causes stretching artifacts
+            // Let textures use natural UV wrapping (repeat mode)
+            if (mat.HasProperty("_MainTexWrap"))
+            {
+                mat.SetVector("_MainTexWrap", Vector4.zero); // 0 = repeat
+            }
+
+            // Only reset color for standard shaders, ParticleGUI might use tint
+            if (!useParticleGUI)
+            {
+                if (mat.HasProperty(ColorPropertyId))
+                    mat.SetColor(ColorPropertyId, Color.white);
+            }
 
             materials.Add(mat);
             createdMaterialNames.Add(materialName);
@@ -119,57 +196,229 @@ public class MaterialHandler
         return materials;
     }
 
-    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths)
+    // Legacy overload without wrap modes
+    public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, GameObject rootGO)
+    {
+        var textureWrapModes = new Dictionary<string, TextureWrapData>();
+        return CreateMaterials(texturePaths, alphaPaths, textureWrapModes, rootGO);
+    }
+
+    private void ApplyWrapModeToTexture(Texture2D texture, TextureWrapData wrapData)
+    {
+        // Set texture to repeat by default - we'll control wrap mode per-material via shader
+        texture.wrapMode = TextureWrapMode.Repeat;
+    }
+
+    private Vector4 GetWrapModeVector(TextureWrapData wrapData)
+    {
+        // Convert wrap mode to shader vector: x=wrapU, y=wrapV (0=repeat, 1=clamp)
+        float wrapU = wrapData.wrapU == "clamp" ? 1.0f : 0.0f;
+        float wrapV = wrapData.wrapV == "clamp" ? 1.0f : 0.0f;
+        return new Vector4(wrapU, wrapV, 0, 0);
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths, Dictionary<string, string> textureUVNames)
+    {
+        var textureWrapModes = new Dictionary<string, TextureWrapData>();
+        CreateMultiTextureMaterials(materials, materialNames, texturePaths, textureUVNames, textureWrapModes);
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths, Dictionary<string, string> textureUVNames, Dictionary<string, TextureWrapData> textureWrapModes)
     {
         DebugLogger.LogEggImporter($"[MultiTex] Processing {materialNames.Count} material names for multi-texture support");
 
+        // Track created materials to avoid duplicates
+        var createdMultiTexMaterials = new HashSet<string>();
+
         foreach (string matName in materialNames)
         {
-            if (matName.Contains("||"))
+            // Check for alpha blend marker
+            bool needsAlphaBlend = matName.EndsWith("_ALPHABLEND");
+            string cleanMatName = needsAlphaBlend ? matName.Substring(0, matName.Length - 11) : matName;
+
+            if (cleanMatName.Contains("||"))
             {
-                // Multi-texture material like "island_wild_palette_3cmla_1||pir_t_are_isl_multi_dirtRock"
-                var texNames = matName.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries);
+                // Skip if already created
+                if (createdMultiTexMaterials.Contains(matName))
+                {
+                    DebugLogger.LogEggImporter($"[MultiTex] Skipping duplicate material: {matName}");
+                    continue;
+                }
+
+                // Multi-texture material like "volcano_palette_3cmla_1||sand"
+                var texNames = cleanMatName.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries);
 
                 if (texNames.Length >= 2)
                 {
                     DebugLogger.LogEggImporter($"[MultiTex] Creating multi-texture material: {matName}");
 
+                    // Detect if we need to swap based on uv-name presence
+                    string firstTexName = texNames[0];
+                    string secondTexName = texNames[1];
+
+                    bool firstHasUVName = textureUVNames.ContainsKey(firstTexName);
+                    bool secondHasUVName = textureUVNames.ContainsKey(secondTexName);
+
+                    // Check wrap modes - palette textures use clamp, tiling textures use repeat
+                    bool firstIsClamp = textureWrapModes.ContainsKey(firstTexName) &&
+                        (textureWrapModes[firstTexName].wrapU == "clamp" || textureWrapModes[firstTexName].wrapV == "clamp");
+                    bool secondIsClamp = textureWrapModes.ContainsKey(secondTexName) &&
+                        (textureWrapModes[secondTexName].wrapU == "clamp" || textureWrapModes[secondTexName].wrapV == "clamp");
+
+                    // Shader has: _MainTex→UV0, _BlendTex→UV1
+                    // Smart swap logic using wrap modes as hint:
+                    // Clamp textures (palettes) typically use named UVs (UV1), repeat textures use primary UVs (UV0)
+                    bool needsSwap;
+                    if (firstHasUVName && secondHasUVName)
+                    {
+                        // Both have uv-names: use wrap mode to determine assignment
+                        // If first is clamp (palette), it should go to BlendTex/UV1 (swap=true)
+                        // If second is clamp (palette), it should go to BlendTex/UV1 (swap=false)
+                        needsSwap = firstIsClamp;
+                        DebugLogger.LogEggImporter($"[MultiTex] Both have uv-names, using wrap mode: first clamp={firstIsClamp}, second clamp={secondIsClamp}, swap={needsSwap}");
+                    }
+                    else
+                    {
+                        // Standard logic: swap if only first needs UV1
+                        needsSwap = firstHasUVName && !secondHasUVName;
+                    }
+
+                    string firstUVNameValue = firstHasUVName ? textureUVNames[firstTexName] : "none";
+                    string secondUVNameValue = secondHasUVName ? textureUVNames[secondTexName] : "none";
+
+                    DebugLogger.LogEggImporter($"[MultiTex] First TRef '{firstTexName}' uv-name={firstUVNameValue}, hasUVName={firstHasUVName}, clamp={firstIsClamp}");
+                    DebugLogger.LogEggImporter($"[MultiTex] Second TRef '{secondTexName}' uv-name={secondUVNameValue}, hasUVName={secondHasUVName}, clamp={secondIsClamp}");
+                    DebugLogger.LogEggImporter($"[MultiTex] Needs swap: {needsSwap}");
+
                     // Load textures
-                    Texture2D baseTex = null;
-                    Texture2D overlayTex = null;
+                    Texture2D mainTex = null;
+                    Texture2D blendTex = null;
 
-                    if (texturePaths.TryGetValue(texNames[0], out string basePath))
+                    if (texturePaths.TryGetValue(firstTexName, out string firstPath))
                     {
-                        baseTex = FindTextureInProject(basePath);
+                        Texture2D firstTex = FindTextureInProject(firstPath);
+                        if (firstTex) ApplyWrapModeToTexture(firstTex, new TextureWrapData());
+
+                        if (needsSwap)
+                        {
+                            blendTex = firstTex;  // First needs UV1, so goes to _BlendTex
+                            DebugLogger.LogEggImporter($"[MultiTex] First texture '{firstTexName}' → _BlendTex (UV1)");
+                        }
+                        else
+                        {
+                            mainTex = firstTex;   // First needs UV0, so goes to _MainTex
+                            DebugLogger.LogEggImporter($"[MultiTex] First texture '{firstTexName}' → _MainTex (UV0)");
+                        }
                     }
 
-                    if (texNames.Length > 1 && texturePaths.TryGetValue(texNames[1], out string overlayPath))
+                    if (texturePaths.TryGetValue(secondTexName, out string secondPath))
                     {
-                        overlayTex = FindTextureInProject(overlayPath);
+                        Texture2D secondTex = FindTextureInProject(secondPath);
+                        if (secondTex) ApplyWrapModeToTexture(secondTex, new TextureWrapData());
+
+                        if (needsSwap)
+                        {
+                            mainTex = secondTex;  // Second needs UV0, so goes to _MainTex
+                            DebugLogger.LogEggImporter($"[MultiTex] Second texture '{secondTexName}' → _MainTex (UV0)");
+                        }
+                        else
+                        {
+                            blendTex = secondTex; // Second needs UV1, so goes to _BlendTex
+                            DebugLogger.LogEggImporter($"[MultiTex] Second texture '{secondTexName}' → _BlendTex (UV1)");
+                        }
                     }
 
-                    // Create material with VertexColorTexture shader
-                    Shader shader = GetCachedVertexColorShader();
+                    // Create material with appropriate shader (transparent if alpha blend needed)
+                    Shader shader = needsAlphaBlend ? GetCachedTransparentShader() : GetCachedVertexColorShader();
 
                     Material mat = new Material(shader) { name = matName };
 
-                    if (baseTex)
+                    if (mainTex)
                     {
-                        mat.SetTexture("_MainTex", baseTex);
-                        DebugLogger.LogEggImporter($"[MultiTex] Set base texture: {baseTex.name}");
+                        mat.SetTexture("_MainTex", mainTex);
+                        DebugLogger.LogEggImporter($"[MultiTex] Set _MainTex: {mainTex.name} (samples UV0)");
                     }
 
-                    if (overlayTex)
+                    if (blendTex)
                     {
-                        mat.SetTexture("_BlendTex", overlayTex);
-                        DebugLogger.LogEggImporter($"[MultiTex] Set blend texture: {overlayTex.name}");
+                        mat.SetTexture("_BlendTex", blendTex);
+                        DebugLogger.LogEggImporter($"[MultiTex] Set _BlendTex: {blendTex.name} (samples UV1)");
                     }
+
+                    // Shader uses: _MainTex → UV0, _BlendTex → UV1
+                    // We've assigned textures to match their UV requirements
+                    mat.SetFloat("_SwapUVChannels", 0.0f);
+                    mat.DisableKeyword("SWAP_UV_CHANNELS");
+                    
+                    // Enable GPU Instancing
+                    mat.enableInstancing = true;
+
+                    // For multi-texture materials, let UVs work naturally
+                    if (mat.HasProperty("_MainTexWrap"))
+                    {
+                        mat.SetVector("_MainTexWrap", Vector4.zero); // 0 = repeat for both
+                    }
+
+                    if (mat.HasProperty("_BlendTexWrap"))
+                    {
+                        mat.SetVector("_BlendTexWrap", Vector4.zero); // 0 = repeat for both
+                    }
+
+                    DebugLogger.LogEggImporter($"[WrapMode] Multi-texture material using natural UV wrapping");
 
                     mat.SetColor("_Color", Color.white);
                     materials.Add(mat);
+                    createdMultiTexMaterials.Add(matName);
+                }
+            }
+            else if (needsAlphaBlend && !cleanMatName.Contains("||"))
+            {
+                // Single-texture material with alpha blend
+                // Check if base material exists
+                Material baseMat = materials.FirstOrDefault(m => m.name == cleanMatName);
+                if (baseMat != null)
+                {
+                    // Skip if already created
+                    if (createdMultiTexMaterials.Contains(matName))
+                    {
+                        DebugLogger.LogEggImporter($"[AlphaBlend] Skipping duplicate single-tex material: {matName}");
+                        continue;
+                    }
+
+                    // Create alpha blend version with transparent shader
+                    Shader transparentShader = GetCachedTransparentShader();
+                    Material alphaMat = new Material(transparentShader) { name = matName };
+                    
+                    // Enable GPU Instancing
+                    alphaMat.enableInstancing = true;
+
+                    // Copy textures and properties from base material
+                    if (baseMat.mainTexture) alphaMat.mainTexture = baseMat.mainTexture;
+                    if (baseMat.HasProperty("_BlendTex") && alphaMat.HasProperty("_BlendTex"))
+                        alphaMat.SetTexture("_BlendTex", baseMat.GetTexture("_BlendTex"));
+                    if (baseMat.HasProperty("_AlphaTex") && alphaMat.HasProperty("_AlphaTex"))
+                        alphaMat.SetTexture("_AlphaTex", baseMat.GetTexture("_AlphaTex"));
+                    if (baseMat.HasProperty("_Color") && alphaMat.HasProperty("_Color"))
+                        alphaMat.SetColor("_Color", baseMat.GetColor("_Color"));
+                    if (baseMat.HasProperty("_Cull") && alphaMat.HasProperty("_Cull"))
+                        alphaMat.SetFloat("_Cull", baseMat.GetFloat("_Cull"));
+
+                    materials.Add(alphaMat);
+                    createdMultiTexMaterials.Add(matName);
+                    DebugLogger.LogEggImporter($"[AlphaBlend] Created single-tex alpha blend material: {matName}");
+                }
+                else
+                {
+                    DebugLogger.LogWarningEggImporter($"[AlphaBlend] Base material '{cleanMatName}' not found for alpha blend variant '{matName}'");
                 }
             }
         }
+    }
+
+    public void CreateMultiTextureMaterials(List<Material> materials, List<string> materialNames, Dictionary<string, string> texturePaths)
+    {
+        var textureUVNames = new Dictionary<string, string>();
+        CreateMultiTextureMaterials(materials, materialNames, texturePaths, textureUVNames);
     }
 
     // Legacy overload for backward compatibility
@@ -267,7 +516,7 @@ public class MaterialHandler
         DebugLogger.LogEggImporter($"Texture cache initialized in {stopwatch.ElapsedMilliseconds}ms with {_textureCache.Count} entries");
         _textureCacheInitialized = true;
     }
-    
+
     private Color GetDefaultColorForMaterial(string materialName)
     {
         // Use cache to avoid repeated string operations for same material names
@@ -317,10 +566,10 @@ public class MaterialHandler
         return materialDict;
     }
     
-    private Material CreateVertexColorMaterial(string materialName)
+    private Material CreateVertexColorMaterial(string materialName, bool useAlphaBlend = false)
     {
         // Cache shaders to avoid repeated Shader.Find calls
-        Shader shader = GetCachedVertexColorShader();
+        Shader shader = useAlphaBlend ? GetCachedTransparentShader() : GetCachedVertexColorShader();
 
         Material mat = new Material(shader) { name = materialName };
 
@@ -335,6 +584,9 @@ public class MaterialHandler
             mat.SetFloat(MetallicPropertyId, 0.0f);
         if (mat.HasProperty(GlossinessPropertyId))
             mat.SetFloat(GlossinessPropertyId, 0.1f);
+            
+        // Enable GPU Instancing
+        mat.enableInstancing = true;
 
         DebugLogger.LogEggImporter($"Created vertex color material '{materialName}' using shader: {shader.name}");
 
@@ -396,7 +648,30 @@ public class MaterialHandler
         
         return _standardShader;
     }
-    
+
+    private Shader GetCachedTransparentShader()
+    {
+        // Return cached shader if available
+        if (_vertexColorTransparentShader != null) return _vertexColorTransparentShader;
+
+        // Try to use our custom transparent vertex color shader
+        _vertexColorTransparentShader = Shader.Find("EggImporter/VertexColorTextureTransparent");
+
+        if (_vertexColorTransparentShader != null) return _vertexColorTransparentShader;
+
+        // Fallback to standard transparent shader
+        Shader transparentFallback = Shader.Find("Legacy Shaders/Transparent/Diffuse");
+        if (transparentFallback != null)
+        {
+            DebugLogger.LogWarningEggImporter("Custom EggImporter/VertexColorTextureTransparent shader not found, falling back to Legacy Shaders/Transparent/Diffuse");
+            return transparentFallback;
+        }
+
+        // Last resort - use opaque shader
+        DebugLogger.LogWarningEggImporter("No transparent shader found, falling back to opaque shader");
+        return GetCachedVertexColorShader();
+    }
+
 
 
     private static Texture2D LoadTextureByFileName(string fileName)

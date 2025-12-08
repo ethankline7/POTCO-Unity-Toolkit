@@ -6,6 +6,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using POTCO;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -18,7 +19,7 @@ namespace Player
         Female
     }
 
-    [RequireComponent(typeof(Animation))]
+    [RequireComponent(typeof(POTCO.RuntimeAnimatorPlayer))]
     public class SimpleAnimationPlayer : MonoBehaviour
     {
         [Header("Gender Detection")]
@@ -33,12 +34,6 @@ namespace Player
         [Header("Animation Transitions")]
         [Tooltip("Duration for animation crossfade transitions")]
         [SerializeField] private float transitionDuration = 0.15f;
-
-        [Header("Bone Sticking Fix - Manual Reset")]
-        [Tooltip("Enable manual bone reset to prevent sticking during transitions")]
-        [SerializeField] private bool enableManualBoneReset = true;
-        [Tooltip("Duration to lerp orphaned bones back to rest pose")]
-        [SerializeField] private float resetDuration = 0.3f;
 
         [Header("Animation Clips")]
         [SerializeField] private AnimationClip idleClip;
@@ -57,10 +52,21 @@ namespace Player
         [SerializeField] private AnimationClip spinLeftClip;  // Female turn animation
         [SerializeField] private AnimationClip spinRightClip; // Female turn animation
         [SerializeField] private AnimationClip jumpClip;
-        [SerializeField] private AnimationClip swimClip;
 
-        private Animation animComponent;
+        [Header("Swimming Clips")]
+        [SerializeField] private AnimationClip swimIdleClip;
+        [SerializeField] private AnimationClip swimWalkClip;
+        [SerializeField] private AnimationClip swimBackClip;
+        [SerializeField] private AnimationClip swimLeftClip;
+        [SerializeField] private AnimationClip swimRightClip;
+        [SerializeField] private AnimationClip swimLeftDiagonalClip;
+        [SerializeField] private AnimationClip swimRightDiagonalClip;
+        [SerializeField] private AnimationClip swimBackDiagonalLeftClip;
+        [SerializeField] private AnimationClip swimBackDiagonalRightClip;
+
+        private POTCO.RuntimeAnimatorPlayer animComponent;
         private PlayerController playerController;
+        private POTCO.NPCController npcController;
         private string currentAnim = "";
         private bool isInitialized = false;
         private bool wasGrounded = true; // Track if we were grounded last frame
@@ -69,15 +75,10 @@ namespace Player
         private bool jumpAnimReversing = false; // Track if jump animation is playing backwards
         private bool isPlayingLanding = false; // Track if we're playing the landing animation
 
-        // Manual bone reset system
-        private Dictionary<string, Transform> cachedBones = new Dictionary<string, Transform>();
-        private Dictionary<string, Quaternion> restPoseRotations = new Dictionary<string, Quaternion>();
-        private Dictionary<string, HashSet<string>> animationBones = new Dictionary<string, HashSet<string>>();
-        private Coroutine currentResetCoroutine = null;
-
         private void Awake()
         {
             playerController = GetComponent<PlayerController>();
+            npcController = GetComponent<POTCO.NPCController>();
 
             // Use manual override if enabled
             if (manualGenderOverride)
@@ -114,20 +115,94 @@ namespace Player
             }
         }
 
+        /// <summary>
+        /// Helper class to wrap either PlayerController or NPCController
+        /// Both now have the same API so this makes SimpleAnimationPlayer controller-agnostic
+        /// </summary>
+        private class ControllerAdapter
+        {
+            public bool IsGrounded { get; set; }
+            public float CurrentSpeed { get; set; }
+            public Vector3 Velocity { get; set; }
+            public Vector2 MoveInput { get; set; }
+            public float TurnInput { get; set; }
+            public float StrafeInput { get; set; }
+            public bool IsFreeLooking { get; set; }
+            public bool IsRunning { get; set; }
+            public bool IsFalling { get; set; }
+            public bool IsSwimming { get; set; }
+        }
+
+        /// <summary>
+        /// Get the active controller (PlayerController or NPCController)
+        /// Returns null if neither is active
+        /// </summary>
+        private ControllerAdapter GetActiveController()
+        {
+            // Check PlayerController first (possession mode)
+            if (playerController != null && playerController.enabled)
+            {
+                return new ControllerAdapter
+                {
+                    IsGrounded = playerController.IsGrounded,
+                    CurrentSpeed = playerController.CurrentSpeed,
+                    Velocity = playerController.Velocity,
+                    MoveInput = playerController.MoveInput,
+                    TurnInput = playerController.TurnInput,
+                    StrafeInput = playerController.StrafeInput,
+                    IsFreeLooking = playerController.IsFreeLooking,
+                    IsRunning = playerController.IsRunning,
+                    IsFalling = playerController.IsFalling,
+                    IsSwimming = playerController.IsSwimming
+                };
+            }
+
+            // Check NPCController (normal NPC mode)
+            if (npcController != null && npcController.enabled)
+            {
+                // NPC Controller doesn't have swimming yet, default to false
+                return new ControllerAdapter
+                {
+                    IsGrounded = npcController.IsGrounded,
+                    CurrentSpeed = npcController.CurrentSpeed,
+                    Velocity = npcController.Velocity,
+                    MoveInput = npcController.MoveInput,
+                    TurnInput = npcController.TurnInput,
+                    StrafeInput = npcController.StrafeInput,
+                    IsFreeLooking = npcController.IsFreeLooking,
+                    IsRunning = npcController.IsRunning,
+                    IsFalling = npcController.IsFalling,
+                    IsSwimming = false 
+                };
+            }
+
+            return null;
+        }
+
         private void Start()
         {
-            // Find Animation component AFTER PlayerController sets up hierarchy
-            Debug.Log("🔍 SimpleAnimationPlayer searching for Animation component...");
+            // Find RuntimeAnimatorPlayer component AFTER PlayerController sets up hierarchy
+            Debug.Log($"🔍 SimpleAnimationPlayer searching for RuntimeAnimatorPlayer component on {gameObject.name}...");
 
-            // Check Model child first (created by PlayerController)
+            // Check Model child first (created by PlayerController or NPCController)
             Transform modelChild = transform.Find("Model");
             if (modelChild != null)
             {
                 Debug.Log($"   Found Model child at: {modelChild.name}");
-                animComponent = modelChild.GetComponent<Animation>();
+
+                // RuntimeAnimatorPlayer might be on Model or on first child of Model
+                animComponent = modelChild.GetComponent<POTCO.RuntimeAnimatorPlayer>();
                 if (animComponent != null)
                 {
-                    Debug.Log($"✅ Found Animation component on Model child");
+                    Debug.Log($"✅ Found RuntimeAnimatorPlayer component on Model child");
+                }
+                else if (modelChild.childCount > 0)
+                {
+                    animComponent = modelChild.GetChild(0).GetComponent<POTCO.RuntimeAnimatorPlayer>();
+                    if (animComponent != null)
+                    {
+                        Debug.Log($"✅ Found RuntimeAnimatorPlayer component on Model's first child: {animComponent.gameObject.name}");
+                    }
                 }
             }
             else
@@ -138,30 +213,25 @@ namespace Player
             // If not found, check this object
             if (animComponent == null)
             {
-                animComponent = GetComponent<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on this object");
-                }
+                animComponent = GetComponent<POTCO.RuntimeAnimatorPlayer>();
             }
 
             // If still not found, search all children
             if (animComponent == null)
             {
-                animComponent = GetComponentInChildren<Animation>();
-                if (animComponent != null)
-                {
-                    Debug.Log($"✅ Found Animation component on child: {animComponent.gameObject.name}");
-                }
+                animComponent = GetComponentInChildren<POTCO.RuntimeAnimatorPlayer>();
             }
 
+            // If still not found, create it
             if (animComponent == null)
             {
-                Debug.LogError("❌ No Animation component found anywhere!");
-                return;
+                Debug.LogWarning($"RuntimeAnimatorPlayer not found on {gameObject.name}, creating one...");
+                GameObject target = modelChild != null && modelChild.childCount > 0 ? modelChild.GetChild(0).gameObject : gameObject;
+                animComponent = target.AddComponent<POTCO.RuntimeAnimatorPlayer>();
+                animComponent.Initialize();
             }
 
-            // Auto-load animations
+            Debug.Log("📥 Loading new animations from Resources");
             LoadAnimations();
 
             if (isInitialized)
@@ -186,7 +256,6 @@ namespace Player
                 if (spinLeftClip != null) loadedAnims.Append("spin_left ");
                 if (spinRightClip != null) loadedAnims.Append("spin_right ");
                 if (jumpClip != null) loadedAnims.Append("jump ");
-                if (swimClip != null) loadedAnims.Append("swim ");
 
                 Debug.Log(loadedAnims.ToString());
 
@@ -206,76 +275,27 @@ namespace Player
 
         private void Update()
         {
-            if (!isInitialized || playerController == null) return;
+            if (!isInitialized) return;
+
+            // Get active controller (PlayerController or NPCController)
+            ControllerAdapter controller = GetActiveController();
+            if (controller == null) return;
 
             // Check if landing animation has finished
             if (isPlayingLanding && jumpClip != null)
             {
-                AnimationState jumpState = animComponent["jump"];
-                if (jumpState != null)
+                // Check if jump animation is still playing
+                if (!animComponent.IsPlaying("jump"))
                 {
-                    // Landing animation is from 63% to 100%
-                    // Check if we've reached the end or animation stopped
-                    if (jumpState.time >= jumpState.length - 0.05f || !jumpState.enabled)
-                    {
-                        // Landing animation finished
-                        isPlayingLanding = false;
-                        // Restore jump WrapMode for future jumps
-                        jumpState.wrapMode = WrapMode.ClampForever;
-                    }
+                    // Landing animation finished
+                    isPlayingLanding = false;
                 }
             }
 
-            UpdateAnimation();
+            UpdateAnimation(controller);
 
-            // Handle jump in-air ping-pong looping (34%-50% back and forth)
-            // Only loop when actually falling (not just slightly off ground)
-            if (isInJumpAir && playerController.IsFalling && jumpClip != null)
-            {
-                AnimationState jumpState = animComponent["jump"];
-                if (jumpState != null && jumpState.enabled)
-                {
-                    // Ping-pong between 34% and 50% of the animation (the in-air idle portion)
-                    float jumpLength = jumpState.length;
-                    float midStart = jumpLength * 0.34f;
-                    float midEnd = jumpLength * 0.5f;
-
-                    // Check if we're in the takeoff phase (before 34%)
-                    if (jumpState.time < midStart && !jumpAnimReversing)
-                    {
-                        // Still in takeoff - play at normal speed
-                        jumpState.speed = 1f;
-                    }
-                    else if (!jumpAnimReversing)
-                    {
-                        // In air loop - playing forward
-                        if (jumpState.time >= midEnd)
-                        {
-                            // Reached end, reverse direction
-                            jumpAnimReversing = true;
-                            jumpState.speed = -0.3f; // Play backwards slowly for smooth motion
-                        }
-                        else
-                        {
-                            jumpState.speed = 0.3f; // Play forwards slowly for smooth motion
-                        }
-                    }
-                    else
-                    {
-                        // In air loop - playing backward
-                        if (jumpState.time <= midStart)
-                        {
-                            // Reached start, reverse direction
-                            jumpAnimReversing = false;
-                            jumpState.speed = 0.3f; // Play forwards slowly for smooth motion
-                        }
-                        else
-                        {
-                            jumpState.speed = -0.3f; // Play backwards slowly for smooth motion
-                        }
-                    }
-                }
-            }
+            // Note: Jump ping-pong looping removed - Playables API handles this differently
+            // Jump animation now plays through once and holds at end frame
         }
 
         private void DetectGender()
@@ -409,6 +429,7 @@ namespace Player
             Debug.LogWarning("   If this is wrong, enable 'Manual Gender Override' in Inspector and set to Female");
         }
 
+
         private void LoadAnimations()
         {
             Debug.Log($"🔍 Loading animations with prefix: {genderPrefix}");
@@ -418,9 +439,32 @@ namespace Player
             string[] searchPaths = { "char", "models/char" };
 
             // Only auto-load if not manually assigned in Inspector
-            if (idleClip == null) idleClip = FindAndLoadClip("idle", phases, searchPaths);
-            if (walkClip == null) walkClip = FindAndLoadClip("walk", phases, searchPaths);
-            if (runClip == null) runClip = FindAndLoadClip("run", phases, searchPaths);
+            if (idleClip == null)
+            {
+                idleClip = FindAndLoadClip("idle", phases, searchPaths);
+            }
+            else
+            {
+                Debug.Log($"✅ Using manually assigned idle clip: {idleClip.name}");
+            }
+
+            if (walkClip == null)
+            {
+                walkClip = FindAndLoadClip("walk", phases, searchPaths);
+            }
+            else
+            {
+                Debug.Log($"✅ Using manually assigned walk clip: {walkClip.name}");
+            }
+
+            if (runClip == null)
+            {
+                runClip = FindAndLoadClip("run", phases, searchPaths);
+            }
+            else
+            {
+                Debug.Log($"✅ Using manually assigned run clip: {runClip.name}");
+            }
 
             // Load directional animations (try multiple naming conventions)
             if (walkBackClip == null)
@@ -463,108 +507,156 @@ namespace Player
             if (spinRightClip == null) spinRightClip = FindAndLoadClip("spin_right", phases, searchPaths);
 
             if (jumpClip == null) jumpClip = FindAndLoadClip("jump", phases, searchPaths);
-            if (swimClip == null) swimClip = FindAndLoadClip("swim", phases, searchPaths);
 
-            // Add clips to Animation component and set them to loop
+            // Swimming
+            if (swimIdleClip == null) swimIdleClip = FindAndLoadClip("tread_water", phases, searchPaths);
+            if (swimWalkClip == null) swimWalkClip = FindAndLoadClip("swim", phases, searchPaths);
+            if (swimBackClip == null) swimBackClip = FindAndLoadClip("swim_back", phases, searchPaths);
+            if (swimLeftClip == null) swimLeftClip = FindAndLoadClip("swim_left", phases, searchPaths);
+            if (swimRightClip == null) swimRightClip = FindAndLoadClip("swim_right", phases, searchPaths);
+            if (swimLeftDiagonalClip == null) swimLeftDiagonalClip = FindAndLoadClip("swim_left_diagonal", phases, searchPaths);
+            if (swimRightDiagonalClip == null) swimRightDiagonalClip = FindAndLoadClip("swim_right_diagonal", phases, searchPaths);
+            if (swimBackDiagonalLeftClip == null) swimBackDiagonalLeftClip = FindAndLoadClip("swim_back_diagonal_left", phases, searchPaths);
+            if (swimBackDiagonalRightClip == null) swimBackDiagonalRightClip = FindAndLoadClip("swim_back_diagonal_right", phases, searchPaths);
+
+            // Add clips to RuntimeAnimatorPlayer and set wrap modes
             if (idleClip != null)
             {
+                Debug.Log($"➕ Adding idle clip to RuntimeAnimatorPlayer: {idleClip.name}");
                 animComponent.AddClip(idleClip, "idle");
-                animComponent["idle"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("idle", WrapMode.Loop);
+            }
+            else
+            {
+                Debug.LogError("❌ No idle clip available to add!");
             }
             if (walkClip != null)
             {
                 animComponent.AddClip(walkClip, "walk");
-                animComponent["walk"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("walk", WrapMode.Loop);
             }
             if (runClip != null)
             {
                 animComponent.AddClip(runClip, "run");
-                animComponent["run"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("run", WrapMode.Loop);
             }
             if (walkBackClip != null)
             {
                 animComponent.AddClip(walkBackClip, "walk_back");
-                animComponent["walk_back"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("walk_back", WrapMode.Loop);
             }
             if (runBackClip != null)
             {
                 animComponent.AddClip(runBackClip, "run_back");
-                animComponent["run_back"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("run_back", WrapMode.Loop);
             }
             if (strafeLeftClip != null)
             {
                 animComponent.AddClip(strafeLeftClip, "strafe_left");
-                animComponent["strafe_left"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("strafe_left", WrapMode.Loop);
             }
             if (strafeRightClip != null)
             {
                 animComponent.AddClip(strafeRightClip, "strafe_right");
-                animComponent["strafe_right"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("strafe_right", WrapMode.Loop);
             }
             if (runDiagonalLeftClip != null)
             {
                 animComponent.AddClip(runDiagonalLeftClip, "run_diagonal_left");
-                animComponent["run_diagonal_left"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("run_diagonal_left", WrapMode.Loop);
             }
             if (runDiagonalRightClip != null)
             {
                 animComponent.AddClip(runDiagonalRightClip, "run_diagonal_right");
-                animComponent["run_diagonal_right"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("run_diagonal_right", WrapMode.Loop);
             }
             if (walkBackDiagonalLeftClip != null)
             {
                 animComponent.AddClip(walkBackDiagonalLeftClip, "walk_back_diagonal_left");
-                animComponent["walk_back_diagonal_left"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("walk_back_diagonal_left", WrapMode.Loop);
             }
             if (walkBackDiagonalRightClip != null)
             {
                 animComponent.AddClip(walkBackDiagonalRightClip, "walk_back_diagonal_right");
-                animComponent["walk_back_diagonal_right"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("walk_back_diagonal_right", WrapMode.Loop);
             }
             if (turnLeftClip != null)
             {
                 animComponent.AddClip(turnLeftClip, "turn_left");
-                animComponent["turn_left"].wrapMode = WrapMode.Loop;
-                animComponent["turn_left"].speed = 0.5f; // 50% slower
+                animComponent.SetWrapMode("turn_left", WrapMode.Loop);
             }
             if (turnRightClip != null)
             {
                 animComponent.AddClip(turnRightClip, "turn_right");
-                animComponent["turn_right"].wrapMode = WrapMode.Loop;
-                animComponent["turn_right"].speed = 0.5f; // 50% slower
+                animComponent.SetWrapMode("turn_right", WrapMode.Loop);
             }
             if (spinLeftClip != null)
             {
                 animComponent.AddClip(spinLeftClip, "spin_left");
-                animComponent["spin_left"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("spin_left", WrapMode.Loop);
             }
             if (spinRightClip != null)
             {
                 animComponent.AddClip(spinRightClip, "spin_right");
-                animComponent["spin_right"].wrapMode = WrapMode.Loop;
+                animComponent.SetWrapMode("spin_right", WrapMode.Loop);
             }
             if (jumpClip != null)
             {
                 animComponent.AddClip(jumpClip, "jump");
-                animComponent["jump"].wrapMode = WrapMode.ClampForever; // Hold last frame
+                animComponent.SetWrapMode("jump", WrapMode.ClampForever);
             }
-            if (swimClip != null)
+
+            // Swimming Registration
+            if (swimIdleClip != null)
             {
-                animComponent.AddClip(swimClip, "swim");
-                animComponent["swim"].wrapMode = WrapMode.Loop;
+                animComponent.AddClip(swimIdleClip, "swim_idle");
+                animComponent.SetWrapMode("swim_idle", WrapMode.Loop);
+            }
+            if (swimWalkClip != null)
+            {
+                animComponent.AddClip(swimWalkClip, "swim_walk");
+                animComponent.SetWrapMode("swim_walk", WrapMode.Loop);
+            }
+            if (swimBackClip != null)
+            {
+                animComponent.AddClip(swimBackClip, "swim_back");
+                animComponent.SetWrapMode("swim_back", WrapMode.Loop);
+            }
+            if (swimLeftClip != null)
+            {
+                animComponent.AddClip(swimLeftClip, "swim_left");
+                animComponent.SetWrapMode("swim_left", WrapMode.Loop);
+            }
+            if (swimRightClip != null)
+            {
+                animComponent.AddClip(swimRightClip, "swim_right");
+                animComponent.SetWrapMode("swim_right", WrapMode.Loop);
+            }
+            if (swimLeftDiagonalClip != null)
+            {
+                animComponent.AddClip(swimLeftDiagonalClip, "swim_left_diagonal");
+                animComponent.SetWrapMode("swim_left_diagonal", WrapMode.Loop);
+            }
+            if (swimRightDiagonalClip != null)
+            {
+                animComponent.AddClip(swimRightDiagonalClip, "swim_right_diagonal");
+                animComponent.SetWrapMode("swim_right_diagonal", WrapMode.Loop);
+            }
+            if (swimBackDiagonalLeftClip != null)
+            {
+                animComponent.AddClip(swimBackDiagonalLeftClip, "swim_back_diagonal_left");
+                animComponent.SetWrapMode("swim_back_diagonal_left", WrapMode.Loop);
+            }
+            if (swimBackDiagonalRightClip != null)
+            {
+                animComponent.AddClip(swimBackDiagonalRightClip, "swim_back_diagonal_right");
+                animComponent.SetWrapMode("swim_back_diagonal_right", WrapMode.Loop);
             }
 
             // Check if we have minimum required animations
             if (idleClip != null && walkClip != null)
             {
                 isInitialized = true;
-
-                // Set up manual bone reset system
-                if (enableManualBoneReset)
-                {
-                    SetupManualBoneReset();
-                }
-
                 PlayAnimation("idle");
             }
             else
@@ -572,78 +664,6 @@ namespace Player
                 Debug.LogError($"❌ Failed to load required animations! Check that {genderPrefix}idle and {genderPrefix}walk exist in Resources/phase_*/char/");
                 isInitialized = false;
             }
-        }
-
-        private void SetupManualBoneReset()
-        {
-            Debug.Log("🦴 Setting up manual bone reset system...");
-
-            // Play idle animation and sample to get rest pose
-            animComponent.Play("idle");
-            animComponent.Sample();
-
-            // Cache all bone transforms in the hierarchy
-            Transform[] allTransforms = animComponent.GetComponentsInChildren<Transform>();
-            foreach (Transform bone in allTransforms)
-            {
-                // Get relative path from animation component root
-                string bonePath = GetRelativePath(animComponent.transform, bone);
-                if (!string.IsNullOrEmpty(bonePath))
-                {
-                    cachedBones[bonePath] = bone;
-                    restPoseRotations[bonePath] = bone.localRotation;
-                }
-            }
-
-            Debug.Log($"   Cached {cachedBones.Count} bones");
-
-            // Dynamically analyze ALL animations in the Animation component
-            int analyzedCount = 0;
-            foreach (AnimationState state in animComponent)
-            {
-                if (state.clip != null)
-                {
-                    AnalyzeAnimationBones(state.name, state.clip);
-                    analyzedCount++;
-                }
-            }
-
-            Debug.Log($"   Analyzed {analyzedCount} animations");
-            Debug.Log($"✅ Manual bone reset system ready!");
-        }
-
-        private string GetRelativePath(Transform root, Transform bone)
-        {
-            if (bone == root) return "";
-
-            string path = bone.name;
-            Transform parent = bone.parent;
-
-            while (parent != null && parent != root)
-            {
-                path = parent.name + "/" + path;
-                parent = parent.parent;
-            }
-
-            return path;
-        }
-
-        private void AnalyzeAnimationBones(string animName, AnimationClip clip)
-        {
-            var bones = new HashSet<string>();
-            var bindings = AnimationUtility.GetCurveBindings(clip);
-
-            foreach (var binding in bindings)
-            {
-                // Only count rotation curves (main indicator of bone animation)
-                if (binding.propertyName.StartsWith("m_LocalRotation"))
-                {
-                    bones.Add(binding.path);
-                }
-            }
-
-            animationBones[animName] = bones;
-            Debug.Log($"   {animName}: {bones.Count} bones");
         }
 
         private AnimationClip FindAndLoadClip(string animName, string[] phases, string[] searchPaths)
@@ -686,7 +706,7 @@ namespace Player
             return null;
         }
 
-        private void UpdateAnimation()
+        private void UpdateAnimation(ControllerAdapter controller)
         {
             // Don't change animation while landing animation is playing
             if (isPlayingLanding)
@@ -696,19 +716,48 @@ namespace Player
 
             string targetAnim = "idle";
 
-            // Determine which animation to play based on player state
-            if (playerController.IsSwimming)
+            // Determine which animation to play based on controller state
+            if (controller.IsSwimming)
             {
-                targetAnim = "swim";
+                Vector2 input = controller.MoveInput;
+                float strafeInput = controller.StrafeInput;
+
+                // Check if moving
+                if (input.magnitude > 0.1f || Mathf.Abs(strafeInput) > 0.1f)
+                {
+                    // Check for diagonal movement first
+                    bool isDiagonal = Mathf.Abs(input.x) > 0.1f && Mathf.Abs(input.y) > 0.1f;
+
+                    if (isDiagonal)
+                    {
+                        if (input.y > 0.1f && input.x < -0.1f) targetAnim = swimLeftDiagonalClip != null ? "swim_left_diagonal" : "swim_walk";
+                        else if (input.y > 0.1f && input.x > 0.1f) targetAnim = swimRightDiagonalClip != null ? "swim_right_diagonal" : "swim_walk";
+                        else if (input.y < -0.1f && input.x < -0.1f) targetAnim = swimBackDiagonalLeftClip != null ? "swim_back_diagonal_left" : "swim_back";
+                        else if (input.y < -0.1f && input.x > 0.1f) targetAnim = swimBackDiagonalRightClip != null ? "swim_back_diagonal_right" : "swim_back";
+                        else targetAnim = "swim_walk";
+                    }
+                    else
+                    {
+                         if (input.y > 0.1f) targetAnim = swimWalkClip != null ? "swim_walk" : "swim_idle";
+                         else if (input.y < -0.1f) targetAnim = swimBackClip != null ? "swim_back" : "swim_walk";
+                         else if (input.x < -0.1f || strafeInput < -0.1f) targetAnim = swimLeftClip != null ? "swim_left" : "swim_walk";
+                         else if (input.x > 0.1f || strafeInput > 0.1f) targetAnim = swimRightClip != null ? "swim_right" : "swim_walk";
+                         else targetAnim = "swim_walk";
+                    }
+                }
+                else
+                {
+                    targetAnim = "swim_idle";
+                }
             }
-            else if (playerController.IsGrounded)
+            else if (controller.IsGrounded)
             {
-                float speed = playerController.CurrentSpeed;
-                Vector2 input = playerController.MoveInput;
-                float turnInput = playerController.TurnInput;
-                float strafeInput = playerController.StrafeInput;
-                bool isFreeLooking = playerController.IsFreeLooking;
-                bool isRunning = playerController.IsRunning;
+                float speed = controller.CurrentSpeed;
+                Vector2 input = controller.MoveInput;
+                float turnInput = controller.TurnInput;
+                float strafeInput = controller.StrafeInput;
+                bool isFreeLooking = controller.IsFreeLooking;
+                bool isRunning = controller.IsRunning;
 
                 // Check if moving
                 if (speed > 0.5f && (input.magnitude > 0.1f || Mathf.Abs(strafeInput) > 0.1f))
@@ -831,30 +880,16 @@ namespace Player
                 else if (!isFreeLooking && Mathf.Abs(turnInput) > 0.1f)
                 {
                     // TURNING IN PLACE (normal mode only, not moving)
-                    // Female characters use spin animations, males use turn animations
+                    // All characters use spin animations for turning
                     if (turnInput < -0.1f)
                     {
                         // Turning left (A key)
-                        if (genderPrefix == "fp_")
-                        {
-                            targetAnim = spinLeftClip != null ? "spin_left" : (turnLeftClip != null ? "turn_left" : "idle");
-                        }
-                        else
-                        {
-                            targetAnim = turnLeftClip != null ? "turn_left" : "idle";
-                        }
+                        targetAnim = spinLeftClip != null ? "spin_left" : "idle";
                     }
                     else if (turnInput > 0.1f)
                     {
                         // Turning right (D key)
-                        if (genderPrefix == "fp_")
-                        {
-                            targetAnim = spinRightClip != null ? "spin_right" : (turnRightClip != null ? "turn_right" : "idle");
-                        }
-                        else
-                        {
-                            targetAnim = turnRightClip != null ? "turn_right" : "idle";
-                        }
+                        targetAnim = spinRightClip != null ? "spin_right" : "idle";
                     }
                 }
                 else
@@ -866,7 +901,7 @@ namespace Player
             {
                 // In air
                 // Detect landing (was falling, now grounded or back on ground)
-                if (wasFalling && !playerController.IsFalling)
+                if (wasFalling && !controller.IsFalling)
                 {
                     // Just landed - play landing animation (end portion of jump clip)
                     if (jumpClip != null)
@@ -875,20 +910,15 @@ namespace Player
                         isInJumpAir = false;
                     }
                 }
-                else if (!playerController.IsGrounded)
+                else if (!controller.IsGrounded)
                 {
                     // Not grounded (in air or slightly off ground)
                     if (jumpClip != null)
                     {
                         // If just left ground (was grounded, now not grounded)
-                        if (wasGrounded && !playerController.IsGrounded)
+                        if (wasGrounded && !controller.IsGrounded)
                         {
                             // First frame in air - play jump from start (takeoff)
-                            AnimationState jumpState = animComponent["jump"];
-                            if (jumpState != null)
-                            {
-                                jumpState.speed = 1f; // Ensure normal speed
-                            }
                             animComponent.Play("jump");
                             currentAnim = "jump";
                             isInJumpAir = true;
@@ -896,7 +926,7 @@ namespace Player
                         }
 
                         // Only show jump animation if actually falling (not just tiny bumps)
-                        if (playerController.IsFalling)
+                        if (controller.IsFalling)
                         {
                             // The Update method will handle ping-pong looping the middle portion
                             targetAnim = "jump";
@@ -915,43 +945,36 @@ namespace Player
                 }
             }
 
-            // Track grounded and falling state for next frame
-            wasGrounded = playerController.IsGrounded;
-            wasFalling = playerController.IsFalling;
-
             // Only switch if different
             if (targetAnim != currentAnim)
             {
                 PlayAnimation(targetAnim);
             }
+
+            // Track state for next frame
+            wasGrounded = controller.IsGrounded;
+            wasFalling = controller.IsFalling;
         }
 
         private void PlayAnimation(string animName)
         {
-            if (!animComponent.GetClip(animName))
+            DebugLogger.LogPlayerAnimation($"[SimpleAnimationPlayer] PlayAnimation called: {animName} on {gameObject.name}");
+
+            if (!animComponent.HasClip(animName))
             {
+                Debug.LogWarning($"[SimpleAnimationPlayer] Animation '{animName}' not found on {gameObject.name}");
+
                 // Fallback to idle if animation doesn't exist
-                if (animName != "idle" && animComponent.GetClip("idle"))
+                if (animName != "idle" && animComponent.HasClip("idle"))
                 {
+                    Debug.Log($"[SimpleAnimationPlayer] Falling back to idle");
                     animName = "idle";
                 }
                 else
                 {
+                    Debug.LogError($"[SimpleAnimationPlayer] No animation to play!");
                     return;
                 }
-            }
-
-            // Manual bone reset for orphaned bones
-            if (enableManualBoneReset && !string.IsNullOrEmpty(currentAnim) && currentAnim != animName)
-            {
-                // Stop previous reset coroutine if still running
-                if (currentResetCoroutine != null)
-                {
-                    StopCoroutine(currentResetCoroutine);
-                }
-
-                // Start new reset coroutine
-                currentResetCoroutine = StartCoroutine(ResetOrphanedBones(currentAnim, animName));
             }
 
             // Use CrossFade for smooth transitions
@@ -959,97 +982,15 @@ namespace Player
             currentAnim = animName;
         }
 
-        private IEnumerator ResetOrphanedBones(string fromAnim, string toAnim)
-        {
-            // Get bones that are in fromAnim but NOT in toAnim
-            if (!animationBones.ContainsKey(fromAnim) || !animationBones.ContainsKey(toAnim))
-            {
-                yield break;
-            }
-
-            var fromBones = animationBones[fromAnim];
-            var toBones = animationBones[toAnim];
-            var orphanedBones = new List<string>();
-
-            foreach (var bone in fromBones)
-            {
-                if (!toBones.Contains(bone))
-                {
-                    orphanedBones.Add(bone);
-                }
-            }
-
-            if (orphanedBones.Count == 0)
-            {
-                yield break;
-            }
-
-            Debug.Log($"🦴 Resetting {orphanedBones.Count} orphaned bones: {fromAnim} → {toAnim}");
-
-            // Store starting rotations
-            Dictionary<string, Quaternion> startRotations = new Dictionary<string, Quaternion>();
-            foreach (var bonePath in orphanedBones)
-            {
-                if (cachedBones.ContainsKey(bonePath))
-                {
-                    startRotations[bonePath] = cachedBones[bonePath].localRotation;
-                }
-            }
-
-            // Lerp bones from current rotation → rest pose over resetDuration
-            float elapsed = 0f;
-            while (elapsed < resetDuration)
-            {
-                float t = elapsed / resetDuration;
-                // Use smoothstep for nicer easing
-                t = t * t * (3f - 2f * t);
-
-                foreach (var bonePath in orphanedBones)
-                {
-                    if (cachedBones.ContainsKey(bonePath) && restPoseRotations.ContainsKey(bonePath))
-                    {
-                        cachedBones[bonePath].localRotation = Quaternion.Slerp(
-                            startRotations[bonePath],
-                            restPoseRotations[bonePath],
-                            t
-                        );
-                    }
-                }
-
-                elapsed += Time.deltaTime;
-                yield return null;
-            }
-
-            // Final snap to rest pose
-            foreach (var bonePath in orphanedBones)
-            {
-                if (cachedBones.ContainsKey(bonePath) && restPoseRotations.ContainsKey(bonePath))
-                {
-                    cachedBones[bonePath].localRotation = restPoseRotations[bonePath];
-                }
-            }
-
-            currentResetCoroutine = null;
-        }
-
         private void PlayLandingAnimation()
         {
-            // Play the jump animation starting from 63% (the landing portion)
-            AnimationState jumpState = animComponent["jump"];
-            if (jumpState != null)
-            {
-                // Set to play from 63% of animation (landing part: 63%-100%)
-                jumpState.time = jumpState.length * 0.63f;
-                jumpState.speed = 1f; // Reset speed to normal (in case it was reversed)
-                jumpState.wrapMode = WrapMode.Once; // Play once, don't loop
-                jumpState.enabled = true;
-                jumpState.weight = 1.0f;
-
-                animComponent.Play("jump");
-                currentAnim = "jump";
-                jumpAnimReversing = false; // Reset reversing flag
-                isPlayingLanding = true; // Mark that we're playing landing animation
-            }
+            // Play the jump animation for landing
+            // Note: Playables API doesn't support setting time directly like legacy system
+            // Jump will play from current position
+            animComponent.Play("jump");
+            currentAnim = "jump";
+            jumpAnimReversing = false; // Reset reversing flag
+            isPlayingLanding = true; // Mark that we're playing landing animation
         }
 
         // Public API
@@ -1065,6 +1006,7 @@ namespace Player
             if (emoteClip != null)
             {
                 animComponent.AddClip(emoteClip, emoteName);
+                animComponent.SetWrapMode(emoteName, WrapMode.Once);
                 animComponent.CrossFade(emoteName, 0.2f);
                 currentAnim = emoteName;
             }

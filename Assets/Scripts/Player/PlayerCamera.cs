@@ -14,7 +14,6 @@ namespace Player
         [Tooltip("Height offset from player's feet to focus point (camera pivots around this)")]
         [SerializeField] private float targetFocusHeight = 6.09f;
         [SerializeField] private Vector3 followOffset = new Vector3(0f, 8.68f, 15.8f);
-        [SerializeField] private Vector3 swimFollowOffset = new Vector3(0f, 8.68f, 15.8f);
 
         [Header("Orbit Settings")]
         [SerializeField] private float yawSpeed = 708.2f;
@@ -147,10 +146,6 @@ namespace Player
 
             // Calculate max zoom based on current offset (changes with swimming state)
             Vector3 currentOffset = followOffset;
-            if (playerController != null && playerController.IsSwimming)
-            {
-                currentOffset = swimFollowOffset;
-            }
             float maxZoomDistance = currentOffset.magnitude;
 
             // Process mouse scroll wheel for zoom
@@ -170,8 +165,10 @@ namespace Player
                 float mouseX = Input.GetAxis("Mouse X");
                 float mouseY = Input.GetAxis("Mouse Y");
 
-                currentYaw += mouseX * yawSpeed * Time.deltaTime;
-                currentPitch -= mouseY * pitchSpeed * Time.deltaTime;
+                // Remove Time.deltaTime to decouple rotation speed from frame rate
+                // Multiply by fixed 0.02f (equivalent to ~50fps) to preserve existing sensitivity scale
+                currentYaw += mouseX * yawSpeed * 0.02f;
+                currentPitch -= mouseY * pitchSpeed * 0.02f;
 
                 // Clamp pitch
                 currentPitch = Mathf.Clamp(currentPitch, minPitch, maxPitch);
@@ -201,10 +198,6 @@ namespace Player
         {
             // Choose offset based on swimming state
             Vector3 offset = followOffset;
-            if (playerController != null && playerController.IsSwimming)
-            {
-                offset = swimFollowOffset;
-            }
 
             // Apply zoom distance (scroll wheel controls distance)
             desiredDistance = currentZoomDistance;
@@ -244,7 +237,8 @@ namespace Player
             // Center raycast
             if (Physics.Raycast(targetFocusPoint, direction.normalized, out RaycastHit centerHit, distance, collisionMask))
             {
-                if (centerHit.collider is MeshCollider)
+                // Only react to solid mesh colliders (skip triggers like VisZones)
+                if (centerHit.collider is MeshCollider && !centerHit.collider.isTrigger)
                 {
                     closestMeshDistance = Mathf.Min(closestMeshDistance, centerHit.distance);
                     foundMeshCollision = true;
@@ -267,7 +261,8 @@ namespace Player
 
                 if (Physics.Raycast(offsetStart, offsetDirection.normalized, out RaycastHit hit, distance, collisionMask))
                 {
-                    if (hit.collider is MeshCollider)
+                    // Only react to solid mesh colliders (skip triggers like VisZones)
+                    if (hit.collider is MeshCollider && !hit.collider.isTrigger)
                     {
                         closestMeshDistance = Mathf.Min(closestMeshDistance, hit.distance);
                         foundMeshCollision = true;

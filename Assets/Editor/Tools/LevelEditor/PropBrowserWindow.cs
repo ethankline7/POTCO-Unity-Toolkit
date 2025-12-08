@@ -449,11 +449,11 @@ namespace POTCO.Editor
                 return true;
             }
             
-            // Check if GameObject has Animation component (likely an animation-only asset)
-            var animationComponent = asset.GetComponent<Animation>();
+            // Check if GameObject has RuntimeAnimatorPlayer component (likely an animation-only asset)
+            var animationComponent = asset.GetComponent<RuntimeAnimatorPlayer>();
             if (animationComponent != null)
             {
-                // If it only has Animation component and no renderers, it's likely animation-only
+                // If it only has RuntimeAnimatorPlayer component and no renderers, it's likely animation-only
                 var renderers = asset.GetComponentsInChildren<Renderer>();
                 if (renderers.Length == 0)
                 {

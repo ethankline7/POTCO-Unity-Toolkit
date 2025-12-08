@@ -270,10 +270,10 @@ public class EggImporterSettingsWindow : EditorWindow
         
         var animationProperty = serializedSettings.FindProperty("skipAnimations");
         EditorGUILayout.PropertyField(animationProperty, new GUIContent("Skip Animation-Only Files"));
-        
+
         var skeletalProperty = serializedSettings.FindProperty("skipSkeletalModels");
         EditorGUILayout.PropertyField(skeletalProperty, new GUIContent("Skip All Files With Bones"));
-        
+
         if (animationProperty.boolValue && skeletalProperty.boolValue)
         {
             EditorGUILayout.HelpBox("🚫 Both animation-only files AND any files with skeletal data will be skipped. This will import only static models without bones.", MessageType.Warning);
@@ -290,7 +290,9 @@ public class EggImporterSettingsWindow : EditorWindow
         {
             EditorGUILayout.HelpBox("🎭 All animation and skeletal files will be imported. Useful for character animations and rigged models.", MessageType.Info);
         }
-        
+
+        GUILayout.Space(5);
+
         EditorGUILayout.EndVertical();
         
         // Collision Import Settings
