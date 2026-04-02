@@ -1,0 +1,43 @@
+name: Commit Quality
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches:
+      - "codex/**"
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base ref for commit check (example: origin/main)"
+        required: false
+        default: "origin/main"
+
+jobs:
+  commit_quality:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch default base
+        shell: pwsh
+        run: git fetch origin main --depth=1
+
+      - name: Commit check for pull request
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: pwsh
+        run: ./scripts/commit-message-check.ps1 -BaseRef "origin/${{ github.base_ref }}"
+
+      - name: Commit check for push
+        if: ${{ github.event_name == 'push' }}
+        shell: pwsh
+        run: ./scripts/commit-message-check.ps1 -BaseRef "origin/main"
+
+      - name: Commit check for manual dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: pwsh
+        run: ./scripts/commit-message-check.ps1 -BaseRef "${{ github.event.inputs.base_ref }}"

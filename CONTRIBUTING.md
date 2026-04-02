@@ -21,9 +21,15 @@ Use GitHub's private noreply email for local commits:
   - `feat: add Toontown sample validator CSV export`
   - `chore: add PR readiness run action`
 - Do not mix broad refactors with behavior changes in one commit.
+- Allowed commit types:
+  - `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`
+- Subject format:
+  - `type(scope): summary` or `type: summary`
+- Keep subject length at or below 72 characters when possible (warning-only).
 
 ## Required Checks Before Commit
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/commit-message-check.ps1 -BaseRef upstream/main`
 - Optional release-style pass:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/manual-readiness.ps1 -BaseRef upstream/main`
 
@@ -34,6 +40,7 @@ Use GitHub's private noreply email for local commits:
 3. Complete `.github/pull_request_template.md`.
 4. Ensure Actions are green:
    - `Primary CI`
+   - `Commit Quality`
    - `PR Readiness`
 
 ## Beginner Steering

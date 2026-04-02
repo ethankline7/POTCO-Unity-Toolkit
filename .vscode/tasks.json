@@ -28,6 +28,18 @@
       "problemMatcher": []
     },
     {
+      "label": "Project: Run Commit Message Check",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "scripts/commit-message-check.ps1",
+        "-BaseRef", "upstream/main"
+      ],
+      "problemMatcher": []
+    },
+    {
       "label": "Git: Status",
       "type": "shell",
       "command": "git status --short",
