@@ -58,3 +58,6 @@
 - Is naming clear to another engineer?
 - Is behavior change documented?
 - Is there an obvious next step for the following commit?
+
+## Release Gate
+- Use `docs/RELEASE_CHECKLIST.md` before milestone merges.
