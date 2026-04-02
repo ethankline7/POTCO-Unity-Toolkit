@@ -53,6 +53,7 @@ Open the project in Unity 6000.1.11f1, then access tools via:
 - Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Engineering workflow: [`docs/WORKFLOW.md`](docs/WORKFLOW.md)
 - Toontown migration plan: [`docs/TOONTOWN_MIGRATION_PLAN.md`](docs/TOONTOWN_MIGRATION_PLAN.md)
+- Toontown quick start (first runnable flow): [`docs/TOONTOWN_QUICKSTART.md`](docs/TOONTOWN_QUICKSTART.md)
 - Required baseline check before commit:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
 

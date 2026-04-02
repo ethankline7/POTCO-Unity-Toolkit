@@ -4,6 +4,7 @@
 - That is normal. Use the migration plan phase by phase.
 - Change one thing at a time and commit often.
 - Ask "what problem does this change solve" before editing files.
+- Use `Toontown/Quick Start` to run bundled sample parse/export before editing parser logic.
 
 ## Common Mistakes To Avoid
 - Changing multiple systems in one commit.

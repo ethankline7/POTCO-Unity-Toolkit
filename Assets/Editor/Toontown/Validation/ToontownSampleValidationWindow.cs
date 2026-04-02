@@ -81,6 +81,11 @@ namespace Toontown.Editor.Validation
             }
             EditorGUI.EndDisabledGroup();
 
+            if (GUILayout.Button("Validate Bundled Sample"))
+            {
+                ValidateBundledSample();
+            }
+
             EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(selectedFolderPath));
             if (GUILayout.Button("Validate Folder"))
             {
@@ -106,6 +111,19 @@ namespace Toontown.Editor.Validation
                 results.Clear();
                 statusMessage = "Validation results cleared.";
             }
+        }
+
+        private void ValidateBundledSample()
+        {
+            if (!ToontownToolkitPaths.BundledSampleExists())
+            {
+                statusMessage =
+                    $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
+                return;
+            }
+
+            selectedFilePath = ToontownToolkitPaths.BundledSampleFullPath;
+            ValidateSingleFile(selectedFilePath);
         }
 
         private void ValidateSingleFile(string path)

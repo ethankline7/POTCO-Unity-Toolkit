@@ -43,6 +43,20 @@ namespace Toontown.Editor
                 }
             }
 
+            if (GUILayout.Button("Use Bundled Sample Source"))
+            {
+                if (!ToontownToolkitPaths.BundledSampleExists())
+                {
+                    statusMessage =
+                        $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
+                }
+                else
+                {
+                    sourcePath = ToontownToolkitPaths.BundledSampleFullPath;
+                    statusMessage = $"Selected bundled source: {System.IO.Path.GetFileName(sourcePath)}";
+                }
+            }
+
             if (GUILayout.Button("Select Output .py File"))
             {
                 string selected = EditorUtility.SaveFilePanel(
@@ -56,6 +70,13 @@ namespace Toontown.Editor
                     outputPath = selected;
                     statusMessage = $"Selected output: {System.IO.Path.GetFileName(outputPath)}";
                 }
+            }
+
+            if (GUILayout.Button("Use Suggested Output Path"))
+            {
+                ToontownToolkitPaths.EnsureSuggestedExportDirectoryExists();
+                outputPath = ToontownToolkitPaths.SuggestedExportFullPath;
+                statusMessage = $"Selected output: {System.IO.Path.GetFileName(outputPath)}";
             }
 
             EditorGUILayout.LabelField("Source", string.IsNullOrWhiteSpace(sourcePath) ? "<none>" : sourcePath);

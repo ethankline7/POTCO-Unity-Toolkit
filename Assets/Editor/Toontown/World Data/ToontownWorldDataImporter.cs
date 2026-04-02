@@ -43,6 +43,20 @@ namespace Toontown.Editor
                 }
             }
 
+            if (GUILayout.Button("Use Bundled Sample File"))
+            {
+                if (!ToontownToolkitPaths.BundledSampleExists())
+                {
+                    statusMessage =
+                        $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
+                }
+                else
+                {
+                    sourcePath = ToontownToolkitPaths.BundledSampleFullPath;
+                    statusMessage = $"Selected bundled sample: {System.IO.Path.GetFileName(sourcePath)}";
+                }
+            }
+
             EditorGUILayout.LabelField("File", string.IsNullOrEmpty(sourcePath) ? "<none>" : sourcePath);
             EditorGUILayout.Space();
 

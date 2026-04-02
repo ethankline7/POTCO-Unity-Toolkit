@@ -50,6 +50,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added CSV report export from validator for tuning evidence and iterative mapping comparisons.
 - Hardened reader scope handling so candidate objects are only collected from `Objects` dictionary regions (reduces metadata false positives).
 - Added multi-line continuation parsing for bracket/parenthesis property values to improve extraction from wrapped world-data fields.
+- Added bundled sample world and one-click quick-start actions across importer/exporter/validator for first-run usability.
 
 ## Phase 4 - Validation
 - Import baseline sample world.
