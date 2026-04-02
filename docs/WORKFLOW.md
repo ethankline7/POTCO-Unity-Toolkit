@@ -28,6 +28,7 @@
   - `PR Readiness` for pull-request base diff sanity and release-style checks.
   - `Manual Readiness` for operator-triggered release sanity checks.
   - `Weekly Health` for scheduled baseline checks on the default branch.
+  - `Sun Action` for Sunday scheduled baseline checks (with manual dispatch support).
 - Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
 - Primary checks validate Toontown type-map config JSON (`Assets/Editor/Toontown/Config/ObjectTypeMap.json`).
 - Primary checks validate Toontown bundled sample sanity (`scripts/toontown-sample-sanity.ps1`).
@@ -41,6 +42,7 @@
 | `PR Readiness` | Pull request, manual dispatch | Primary checks plus branch visibility, recent commit trail, and diff summary against PR base |
 | `Manual Readiness` | Manual dispatch | Operator-controlled readiness pass against a chosen base reference |
 | `Weekly Health` | Weekly schedule, manual dispatch | Recurring baseline `primary-checks` run for drift detection |
+| `Sun Action` | Weekly Sunday schedule, manual dispatch | Weekend baseline `primary-checks` run for fast health visibility |
 
 ## Quality Gates
 - No dead code in committed changes.
