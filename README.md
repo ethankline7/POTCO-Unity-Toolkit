@@ -49,6 +49,13 @@ The whole point of this is to bring out the creativity within our community, cre
 Open the project in Unity 6000.1.11f1, then access tools via:
 **Unity Menu Bar → POTCO → [Choose Tool]**
 
+## 🧭 Contribution Workflow
+- Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Engineering workflow: [`docs/WORKFLOW.md`](docs/WORKFLOW.md)
+- Toontown migration plan: [`docs/TOONTOWN_MIGRATION_PLAN.md`](docs/TOONTOWN_MIGRATION_PLAN.md)
+- Required baseline check before commit:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
+
 ---
 
 ## 🎮 Tools Overview
