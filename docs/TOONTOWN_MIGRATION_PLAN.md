@@ -19,6 +19,12 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Move POTCO-specific logic behind POTCO adapters.
 - Define interfaces for world object parsing and serialization.
 
+### Phase 2 Progress
+- Added a shared world-data routing layer under `Assets/Editor/Toolkit/WorldData`.
+- Added route interfaces and game-specific route providers (`POTCO`, `Toontown`).
+- Added `Toolkit/World Data/Router` window to open the active importer/exporter safely.
+- POTCO importer/exporter code paths are unchanged.
+
 ## Phase 3 - Toontown Adapters
 - Implement Toontown world reader.
 - Implement Toontown world writer.
