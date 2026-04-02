@@ -13,6 +13,8 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toolkit/WorldData/WorldDataToolRouteResolver.cs',
   'Assets/Editor/Toolkit/WorldData/WorldDataToolLauncherRegistry.cs',
   'Assets/Editor/Toolkit/WorldData/WorldDataFormatAdapterRegistry.cs',
+  'Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentReader.cs',
+  'Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentWriter.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataImporter.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataExporter.cs'
 )
@@ -24,4 +26,16 @@ foreach ($path in $requiredToolkitFiles) {
 }
 
 Write-Host 'Toolkit scaffolding files: OK' -ForegroundColor Green
+
+# Ensure Toontown reader/writer are not left as scaffold-only implementations.
+$stubMatches = git grep -n "scaffold and has not been implemented yet" -- `
+  "Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentReader.cs" `
+  "Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentWriter.cs" 2>$null
+
+if ($LASTEXITCODE -eq 0 -and $stubMatches) {
+  Write-Host $stubMatches
+  throw "Toontown reader/writer still contains scaffold placeholders."
+}
+
+Write-Host 'Toontown reader/writer implementation guard: OK' -ForegroundColor Green
 Write-Host 'Primary checks passed.' -ForegroundColor Green

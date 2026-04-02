@@ -25,6 +25,7 @@
 - CI mirrors:
   - `Primary CI` for push/PR/default checks.
   - `Manual Readiness` for operator-triggered release sanity checks.
+- Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
 
 ## Quality Gates
 - No dead code in committed changes.
