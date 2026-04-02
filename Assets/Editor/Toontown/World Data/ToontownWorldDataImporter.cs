@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Toolkit.Core;
@@ -112,6 +113,24 @@ namespace Toontown.Editor
 
             EditorGUILayout.LabelField("Objects with Model", withModel.ToString());
             EditorGUILayout.LabelField("Objects with Type", withType.ToString());
+            EditorGUILayout.Space();
+
+            var typeCounts = new System.Collections.Generic.Dictionary<string, int>(System.StringComparer.OrdinalIgnoreCase);
+            foreach (var obj in document.Objects)
+            {
+                string t = obj.Properties.ContainsKey("Type") ? obj.Properties["Type"] : "<none>";
+                if (!typeCounts.ContainsKey(t)) typeCounts[t] = 0;
+                typeCounts[t]++;
+            }
+
+            EditorGUILayout.LabelField("Top Types", EditorStyles.boldLabel);
+            int shown = 0;
+            foreach (var kvp in typeCounts.OrderByDescending(x => x.Value))
+            {
+                EditorGUILayout.LabelField($"- {kvp.Key}: {kvp.Value}");
+                shown++;
+                if (shown >= 8) break;
+            }
             EditorGUILayout.Space();
 
             scroll = EditorGUILayout.BeginScrollView(scroll, GUILayout.Height(180));

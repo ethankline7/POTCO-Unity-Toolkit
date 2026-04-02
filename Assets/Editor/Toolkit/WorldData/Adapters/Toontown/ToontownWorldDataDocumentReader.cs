@@ -9,6 +9,7 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 {
     public sealed class ToontownWorldDataDocumentReader : IWorldDataDocumentReader
     {
+        private const int MaxInferenceWarnings = 20;
         private static readonly Regex DictEntryRegex = new Regex(
             @"^\s*'([^']+)':\s*\{",
             RegexOptions.Compiled);
@@ -62,6 +63,13 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             {
                 Name = Path.GetFileNameWithoutExtension(sourcePath)
             };
+            int warningCountFromInference = 0;
+            int suppressedInferenceWarnings = 0;
+            var typeMapper = ToontownObjectTypeMapper.LoadOrCreateDefault(out string mapperLoadWarning);
+            if (!string.IsNullOrWhiteSpace(mapperLoadWarning))
+            {
+                document.Warnings.Add(mapperLoadWarning);
+            }
 
             string[] lines = File.ReadAllLines(sourcePath);
             var stack = new Stack<ParseNode>();
@@ -133,6 +141,8 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     Properties = new Dictionary<string, string>(node.Properties, StringComparer.OrdinalIgnoreCase)
                 };
 
+                ApplyTypeInference(worldObject, typeMapper, document, ref warningCountFromInference, ref suppressedInferenceWarnings);
+
                 document.Objects.Add(worldObject);
             }
 
@@ -148,6 +158,12 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                 {
                     document.Warnings.Add($"Duplicate object id detected: {group.Key} ({group.Count()} entries).");
                 }
+            }
+
+            if (suppressedInferenceWarnings > 0)
+            {
+                document.Warnings.Add(
+                    $"Suppressed {suppressedInferenceWarnings} additional type-inference warnings (limit {MaxInferenceWarnings}).");
             }
 
             return document;
@@ -195,6 +211,76 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             }
 
             return false;
+        }
+
+        private static void ApplyTypeInference(
+            WorldDataObject worldObject,
+            ToontownObjectTypeMapper typeMapper,
+            WorldDataDocument document,
+            ref int warningCountFromInference,
+            ref int suppressedInferenceWarnings)
+        {
+            if (worldObject.Properties.ContainsKey("Type"))
+            {
+                return;
+            }
+
+            if (!worldObject.Properties.TryGetValue("Model", out string modelRaw))
+            {
+                AddInferenceWarning(
+                    document,
+                    $"Object '{worldObject.Id}' has no 'Type' or 'Model' property; type inference skipped.",
+                    ref warningCountFromInference,
+                    ref suppressedInferenceWarnings);
+                return;
+            }
+
+            string modelPath = NormalizeModelValue(modelRaw);
+            string inferredType = typeMapper.InferTypeFromModel(modelPath, out bool usedDefault);
+            worldObject.Properties["Type"] = inferredType;
+
+            if (usedDefault)
+            {
+                AddInferenceWarning(
+                    document,
+                    $"Object '{worldObject.Id}' model '{modelPath}' did not match mapping rules; default type '{inferredType}' applied.",
+                    ref warningCountFromInference,
+                    ref suppressedInferenceWarnings);
+            }
+        }
+
+        private static string NormalizeModelValue(string modelRaw)
+        {
+            if (string.IsNullOrWhiteSpace(modelRaw))
+            {
+                return string.Empty;
+            }
+
+            string trimmed = modelRaw.Trim();
+            if ((trimmed.StartsWith("'") && trimmed.EndsWith("'")) ||
+                (trimmed.StartsWith("\"") && trimmed.EndsWith("\"")))
+            {
+                return trimmed.Substring(1, trimmed.Length - 2);
+            }
+
+            return trimmed;
+        }
+
+        private static void AddInferenceWarning(
+            WorldDataDocument document,
+            string message,
+            ref int warningCountFromInference,
+            ref int suppressedInferenceWarnings)
+        {
+            if (warningCountFromInference < MaxInferenceWarnings)
+            {
+                document.Warnings.Add(message);
+                warningCountFromInference++;
+            }
+            else
+            {
+                suppressedInferenceWarnings++;
+            }
         }
 
         private sealed class ParseNode

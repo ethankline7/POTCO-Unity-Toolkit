@@ -1,0 +1,25 @@
+{
+  "defaultType": "Unknown",
+  "rules": [
+    {
+      "modelContains": "models/props/",
+      "type": "Prop"
+    },
+    {
+      "modelContains": "models/buildings/",
+      "type": "Building"
+    },
+    {
+      "modelContains": "models/char/",
+      "type": "Character"
+    },
+    {
+      "modelContains": "models/streets/",
+      "type": "Street"
+    },
+    {
+      "modelContains": "models/neighborhoods/",
+      "type": "Neighborhood"
+    }
+  ]
+}

@@ -41,6 +41,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Implemented initial Toontown writer pass for `WorldDataDocument` output (`objectStruct` + nested `Objects`).
 - Wired Toontown exporter window for parse-and-write round-trip scaffolding.
 - Added warning surfacing in Toontown importer/exporter for low-confidence parse scenarios.
+- Implemented Toontown object type mapping source via `Assets/Editor/Toontown/Config/ObjectTypeMap.json`.
 
 ## Phase 4 - Validation
 - Import baseline sample world.
