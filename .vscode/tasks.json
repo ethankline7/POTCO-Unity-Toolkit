@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Project: Run Checks",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "scripts/checks.ps1"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Git: Status",
+      "type": "shell",
+      "command": "git status --short",
+      "problemMatcher": []
+    },
+    {
+      "label": "Git: Recent Commits",
+      "type": "shell",
+      "command": "git log --oneline --decorate -n 10",
+      "problemMatcher": []
+    }
+  ]
+}
