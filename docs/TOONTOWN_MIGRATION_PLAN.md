@@ -44,6 +44,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Implemented Toontown object type mapping source via `Assets/Editor/Toontown/Config/ObjectTypeMap.json`.
 - Added exporter round-trip count validation (re-parse exported output and compare likely object counts).
 - Added quick access buttons in Toontown importer/exporter to open the type-map config.
+- Added Toontown property normalization and preferred write-order rules for cleaner exports.
 
 ## Phase 4 - Validation
 - Import baseline sample world.

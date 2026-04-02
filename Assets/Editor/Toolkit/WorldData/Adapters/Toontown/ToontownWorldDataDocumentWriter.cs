@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Toolkit.Editor.WorldData.Contracts;
@@ -95,9 +94,7 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 
             sb.AppendLine($"{indent}'{EscapeSingleQuote(obj.Id)}': {{");
 
-            var orderedProperties = obj.Properties
-                .OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var orderedProperties = ToontownPropertyOrdering.Sort(obj.Properties);
 
             for (int i = 0; i < orderedProperties.Count; i++)
             {

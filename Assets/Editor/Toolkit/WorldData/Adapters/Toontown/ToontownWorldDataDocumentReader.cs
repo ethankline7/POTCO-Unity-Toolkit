@@ -122,7 +122,7 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                 }
 
                 string propKey = propertyMatch.Groups[1].Value.Trim();
-                string propValue = propertyMatch.Groups[2].Value.Trim();
+                string propValue = ToontownPropertyNormalizer.NormalizeForDocument(propertyMatch.Groups[2].Value);
                 stack.Peek().Properties[propKey] = propValue;
             }
 
