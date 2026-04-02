@@ -100,6 +100,7 @@ namespace Toontown.Editor
             EditorGUILayout.LabelField("Parsed Preview", EditorStyles.boldLabel);
             EditorGUILayout.LabelField("Document", document.Name);
             EditorGUILayout.LabelField("Likely Objects", document.Objects.Count.ToString());
+            EditorGUILayout.LabelField("Warnings", document.Warnings.Count.ToString());
 
             int withModel = 0;
             int withType = 0;
@@ -122,6 +123,17 @@ namespace Toontown.Editor
                 EditorGUILayout.LabelField($"[{i + 1}] {obj.Id} (Type: {type})");
             }
             EditorGUILayout.EndScrollView();
+
+            if (document.Warnings.Count > 0)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Warnings", EditorStyles.boldLabel);
+                for (int i = 0; i < document.Warnings.Count; i++)
+                {
+                    EditorGUILayout.HelpBox(document.Warnings[i], MessageType.Warning);
+                }
+            }
+
             EditorGUILayout.EndVertical();
         }
     }

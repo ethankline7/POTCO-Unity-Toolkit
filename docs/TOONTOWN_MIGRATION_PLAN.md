@@ -40,6 +40,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Wired Toontown importer window to parse and preview object summaries through shared contracts.
 - Implemented initial Toontown writer pass for `WorldDataDocument` output (`objectStruct` + nested `Objects`).
 - Wired Toontown exporter window for parse-and-write round-trip scaffolding.
+- Added warning surfacing in Toontown importer/exporter for low-confidence parse scenarios.
 
 ## Phase 4 - Validation
 - Import baseline sample world.

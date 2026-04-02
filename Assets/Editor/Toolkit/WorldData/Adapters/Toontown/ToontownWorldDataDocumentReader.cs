@@ -119,6 +119,11 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             }
 
             var likelyObjects = parsedNodes.Where(IsLikelyWorldObject).ToList();
+            var duplicateIdCounts = likelyObjects
+                .GroupBy(n => n.Id, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
             foreach (var node in likelyObjects)
             {
                 var worldObject = new WorldDataObject
@@ -129,6 +134,20 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                 };
 
                 document.Objects.Add(worldObject);
+            }
+
+            if (document.Objects.Count == 0)
+            {
+                document.Warnings.Add(
+                    "No likely world objects were detected. Verify source format assumptions for this file.");
+            }
+
+            if (duplicateIdCounts.Count > 0)
+            {
+                foreach (var group in duplicateIdCounts)
+                {
+                    document.Warnings.Add($"Duplicate object id detected: {group.Key} ({group.Count()} entries).");
+                }
             }
 
             return document;

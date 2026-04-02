@@ -75,6 +75,16 @@ namespace Toontown.Editor
             {
                 EditorGUILayout.LabelField("Last Parsed Document", parsedDocument.Name);
                 EditorGUILayout.LabelField("Likely Objects", parsedDocument.Objects.Count.ToString());
+                EditorGUILayout.LabelField("Warnings", parsedDocument.Warnings.Count.ToString());
+
+                if (parsedDocument.Warnings.Count > 0)
+                {
+                    EditorGUILayout.Space();
+                    for (int i = 0; i < parsedDocument.Warnings.Count; i++)
+                    {
+                        EditorGUILayout.HelpBox(parsedDocument.Warnings[i], MessageType.Warning);
+                    }
+                }
             }
 
             EditorGUILayout.Space();
