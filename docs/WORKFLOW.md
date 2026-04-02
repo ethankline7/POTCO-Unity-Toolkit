@@ -26,6 +26,7 @@
   - `Primary CI` for push and branch quality gates.
   - `PR Readiness` for pull-request base diff sanity and release-style checks.
   - `Manual Readiness` for operator-triggered release sanity checks.
+  - `Weekly Health` for scheduled baseline checks on the default branch.
 - Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
 - Primary checks validate Toontown type-map config JSON (`Assets/Editor/Toontown/Config/ObjectTypeMap.json`).
 - For Toontown tuning work, use `Toontown/Validation/Sample Validator` before changing type-map rules.
@@ -36,6 +37,7 @@
 | `Primary CI` | Push, pull request, manual dispatch | Required docs, merge-conflict markers, Toontown adapter guardrails, type-map JSON validity |
 | `PR Readiness` | Pull request, manual dispatch | Primary checks plus branch visibility, recent commit trail, and diff summary against PR base |
 | `Manual Readiness` | Manual dispatch | Operator-controlled readiness pass against a chosen base reference |
+| `Weekly Health` | Weekly schedule, manual dispatch | Recurring baseline `primary-checks` run for drift detection |
 
 ## Quality Gates
 - No dead code in committed changes.
