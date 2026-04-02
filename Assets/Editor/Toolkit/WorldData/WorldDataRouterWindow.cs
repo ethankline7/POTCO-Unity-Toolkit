@@ -14,12 +14,14 @@ namespace Toolkit.Editor.WorldData
         private void OnGUI()
         {
             var route = WorldDataToolRouteResolver.ResolveActiveRoute();
+            var adapter = WorldDataFormatAdapterRegistry.GetActiveAdapter();
             EditorGUILayout.LabelField("World Data Router", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
             EditorGUILayout.LabelField("Active Route", route.DisplayName);
             EditorGUILayout.LabelField("Importer Menu", route.ImporterMenuPath);
             EditorGUILayout.LabelField("Exporter Menu", route.ExporterMenuPath);
+            EditorGUILayout.LabelField("Format Adapter", adapter.FormatId);
             EditorGUILayout.Space();
 
             if (GUILayout.Button("Open Active Importer"))

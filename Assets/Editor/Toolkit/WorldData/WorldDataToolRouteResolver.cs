@@ -9,15 +9,20 @@ namespace Toolkit.Editor.WorldData
         private static readonly IWorldDataToolRoute PotcoRoute = new PotcoWorldDataToolRoute();
         private static readonly IWorldDataToolRoute ToontownRoute = new ToontownWorldDataToolRoute();
 
-        public static IWorldDataToolRoute ResolveActiveRoute()
+        public static GameFlavor GetActiveGameFlavor()
         {
             var settings = AssetDatabase.LoadAssetAtPath<ToolkitProjectSettings>(SettingsAssetPath);
             if (settings == null)
             {
-                return PotcoRoute;
+                return GameFlavor.POTCO;
             }
 
-            return settings.activeGameFlavor == GameFlavor.Toontown ? ToontownRoute : PotcoRoute;
+            return settings.activeGameFlavor;
+        }
+
+        public static IWorldDataToolRoute ResolveActiveRoute()
+        {
+            return GetActiveGameFlavor() == GameFlavor.Toontown ? ToontownRoute : PotcoRoute;
         }
     }
 }
