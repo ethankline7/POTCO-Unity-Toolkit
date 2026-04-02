@@ -1,4 +1,4 @@
-name: Quality Checks
+name: Primary CI
 
 on:
   pull_request:
@@ -7,15 +7,16 @@ on:
     branches:
       - main
       - "codex/**"
+  workflow_dispatch:
 
 jobs:
-  checks:
+  primary_checks:
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run project checks
+      - name: Run primary checks
         shell: pwsh
-        run: ./scripts/checks.ps1
+        run: ./scripts/primary-checks.ps1

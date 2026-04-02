@@ -2,15 +2,29 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Project: Run Checks",
+      "label": "Project: Run Primary Checks (Recommended)",
       "type": "shell",
       "command": "pwsh",
       "args": [
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
-        "-File", "scripts/checks.ps1"
+        "-File", "scripts/primary-checks.ps1"
       ],
-      "group": "test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Project: Run Manual Readiness",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "scripts/manual-readiness.ps1"
+      ],
       "problemMatcher": []
     },
     {

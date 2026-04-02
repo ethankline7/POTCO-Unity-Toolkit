@@ -19,6 +19,13 @@
   3. behavior changes
   4. cleanup
 
+## Run Actions
+- Primary (recommended): run `scripts/primary-checks.ps1`.
+- Manual readiness bundle: run `scripts/manual-readiness.ps1`.
+- CI mirrors:
+  - `Primary CI` for push/PR/default checks.
+  - `Manual Readiness` for operator-triggered release sanity checks.
+
 ## Quality Gates
 - No dead code in committed changes.
 - Keep all new files and symbols named by domain intent.
