@@ -112,8 +112,21 @@ namespace Toontown.Editor
         {
             try
             {
-                IWorldDataDocumentReader reader = new ToontownWorldDataDocumentReader();
-                IWorldDataDocumentWriter writer = new ToontownWorldDataDocumentWriter();
+                // Prefer the active adapter when set to Toontown.
+                // Fallback keeps this window functional if flavor is not switched yet.
+                IWorldDataDocumentReader reader;
+                IWorldDataDocumentWriter writer;
+                if (WorldDataToolRouteResolver.GetActiveGameFlavor() == GameFlavor.Toontown)
+                {
+                    var adapter = WorldDataFormatAdapterRegistry.GetActiveAdapter();
+                    reader = adapter.Reader;
+                    writer = adapter.Writer;
+                }
+                else
+                {
+                    reader = new ToontownWorldDataDocumentReader();
+                    writer = new ToontownWorldDataDocumentWriter();
+                }
 
                 if (!reader.CanRead(sourcePath))
                 {
@@ -135,12 +148,12 @@ namespace Toontown.Editor
                 if (roundTripDocument.Objects.Count != parsedDocument.Objects.Count)
                 {
                     statusMessage =
-                        $"Wrote file but round-trip object count mismatch: in={parsedDocument.Objects.Count}, out={roundTripDocument.Objects.Count}.";
+                        $"Wrote file with {writer.FormatId}, but round-trip object count mismatch: in={parsedDocument.Objects.Count}, out={roundTripDocument.Objects.Count}.";
                 }
                 else
                 {
                     statusMessage =
-                        $"Wrote {parsedDocument.Objects.Count} likely objects to {System.IO.Path.GetFileName(outputPath)} and validated round-trip count.";
+                        $"Wrote {parsedDocument.Objects.Count} likely objects to {System.IO.Path.GetFileName(outputPath)} using {writer.FormatId} and validated round-trip count.";
                 }
             }
             catch (System.Exception ex)
