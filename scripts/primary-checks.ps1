@@ -16,6 +16,7 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentReader.cs',
   'Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentWriter.cs',
   'Assets/Editor/Toontown/Config/ObjectTypeMap.json',
+  'Assets/Editor/Toontown/Validation/ToontownSampleValidationWindow.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataImporter.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataExporter.cs'
 )
