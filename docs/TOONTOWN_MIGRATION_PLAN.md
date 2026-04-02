@@ -35,6 +35,10 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Implement Toontown object type mapping source.
 - Implement Toontown-specific property handlers.
 
+### Phase 3 Progress
+- Implemented initial Toontown reader pass for `.py` dictionary-style world data (best-effort object extraction).
+- Wired Toontown importer window to parse and preview object summaries through shared contracts.
+
 ## Phase 4 - Validation
 - Import baseline sample world.
 - Export round-trip sample and verify structure.
