@@ -13,30 +13,30 @@ namespace Toolkit.Editor.WorldData
 
         private void OnGUI()
         {
-            var route = WorldDataToolRouteResolver.ResolveActiveRoute();
+            var launcher = WorldDataToolLauncherRegistry.GetActiveLauncher();
             var adapter = WorldDataFormatAdapterRegistry.GetActiveAdapter();
             EditorGUILayout.LabelField("World Data Router", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
-            EditorGUILayout.LabelField("Active Route", route.DisplayName);
-            EditorGUILayout.LabelField("Importer Menu", route.ImporterMenuPath);
-            EditorGUILayout.LabelField("Exporter Menu", route.ExporterMenuPath);
+            EditorGUILayout.LabelField("Active Route", launcher.DisplayName);
+            EditorGUILayout.LabelField("Importer Menu", launcher.ImporterMenuPath);
+            EditorGUILayout.LabelField("Exporter Menu", launcher.ExporterMenuPath);
             EditorGUILayout.LabelField("Format Adapter", adapter.FormatId);
             EditorGUILayout.Space();
 
             if (GUILayout.Button("Open Active Importer"))
             {
-                if (!EditorApplication.ExecuteMenuItem(route.ImporterMenuPath))
+                if (!launcher.OpenImporter())
                 {
-                    Debug.LogError($"Could not open importer menu path: {route.ImporterMenuPath}");
+                    Debug.LogError($"Could not open importer menu path: {launcher.ImporterMenuPath}");
                 }
             }
 
             if (GUILayout.Button("Open Active Exporter"))
             {
-                if (!EditorApplication.ExecuteMenuItem(route.ExporterMenuPath))
+                if (!launcher.OpenExporter())
                 {
-                    Debug.LogError($"Could not open exporter menu path: {route.ExporterMenuPath}");
+                    Debug.LogError($"Could not open exporter menu path: {launcher.ExporterMenuPath}");
                 }
             }
 
