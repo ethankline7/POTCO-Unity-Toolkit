@@ -40,6 +40,17 @@
       "problemMatcher": []
     },
     {
+      "label": "Project: Run Toontown Sample Sanity",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "scripts/toontown-sample-sanity.ps1"
+      ],
+      "problemMatcher": []
+    },
+    {
       "label": "Git: Status",
       "type": "shell",
       "command": "git status --short",

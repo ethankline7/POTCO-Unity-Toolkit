@@ -30,6 +30,7 @@
   - `Weekly Health` for scheduled baseline checks on the default branch.
 - Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
 - Primary checks validate Toontown type-map config JSON (`Assets/Editor/Toontown/Config/ObjectTypeMap.json`).
+- Primary checks validate Toontown bundled sample sanity (`scripts/toontown-sample-sanity.ps1`).
 - For Toontown tuning work, use `Toontown/Validation/Sample Validator` before changing type-map rules.
 
 ### Action Quick Reference

@@ -60,4 +60,8 @@ if ($LASTEXITCODE -eq 0 -and $stubMatches) {
 }
 
 Write-Host 'Toontown reader/writer implementation guard: OK' -ForegroundColor Green
+
+# Validate bundled sample world for first-run quick-start flow.
+& "$PSScriptRoot/toontown-sample-sanity.ps1"
+
 Write-Host 'Primary checks passed.' -ForegroundColor Green
