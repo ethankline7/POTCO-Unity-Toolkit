@@ -94,6 +94,13 @@ namespace Toontown.Editor.Validation
                 EditorUtility.OpenWithDefaultApp(ToontownObjectTypeMapper.ConfigFullPath);
             }
 
+            EditorGUI.BeginDisabledGroup(results.Count == 0);
+            if (GUILayout.Button("Export CSV Report"))
+            {
+                ExportCsvReport();
+            }
+            EditorGUI.EndDisabledGroup();
+
             if (GUILayout.Button("Clear Results"))
             {
                 results.Clear();
@@ -269,6 +276,62 @@ namespace Toontown.Editor.Validation
 
             EditorGUILayout.EndScrollView();
             EditorGUILayout.EndVertical();
+        }
+
+        private void ExportCsvReport()
+        {
+            string path = EditorUtility.SaveFilePanel(
+                "Export Validation Report",
+                Application.dataPath,
+                "toontown_validation_report.csv",
+                "csv");
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                statusMessage = "CSV export cancelled.";
+                return;
+            }
+
+            try
+            {
+                using (var writer = new StreamWriter(path, false))
+                {
+                    writer.WriteLine(
+                        "FileName,Quality,ObjectCount,UnknownTypeRatio,UnknownTypeCount,DuplicateIdGroups,WarningCount,ObjectsWithModel,ObjectsWithType,ParseError");
+
+                    foreach (var r in results)
+                    {
+                        writer.WriteLine(
+                            $"{Csv(r.FileName)}," +
+                            $"{Csv(r.Quality)}," +
+                            $"{r.ObjectCount}," +
+                            $"{r.UnknownTypeRatio:0.####}," +
+                            $"{r.UnknownTypeCount}," +
+                            $"{r.DuplicateIdGroups}," +
+                            $"{r.WarningCount}," +
+                            $"{r.ObjectsWithModel}," +
+                            $"{r.ObjectsWithType}," +
+                            $"{Csv(r.ParseError)}");
+                    }
+                }
+
+                statusMessage = $"Exported CSV report: {path}";
+            }
+            catch (Exception ex)
+            {
+                statusMessage = $"CSV export failed: {ex.Message}";
+            }
+        }
+
+        private static string Csv(string input)
+        {
+            if (input == null)
+            {
+                return "\"\"";
+            }
+
+            string escaped = input.Replace("\"", "\"\"");
+            return $"\"{escaped}\"";
         }
 
         private sealed class ValidationResult
