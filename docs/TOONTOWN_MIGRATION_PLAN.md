@@ -38,6 +38,8 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 ### Phase 3 Progress
 - Implemented initial Toontown reader pass for `.py` dictionary-style world data (best-effort object extraction).
 - Wired Toontown importer window to parse and preview object summaries through shared contracts.
+- Implemented initial Toontown writer pass for `WorldDataDocument` output (`objectStruct` + nested `Objects`).
+- Wired Toontown exporter window for parse-and-write round-trip scaffolding.
 
 ## Phase 4 - Validation
 - Import baseline sample world.
