@@ -29,6 +29,10 @@ This is the fastest way to launch and use the Toontown tools in this repository.
 2. Click `Validate Bundled Sample`.
 3. Optionally click `Export CSV Report`.
 
+## 7. Run One-Click Smoke Test
+- Menu: `Toontown/Validation/Run Sample Smoke Test`
+- This runs parse -> export -> re-parse on bundled sample and prints a report to the Unity console.
+
 ## Common Pitfalls
 - If importer/exporter warns about active game flavor, set `Toolkit/Settings` to `Toontown`.
 - If parse count is zero, verify the source file has an `objectStruct['Objects']` dictionary.

@@ -117,6 +117,13 @@ Visual asset management and level creation tool:
 5. Assets are automatically categorized and ready for export
 6. Select "🎯Surface" for any placed models either from importing or dragging out to contain collisions to be able to easily drag and drop props on top seemlessly will cause the world importer to take longer
 
+### Toontown First Launch (Current Migration Flow)
+1. Open `Toontown → Quick Start`
+2. Click `Switch Active Game Flavor to Toontown`
+3. Open importer/exporter from quick-start buttons
+4. Use bundled sample actions to run parse + export loop
+5. Run `Toontown → Validation → Run Sample Smoke Test`
+
 
 ### Generate a Cave
 1. Open `POTCO → Procedural Cave Generator`  
