@@ -42,6 +42,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Wired Toontown exporter window for parse-and-write round-trip scaffolding.
 - Added warning surfacing in Toontown importer/exporter for low-confidence parse scenarios.
 - Implemented Toontown object type mapping source via `Assets/Editor/Toontown/Config/ObjectTypeMap.json`.
+- Added exporter round-trip count validation (re-parse exported output and compare likely object counts).
 
 ## Phase 4 - Validation
 - Import baseline sample world.

@@ -13,6 +13,7 @@ namespace Toontown.Editor
         private string outputPath;
         private string statusMessage = "Select source and output files.";
         private WorldDataDocument parsedDocument;
+        private WorldDataDocument roundTripDocument;
 
         [MenuItem("Toontown/World Data/Exporter")]
         public static void ShowWindow()
@@ -87,6 +88,14 @@ namespace Toontown.Editor
                 }
             }
 
+            if (roundTripDocument != null)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Round-Trip Validation", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("Exported Re-Parse Objects", roundTripDocument.Objects.Count.ToString());
+                EditorGUILayout.LabelField("Exported Re-Parse Warnings", roundTripDocument.Warnings.Count.ToString());
+            }
+
             EditorGUILayout.Space();
             if (GUILayout.Button("Open Migration Plan"))
             {
@@ -116,12 +125,22 @@ namespace Toontown.Editor
 
                 parsedDocument = reader.ReadFromFile(sourcePath);
                 writer.WriteToFile(parsedDocument, outputPath);
+                roundTripDocument = reader.ReadFromFile(outputPath);
 
-                statusMessage =
-                    $"Wrote {parsedDocument.Objects.Count} likely objects to {System.IO.Path.GetFileName(outputPath)}.";
+                if (roundTripDocument.Objects.Count != parsedDocument.Objects.Count)
+                {
+                    statusMessage =
+                        $"Wrote file but round-trip object count mismatch: in={parsedDocument.Objects.Count}, out={roundTripDocument.Objects.Count}.";
+                }
+                else
+                {
+                    statusMessage =
+                        $"Wrote {parsedDocument.Objects.Count} likely objects to {System.IO.Path.GetFileName(outputPath)} and validated round-trip count.";
+                }
             }
             catch (System.Exception ex)
             {
+                roundTripDocument = null;
                 statusMessage = $"Parse/write failed: {ex.Message}";
             }
         }
