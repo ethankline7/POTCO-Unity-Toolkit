@@ -49,6 +49,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added `Toontown/Validation/Sample Validator` for parse quality benchmarking (unknown type ratio, duplicates, warnings).
 - Added CSV report export from validator for tuning evidence and iterative mapping comparisons.
 - Hardened reader scope handling so candidate objects are only collected from `Objects` dictionary regions (reduces metadata false positives).
+- Added multi-line continuation parsing for bracket/parenthesis property values to improve extraction from wrapped world-data fields.
 
 ## Phase 4 - Validation
 - Import baseline sample world.

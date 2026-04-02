@@ -77,6 +77,10 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             int objectsScopeDepth = 0;
             bool sawObjectsScope = false;
             var parsedNodes = new List<ParseNode>();
+            ParseNode pendingPropertyNode = null;
+            string pendingPropertyKey = null;
+            string pendingPropertyRawValue = null;
+            int pendingContinuationBalance = 0;
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -100,6 +104,25 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     {
                         objectsScopeDepth--;
                     }
+                }
+
+                if (pendingPropertyNode != null)
+                {
+                    string continuationSegment = line.Trim();
+                    pendingPropertyRawValue = $"{pendingPropertyRawValue} {continuationSegment}";
+                    pendingContinuationBalance += GetContinuationBalanceDelta(continuationSegment);
+
+                    if (pendingContinuationBalance <= 0)
+                    {
+                        string completedValue = ToontownPropertyNormalizer.NormalizeForDocument(pendingPropertyRawValue);
+                        pendingPropertyNode.Properties[pendingPropertyKey] = completedValue;
+                        pendingPropertyNode = null;
+                        pendingPropertyKey = null;
+                        pendingPropertyRawValue = null;
+                        pendingContinuationBalance = 0;
+                    }
+
+                    continue;
                 }
 
                 Match entryMatch = DictEntryRegex.Match(line);
@@ -149,8 +172,27 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                 }
 
                 string propKey = propertyMatch.Groups[1].Value.Trim();
-                string propValue = ToontownPropertyNormalizer.NormalizeForDocument(propertyMatch.Groups[2].Value);
+                string propRawValue = propertyMatch.Groups[2].Value;
+
+                if (ShouldStartContinuation(propRawValue, out int continuationBalance))
+                {
+                    pendingPropertyNode = stack.Peek();
+                    pendingPropertyKey = propKey;
+                    pendingPropertyRawValue = propRawValue;
+                    pendingContinuationBalance = continuationBalance;
+                    continue;
+                }
+
+                string propValue = ToontownPropertyNormalizer.NormalizeForDocument(propRawValue);
                 stack.Peek().Properties[propKey] = propValue;
+            }
+
+            if (pendingPropertyNode != null)
+            {
+                string bestEffortValue = ToontownPropertyNormalizer.NormalizeForDocument(pendingPropertyRawValue);
+                pendingPropertyNode.Properties[pendingPropertyKey] = bestEffortValue;
+                document.Warnings.Add(
+                    $"Property '{pendingPropertyKey}' on object '{pendingPropertyNode.Id}' ended with unbalanced continuation; captured best-effort value.");
             }
 
             if (!sawObjectsScope)
@@ -314,6 +356,87 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             {
                 suppressedInferenceWarnings++;
             }
+        }
+
+        private static bool ShouldStartContinuation(string rawValue, out int continuationBalance)
+        {
+            continuationBalance = 0;
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return false;
+            }
+
+            string trimmed = rawValue.TrimStart();
+            if (trimmed.StartsWith("{"))
+            {
+                return false;
+            }
+
+            continuationBalance = GetContinuationBalanceDelta(trimmed);
+            if (continuationBalance <= 0)
+            {
+                return false;
+            }
+
+            if (trimmed.StartsWith("[") || trimmed.StartsWith("("))
+            {
+                return true;
+            }
+
+            return trimmed.IndexOf('(') >= 0;
+        }
+
+        private static int GetContinuationBalanceDelta(string text)
+        {
+            bool inSingleQuote = false;
+            bool inDoubleQuote = false;
+            bool escaped = false;
+            int delta = 0;
+
+            foreach (char c in text)
+            {
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (!inDoubleQuote && c == '\'')
+                {
+                    inSingleQuote = !inSingleQuote;
+                    continue;
+                }
+
+                if (!inSingleQuote && c == '"')
+                {
+                    inDoubleQuote = !inDoubleQuote;
+                    continue;
+                }
+
+                if (inSingleQuote || inDoubleQuote)
+                {
+                    continue;
+                }
+
+                if (c == '[' || c == '(')
+                {
+                    delta++;
+                    continue;
+                }
+
+                if (c == ']' || c == ')')
+                {
+                    delta--;
+                }
+            }
+
+            return delta;
         }
 
         private sealed class ParseNode
