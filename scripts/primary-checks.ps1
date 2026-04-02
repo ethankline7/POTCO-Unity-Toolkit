@@ -28,6 +28,23 @@ foreach ($path in $requiredToolkitFiles) {
 
 Write-Host 'Toolkit scaffolding files: OK' -ForegroundColor Green
 
+# Validate Toontown type-map config JSON shape.
+$typeMapPath = 'Assets/Editor/Toontown/Config/ObjectTypeMap.json'
+try {
+  $rawJson = Get-Content -Raw $typeMapPath
+  $jsonObj = $rawJson | ConvertFrom-Json
+  if (-not $jsonObj.defaultType) {
+    throw "Missing 'defaultType' in $typeMapPath"
+  }
+  if (-not $jsonObj.rules) {
+    throw "Missing 'rules' array in $typeMapPath"
+  }
+} catch {
+  throw "Invalid Toontown type-map config: $($_.Exception.Message)"
+}
+
+Write-Host 'Toontown type-map config: OK' -ForegroundColor Green
+
 # Ensure Toontown reader/writer are not left as scaffold-only implementations.
 $stubMatches = git grep -n "scaffold and has not been implemented yet" -- `
   "Assets/Editor/Toolkit/WorldData/Adapters/Toontown/ToontownWorldDataDocumentReader.cs" `

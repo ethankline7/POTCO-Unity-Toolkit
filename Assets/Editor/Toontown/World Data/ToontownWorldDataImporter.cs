@@ -66,6 +66,11 @@ namespace Toontown.Editor
             {
                 Debug.Log("See docs/TOONTOWN_MIGRATION_PLAN.md for implementation phases.");
             }
+
+            if (GUILayout.Button("Open Type Map Config"))
+            {
+                EditorUtility.OpenWithDefaultApp(ToontownObjectTypeMapper.ConfigFullPath);
+            }
         }
 
         private void ParseSelectedFile()

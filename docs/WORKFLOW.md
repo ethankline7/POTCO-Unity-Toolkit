@@ -26,6 +26,7 @@
   - `Primary CI` for push/PR/default checks.
   - `Manual Readiness` for operator-triggered release sanity checks.
 - Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
+- Primary checks validate Toontown type-map config JSON (`Assets/Editor/Toontown/Config/ObjectTypeMap.json`).
 
 ## Quality Gates
 - No dead code in committed changes.

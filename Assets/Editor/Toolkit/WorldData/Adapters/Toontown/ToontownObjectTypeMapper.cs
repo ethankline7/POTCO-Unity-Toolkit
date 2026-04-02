@@ -10,6 +10,9 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
         private const string RelativeConfigPath = "Assets/Editor/Toontown/Config/ObjectTypeMap.json";
         private readonly ObjectTypeMapConfig config;
 
+        public static string ConfigRelativePath => RelativeConfigPath;
+        public static string ConfigFullPath => GetFullConfigPath();
+
         private ToontownObjectTypeMapper(ObjectTypeMapConfig config)
         {
             this.config = config ?? CreateDefaultConfig();
