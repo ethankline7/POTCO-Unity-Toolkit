@@ -27,6 +27,7 @@
   - `Commit Quality` for commit subject format and readability checks.
   - `PR Readiness` for pull-request base diff sanity and release-style checks.
   - `Manual Readiness` for operator-triggered release sanity checks.
+  - `Toontown Smoke Gate` for Toontown-focused pull requests and manual smoke runs.
   - `Weekly Health` for scheduled baseline checks on the default branch.
   - `Sun Action` for Sunday scheduled baseline checks (with manual dispatch support).
 - Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
@@ -41,6 +42,7 @@
 | `Commit Quality` | Push, pull request, manual dispatch | Commit subject style (`type(scope): summary`) with a soft warning for subjects over 72 chars |
 | `PR Readiness` | Pull request, manual dispatch | Primary checks plus branch visibility, recent commit trail, and diff summary against PR base |
 | `Manual Readiness` | Manual dispatch | Operator-controlled readiness pass against a chosen base reference |
+| `Toontown Smoke Gate` | Pull request (Toontown paths), manual dispatch | Toontown quick-start safety checks (`primary-checks` + bundled sample sanity) |
 | `Weekly Health` | Weekly schedule, manual dispatch | Recurring baseline `primary-checks` run for drift detection |
 | `Sun Action` | Weekly Sunday schedule, manual dispatch | Weekend baseline `primary-checks` run for fast health visibility |
 

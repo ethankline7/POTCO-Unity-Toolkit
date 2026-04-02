@@ -1,0 +1,28 @@
+name: Toontown Smoke Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "Assets/Editor/Toontown/**"
+      - "Assets/Editor/Toolkit/WorldData/Adapters/Toontown/**"
+      - "docs/TOONTOWN_QUICKSTART.md"
+      - "scripts/toontown-sample-sanity.ps1"
+      - "scripts/primary-checks.ps1"
+  workflow_dispatch:
+
+jobs:
+  smoke_gate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run primary checks
+        shell: pwsh
+        run: ./scripts/primary-checks.ps1
+
+      - name: Run Toontown sample sanity
+        shell: pwsh
+        run: ./scripts/toontown-sample-sanity.ps1
