@@ -24,6 +24,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added route interfaces and game-specific route providers (`POTCO`, `Toontown`).
 - Added `Toolkit/World Data/Router` window to open the active importer/exporter safely.
 - Added tool-launcher adapters so router calls go through shared abstractions instead of direct UI menu calls.
+- Added shared menu entry points (`Toolkit/World Data/Open Importer`, `Open Exporter`) that delegate to the active launcher.
 - Added shared world-data contracts (`IWorldDataDocumentReader`, `IWorldDataDocumentWriter`, `IWorldDataFormatAdapter`).
 - Added POTCO and Toontown format adapter scaffolds behind a shared registry.
 - POTCO importer/exporter code paths are unchanged.
