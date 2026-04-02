@@ -73,6 +73,9 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 
             string[] lines = File.ReadAllLines(sourcePath);
             var stack = new Stack<ParseNode>();
+            var dictScopeStack = new Stack<DictScope>();
+            int objectsScopeDepth = 0;
+            bool sawObjectsScope = false;
             var parsedNodes = new List<ParseNode>();
 
             for (int i = 0; i < lines.Length; i++)
@@ -90,11 +93,23 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     stack.Pop();
                 }
 
+                while (dictScopeStack.Count > 0 && indent <= dictScopeStack.Peek().Indent)
+                {
+                    var popped = dictScopeStack.Pop();
+                    if (popped.IsObjectsScope)
+                    {
+                        objectsScopeDepth--;
+                    }
+                }
+
                 Match entryMatch = DictEntryRegex.Match(line);
                 if (entryMatch.Success)
                 {
                     string key = entryMatch.Groups[1].Value.Trim();
-                    if (IsCandidateObjectKey(key))
+                    bool isObjectsScope = string.Equals(key, "Objects", StringComparison.OrdinalIgnoreCase);
+                    bool insideObjectsScope = objectsScopeDepth > 0;
+
+                    if (insideObjectsScope && IsCandidateObjectKey(key))
                     {
                         var node = new ParseNode
                         {
@@ -105,6 +120,18 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 
                         parsedNodes.Add(node);
                         stack.Push(node);
+                    }
+
+                    dictScopeStack.Push(new DictScope
+                    {
+                        Indent = indent,
+                        IsObjectsScope = isObjectsScope
+                    });
+
+                    if (isObjectsScope)
+                    {
+                        objectsScopeDepth++;
+                        sawObjectsScope = true;
                     }
 
                     continue;
@@ -124,6 +151,12 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                 string propKey = propertyMatch.Groups[1].Value.Trim();
                 string propValue = ToontownPropertyNormalizer.NormalizeForDocument(propertyMatch.Groups[2].Value);
                 stack.Peek().Properties[propKey] = propValue;
+            }
+
+            if (!sawObjectsScope)
+            {
+                document.Warnings.Add(
+                    "No 'Objects' dictionary scope was detected. Verify source format assumptions for this file.");
             }
 
             var likelyObjects = parsedNodes.Where(IsLikelyWorldObject).ToList();
@@ -289,6 +322,12 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             public string ParentId;
             public int Indent;
             public Dictionary<string, string> Properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private sealed class DictScope
+        {
+            public int Indent;
+            public bool IsObjectsScope;
         }
     }
 }

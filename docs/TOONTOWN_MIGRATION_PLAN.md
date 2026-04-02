@@ -48,6 +48,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Routed Toontown exporter parse/write operations through shared adapter contracts when Toontown flavor is active.
 - Added `Toontown/Validation/Sample Validator` for parse quality benchmarking (unknown type ratio, duplicates, warnings).
 - Added CSV report export from validator for tuning evidence and iterative mapping comparisons.
+- Hardened reader scope handling so candidate objects are only collected from `Objects` dictionary regions (reduces metadata false positives).
 
 ## Phase 4 - Validation
 - Import baseline sample world.
