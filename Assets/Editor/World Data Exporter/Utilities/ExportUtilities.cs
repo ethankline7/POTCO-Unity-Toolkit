@@ -6,12 +6,15 @@ using System.Linq;
 using WorldDataExporter.Data;
 using POTCO;
 using POTCO.Editor;
+using UnityEngine.Rendering;
 using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataExporter.Utilities
 {
     public static class ExportUtilities
     {
+        private const string DoubleSidedShadowsPropertyKey = "DoubleSidedShadows";
+
         public static ExportStatistics ExportWorldData(ExportSettings settings)
         {
             var startTime = System.DateTime.Now;
@@ -240,6 +243,10 @@ namespace WorldDataExporter.Utilities
                         if (exportedObj.IsLightObject()) stats.lightingObjectsExported++;
                         if (exportedObj.IsCollisionObject()) stats.collisionObjectsExported++;
                         if (exportedObj.IsNodeObject()) stats.nodeObjectsExported++;
+                        if (IsDoubleSidedShadowPatchEnabled(exportedObj))
+                        {
+                            stats.doubleSidedShadowPatchesExported++;
+                        }
                         
                         DebugLogger.LogWorldExporter($"🎯 Final export: '{unityObj.name}' -> '{exportedObj.objectType}'");
                     }
@@ -364,10 +371,142 @@ namespace WorldDataExporter.Utilities
             {
                 ExtractLightingProperties(unityObj, exportedObj);
             }
+
+            // Optional export patch: mark one-sided materials for double-sided shadow handling on import.
+            ApplyDoubleSidedShadowPatchMetadata(unityObj, exportedObj, settings);
             
             // All POTCO properties already extracted from ObjectListInfo
             
             return exportedObj;
+        }
+
+        private static bool IsDoubleSidedShadowPatchEnabled(ExportedObject exportedObj)
+        {
+            if (exportedObj?.customProperties == null)
+            {
+                return false;
+            }
+
+            if (!exportedObj.customProperties.TryGetValue(DoubleSidedShadowsPropertyKey, out var rawValue))
+            {
+                return false;
+            }
+
+            return rawValue is bool enabled && enabled;
+        }
+
+        private static void ApplyDoubleSidedShadowPatchMetadata(
+            GameObject unityObj,
+            ExportedObject exportedObj,
+            ExportSettings settings)
+        {
+            if (!settings.patchSingleSidedModelsForShadows || unityObj == null || exportedObj == null)
+            {
+                return;
+            }
+
+            if (exportedObj.IsLightObject() || exportedObj.IsCollisionObject() || exportedObj.IsNodeObject())
+            {
+                return;
+            }
+
+            if (IsLikelySingleSided(unityObj))
+            {
+                exportedObj.customProperties[DoubleSidedShadowsPropertyKey] = true;
+                DebugLogger.LogWorldExporter(
+                    $"🩹 Added {DoubleSidedShadowsPropertyKey}=True for '{unityObj.name}'");
+            }
+        }
+
+        private static bool IsLikelySingleSided(GameObject root)
+        {
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var renderer in renderers)
+            {
+                if (renderer is ParticleSystemRenderer || renderer is TrailRenderer || renderer is LineRenderer)
+                {
+                    continue;
+                }
+
+                Material[] materials = renderer.sharedMaterials;
+                if (materials == null || materials.Length == 0)
+                {
+                    continue;
+                }
+
+                foreach (var material in materials)
+                {
+                    if (material == null)
+                    {
+                        continue;
+                    }
+
+                    if (MaterialIsSingleSided(material))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool MaterialIsSingleSided(Material material)
+        {
+            if (material == null)
+            {
+                return false;
+            }
+
+            if (material.HasProperty("_DoubleSidedEnable") && material.GetFloat("_DoubleSidedEnable") > 0.5f)
+            {
+                return false;
+            }
+
+            if (TryReadCullMode(material, "_Cull", out CullMode cullMode))
+            {
+                return cullMode != CullMode.Off;
+            }
+
+            if (TryReadCullMode(material, "_CullMode", out cullMode))
+            {
+                return cullMode != CullMode.Off;
+            }
+
+            if (TryReadCullMode(material, "_CullModeForward", out cullMode))
+            {
+                return cullMode != CullMode.Off;
+            }
+
+            if (TryReadCullMode(material, "_CullModeShadow", out cullMode))
+            {
+                return cullMode != CullMode.Off;
+            }
+
+            return false;
+        }
+
+        private static bool TryReadCullMode(Material material, string propertyName, out CullMode cullMode)
+        {
+            cullMode = CullMode.Back;
+            if (material == null || !material.HasProperty(propertyName))
+            {
+                return false;
+            }
+
+            int rawValue = Mathf.RoundToInt(material.GetFloat(propertyName));
+            if (!Enum.IsDefined(typeof(CullMode), rawValue))
+            {
+                return false;
+            }
+
+            cullMode = (CullMode)rawValue;
+            return true;
         }
         
         // Removed bloated ShouldExportAsPOTCOObject method - now using simple collection logic

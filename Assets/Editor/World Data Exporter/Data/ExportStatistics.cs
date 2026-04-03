@@ -10,6 +10,7 @@ namespace WorldDataExporter.Data
         public int lightingObjectsExported = 0;
         public int collisionObjectsExported = 0;
         public int nodeObjectsExported = 0;
+        public int doubleSidedShadowPatchesExported = 0;
         public float exportTime = 0f;
         public float fileSizeKB = 0f;
         
