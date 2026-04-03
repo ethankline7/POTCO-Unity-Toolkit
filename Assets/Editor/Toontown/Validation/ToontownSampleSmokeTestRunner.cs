@@ -17,7 +17,7 @@ namespace Toontown.Editor.Validation
                 string missing =
                     $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
                 Debug.LogError(missing);
-                EditorUtility.DisplayDialog("Toontown Smoke Test", missing, "OK");
+                ShowDialogIfInteractive("Toontown Smoke Test", missing);
                 return;
             }
 
@@ -41,7 +41,7 @@ namespace Toontown.Editor.Validation
             {
                 string failure = $"Smoke test failed: {ex.Message}";
                 Debug.LogError(failure);
-                EditorUtility.DisplayDialog("Toontown Smoke Test", failure, "OK");
+                ShowDialogIfInteractive("Toontown Smoke Test", failure);
                 return;
             }
 
@@ -69,7 +69,17 @@ namespace Toontown.Editor.Validation
             }
 
             Debug.Log(report.ToString());
-            EditorUtility.DisplayDialog("Toontown Smoke Test", $"Completed with status: {status}", "OK");
+            ShowDialogIfInteractive("Toontown Smoke Test", $"Completed with status: {status}");
+        }
+
+        private static void ShowDialogIfInteractive(string title, string message)
+        {
+            if (Application.isBatchMode)
+            {
+                return;
+            }
+
+            EditorUtility.DisplayDialog(title, message, "OK");
         }
     }
 }
