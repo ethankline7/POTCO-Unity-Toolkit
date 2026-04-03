@@ -54,6 +54,8 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added bundled sample sanity guard in primary checks to keep quick-start inputs stable across future commits.
 - Added `Toontown/Validation/Run Sample Smoke Test` to run parse/export/re-parse verification in one menu action.
 - Updated smoke test runner to be batch-safe (no modal dialog in headless execution).
+- Updated smoke test runner to validate both bundled sample formats (dictionary-style and assignment-style) in one run.
+- Expanded reader parsing support for assignment-style `objectStruct[...]` path assignments and quoted-key variants.
 
 ## Phase 4 - Validation
 - Import baseline sample world.

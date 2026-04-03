@@ -11,11 +11,23 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
     {
         private const int MaxInferenceWarnings = 20;
         private static readonly Regex DictEntryRegex = new Regex(
-            @"^\s*'([^']+)':\s*\{",
+            @"^\s*(['""])([^'""]+)\1\s*:\s*\{\s*,?\s*(?:#.*)?$",
             RegexOptions.Compiled);
 
         private static readonly Regex PropertyRegex = new Regex(
-            @"^\s*'([^']+)':\s*(.+?)\s*,?\s*$",
+            @"^\s*(['""])([^'""]+)\1\s*:\s*(.+?)\s*,?\s*(?:#.*)?$",
+            RegexOptions.Compiled);
+
+        private static readonly Regex ObjectStructBraceAssignmentRegex = new Regex(
+            @"^\s*objectStruct(?<path>(?:\s*\[\s*['""][^'""]+['""]\s*\])+)\s*=\s*\{\s*,?\s*(?:#.*)?$",
+            RegexOptions.Compiled);
+
+        private static readonly Regex ObjectStructPropertyAssignmentRegex = new Regex(
+            @"^\s*objectStruct(?<path>(?:\s*\[\s*['""][^'""]+['""]\s*\])+)\s*=\s*(?<value>.+?)\s*,?\s*(?:#.*)?$",
+            RegexOptions.Compiled);
+
+        private static readonly Regex ObjectStructPathSegmentRegex = new Regex(
+            @"\[\s*['""](?<segment>[^'""]+)['""]\s*\]",
             RegexOptions.Compiled);
 
         private static readonly HashSet<string> ReservedDictKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -77,6 +89,7 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             int objectsScopeDepth = 0;
             bool sawObjectsScope = false;
             var parsedNodes = new List<ParseNode>();
+            var nodesById = new Dictionary<string, ParseNode>(StringComparer.OrdinalIgnoreCase);
             ParseNode pendingPropertyNode = null;
             string pendingPropertyKey = null;
             string pendingPropertyRawValue = null;
@@ -108,7 +121,7 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 
                 if (pendingPropertyNode != null)
                 {
-                    string continuationSegment = line.Trim();
+                    string continuationSegment = StripTrailingInlineComment(line.Trim());
                     pendingPropertyRawValue = $"{pendingPropertyRawValue} {continuationSegment}";
                     pendingContinuationBalance += GetContinuationBalanceDelta(continuationSegment);
 
@@ -125,23 +138,48 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     continue;
                 }
 
+                Match objectStructBraceAssignmentMatch = ObjectStructBraceAssignmentRegex.Match(line);
+                if (objectStructBraceAssignmentMatch.Success)
+                {
+                    var pathSegments = ParseObjectStructPathSegments(objectStructBraceAssignmentMatch.Groups["path"].Value);
+                    if (IsObjectsScopePath(pathSegments))
+                    {
+                        dictScopeStack.Push(new DictScope
+                        {
+                            Indent = indent,
+                            IsObjectsScope = true
+                        });
+
+                        objectsScopeDepth++;
+                        sawObjectsScope = true;
+                        continue;
+                    }
+
+                    if (TryExtractObjectContextFromPath(pathSegments, out string objectId, out string parentId, out int objectSegmentIndex) &&
+                        objectSegmentIndex == pathSegments.Count - 1)
+                    {
+                        var node = UpsertNodeFromObjectContext(parsedNodes, nodesById, objectId, parentId, indent);
+                        stack.Push(node);
+                        sawObjectsScope = true;
+                        continue;
+                    }
+                }
+
                 Match entryMatch = DictEntryRegex.Match(line);
                 if (entryMatch.Success)
                 {
-                    string key = entryMatch.Groups[1].Value.Trim();
+                    string key = entryMatch.Groups[2].Value.Trim();
                     bool isObjectsScope = string.Equals(key, "Objects", StringComparison.OrdinalIgnoreCase);
                     bool insideObjectsScope = objectsScopeDepth > 0;
 
                     if (insideObjectsScope && IsCandidateObjectKey(key))
                     {
-                        var node = new ParseNode
-                        {
-                            Id = key,
-                            ParentId = stack.Count > 0 ? stack.Peek().Id : null,
-                            Indent = indent
-                        };
-
-                        parsedNodes.Add(node);
+                        var node = UpsertNodeFromObjectContext(
+                            parsedNodes,
+                            nodesById,
+                            key,
+                            stack.Count > 0 ? stack.Peek().Id : null,
+                            indent);
                         stack.Push(node);
                     }
 
@@ -160,6 +198,18 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     continue;
                 }
 
+                Match objectStructPropertyAssignmentMatch = ObjectStructPropertyAssignmentRegex.Match(line);
+                if (objectStructPropertyAssignmentMatch.Success &&
+                    TryApplyObjectStructPropertyAssignment(
+                        objectStructPropertyAssignmentMatch,
+                        parsedNodes,
+                        nodesById,
+                        indent))
+                {
+                    sawObjectsScope = true;
+                    continue;
+                }
+
                 if (stack.Count == 0)
                 {
                     continue;
@@ -171,8 +221,8 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     continue;
                 }
 
-                string propKey = propertyMatch.Groups[1].Value.Trim();
-                string propRawValue = propertyMatch.Groups[2].Value;
+                string propKey = propertyMatch.Groups[2].Value.Trim();
+                string propRawValue = StripTrailingInlineComment(propertyMatch.Groups[3].Value);
 
                 if (ShouldStartContinuation(propRawValue, out int continuationBalance))
                 {
@@ -384,6 +434,188 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             }
 
             return trimmed.IndexOf('(') >= 0;
+        }
+
+        private static ParseNode UpsertNodeFromObjectContext(
+            List<ParseNode> parsedNodes,
+            Dictionary<string, ParseNode> nodesById,
+            string objectId,
+            string parentId,
+            int indent)
+        {
+            if (!nodesById.TryGetValue(objectId, out ParseNode node))
+            {
+                node = new ParseNode
+                {
+                    Id = objectId,
+                    ParentId = parentId,
+                    Indent = indent
+                };
+
+                parsedNodes.Add(node);
+                nodesById[objectId] = node;
+                return node;
+            }
+
+            if (string.IsNullOrWhiteSpace(node.ParentId) && !string.IsNullOrWhiteSpace(parentId))
+            {
+                node.ParentId = parentId;
+            }
+
+            if (indent < node.Indent)
+            {
+                node.Indent = indent;
+            }
+
+            return node;
+        }
+
+        private static List<string> ParseObjectStructPathSegments(string rawPath)
+        {
+            var segments = new List<string>();
+            MatchCollection matches = ObjectStructPathSegmentRegex.Matches(rawPath);
+            foreach (Match match in matches)
+            {
+                string segment = match.Groups["segment"].Value.Trim();
+                if (segment.Length > 0)
+                {
+                    segments.Add(segment);
+                }
+            }
+
+            return segments;
+        }
+
+        private static bool IsObjectsScopePath(IReadOnlyList<string> pathSegments)
+        {
+            return pathSegments.Count > 0 &&
+                   string.Equals(pathSegments[pathSegments.Count - 1], "Objects", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryExtractObjectContextFromPath(
+            IReadOnlyList<string> pathSegments,
+            out string objectId,
+            out string parentId,
+            out int objectSegmentIndex)
+        {
+            objectId = null;
+            parentId = null;
+            objectSegmentIndex = -1;
+
+            var objectIds = new List<string>();
+            var objectIndexes = new List<int>();
+            for (int i = 0; i < pathSegments.Count - 1; i++)
+            {
+                if (!string.Equals(pathSegments[i], "Objects", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string candidateId = pathSegments[i + 1].Trim();
+                if (candidateId.Length == 0)
+                {
+                    continue;
+                }
+
+                objectIds.Add(candidateId);
+                objectIndexes.Add(i + 1);
+            }
+
+            if (objectIds.Count == 0)
+            {
+                return false;
+            }
+
+            objectId = objectIds[objectIds.Count - 1];
+            objectSegmentIndex = objectIndexes[objectIndexes.Count - 1];
+            if (objectIds.Count > 1)
+            {
+                parentId = objectIds[objectIds.Count - 2];
+            }
+
+            return true;
+        }
+
+        private static bool TryApplyObjectStructPropertyAssignment(
+            Match assignmentMatch,
+            List<ParseNode> parsedNodes,
+            Dictionary<string, ParseNode> nodesById,
+            int indent)
+        {
+            string rawValue = StripTrailingInlineComment(assignmentMatch.Groups["value"].Value);
+            if (rawValue.TrimStart().StartsWith("{"))
+            {
+                return false;
+            }
+
+            var pathSegments = ParseObjectStructPathSegments(assignmentMatch.Groups["path"].Value);
+            if (!TryExtractObjectContextFromPath(pathSegments, out string objectId, out string parentId, out int objectSegmentIndex))
+            {
+                return false;
+            }
+
+            if (objectSegmentIndex >= pathSegments.Count - 1)
+            {
+                return false;
+            }
+
+            string propertyKey = pathSegments[pathSegments.Count - 1];
+            if (string.Equals(propertyKey, "Objects", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var node = UpsertNodeFromObjectContext(parsedNodes, nodesById, objectId, parentId, indent);
+            node.Properties[propertyKey] = ToontownPropertyNormalizer.NormalizeForDocument(rawValue);
+            return true;
+        }
+
+        private static string StripTrailingInlineComment(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return value;
+            }
+
+            bool inSingleQuote = false;
+            bool inDoubleQuote = false;
+            bool escaped = false;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+
+                if (!inDoubleQuote && c == '\'')
+                {
+                    inSingleQuote = !inSingleQuote;
+                    continue;
+                }
+
+                if (!inSingleQuote && c == '"')
+                {
+                    inDoubleQuote = !inDoubleQuote;
+                    continue;
+                }
+
+                if (c == '#' && !inSingleQuote && !inDoubleQuote)
+                {
+                    return value.Substring(0, i).TrimEnd();
+                }
+            }
+
+            return value.TrimEnd();
         }
 
         private static int GetContinuationBalanceDelta(string text)

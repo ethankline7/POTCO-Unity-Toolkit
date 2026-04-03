@@ -12,19 +12,43 @@ namespace Toontown.Editor.Validation
         [MenuItem("Toontown/Validation/Run Sample Smoke Test")]
         public static void Run()
         {
-            if (!ToontownToolkitPaths.BundledSampleExists())
+            if (!ToontownToolkitPaths.BundledSampleExists() || !ToontownToolkitPaths.BundledAssignmentSampleExists())
             {
-                string missing =
-                    $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
+                var missingBuilder = new StringBuilder();
+                if (!ToontownToolkitPaths.BundledSampleExists())
+                {
+                    missingBuilder.AppendLine($"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.");
+                }
+
+                if (!ToontownToolkitPaths.BundledAssignmentSampleExists())
+                {
+                    missingBuilder.AppendLine($"Assignment sample not found at {ToontownToolkitPaths.BundledAssignmentSampleRelativePath}.");
+                }
+
+                string missing = missingBuilder.ToString().Trim();
                 Debug.LogError(missing);
                 ShowDialogIfInteractive("Toontown Smoke Test", missing);
                 return;
             }
 
-            string source = ToontownToolkitPaths.BundledSampleFullPath;
             ToontownToolkitPaths.EnsureSuggestedExportDirectoryExists();
-            string output = ToontownToolkitPaths.SuggestedExportFullPath;
 
+            bool firstPass = RunSingleSample(
+                source: ToontownToolkitPaths.BundledSampleFullPath,
+                output: ToontownToolkitPaths.SuggestedExportFullPath,
+                sampleLabel: "Bundled Dictionary Sample");
+
+            bool secondPass = RunSingleSample(
+                source: ToontownToolkitPaths.BundledAssignmentSampleFullPath,
+                output: ToontownToolkitPaths.SuggestedAssignmentExportFullPath,
+                sampleLabel: "Bundled Assignment Sample");
+
+            string finalStatus = (firstPass && secondPass) ? "PASS" : "WARN";
+            ShowDialogIfInteractive("Toontown Smoke Test", $"Completed with status: {finalStatus}");
+        }
+
+        private static bool RunSingleSample(string source, string output, string sampleLabel)
+        {
             var reader = new ToontownWorldDataDocumentReader();
             var writer = new ToontownWorldDataDocumentWriter();
 
@@ -39,10 +63,9 @@ namespace Toontown.Editor.Validation
             }
             catch (System.Exception ex)
             {
-                string failure = $"Smoke test failed: {ex.Message}";
+                string failure = $"{sampleLabel} smoke test failed: {ex.Message}";
                 Debug.LogError(failure);
-                ShowDialogIfInteractive("Toontown Smoke Test", failure);
-                return;
+                return false;
             }
 
             bool countMatch = inputDoc.Objects.Count == outputDoc.Objects.Count;
@@ -50,6 +73,7 @@ namespace Toontown.Editor.Validation
 
             var report = new StringBuilder();
             report.AppendLine("Toontown Sample Smoke Test");
+            report.AppendLine($"Sample: {sampleLabel}");
             report.AppendLine($"Status: {status}");
             report.AppendLine($"Source: {source}");
             report.AppendLine($"Output: {output}");
@@ -69,7 +93,7 @@ namespace Toontown.Editor.Validation
             }
 
             Debug.Log(report.ToString());
-            ShowDialogIfInteractive("Toontown Smoke Test", $"Completed with status: {status}");
+            return countMatch;
         }
 
         private static void ShowDialogIfInteractive(string title, string message)
