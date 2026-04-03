@@ -1,0 +1,36 @@
+name: PR Readiness
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base ref for readiness summary (example: origin/main)"
+        required: false
+        default: "origin/main"
+
+jobs:
+  readiness:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR base branch
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: pwsh
+        run: git fetch origin "${{ github.base_ref }}" --depth=1
+
+      - name: Run readiness for PR base
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: pwsh
+        run: ./scripts/manual-readiness.ps1 -BaseRef "origin/${{ github.base_ref }}"
+
+      - name: Run readiness for manual base
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: pwsh
+        run: ./scripts/manual-readiness.ps1 -BaseRef "${{ github.event.inputs.base_ref }}"

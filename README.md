@@ -1,6 +1,6 @@
-# Pirates of the Caribbean Online - Unity Toolkit
+# POTCO + Toontown Unity Toolkit
 
-> A Unity Editor toolkit for working with Panda3D - POTCO game assets, world data, and level creation.
+> A Unity Editor toolkit for Panda3D-style game assets and world data workflows, with POTCO support and an active Toontown migration path.
 ---
 <p align="center">
 Got any questions?
@@ -19,9 +19,9 @@ Got any questions?
 
 ## ✨ What is this?
 
-This toolkit brings **Pirates of the Caribbean Online** into Unity, allowing you to import game worlds, export custom content, build new experiences, and create levels using authentic POTCO assets. This was created using the help of AI to expedite the process. So please excuse if the code is 🔥🗑️ but it works! 😎
+This toolkit brings **Pirates of the Caribbean Online** workflows into Unity and now includes an active **Toontown toolchain migration path**. You can import world data, export custom content, and build scene tooling with a shared adapter architecture.
 
-The whole point of this is to bring out the creativity within our community, creating custom worlds and being able to share them or even potentially create little mini games using the POTCO assets within Unity. One thing that our community lacks from our sister community Toontown is the amount of user generated content. We need more of that!
+The goal is to support community-made worlds and tooling while keeping migration work practical and incremental. POTCO tools remain available, and Toontown tools can be launched now through the quick-start flow.
 
 ## 🚀 Features
 
@@ -31,6 +31,13 @@ The whole point of this is to bring out the creativity within our community, cre
 ⛏️ **Procedural Cave Generator** - Create interconnected cave systems with presets  
 🎨 **Advanced EGG File Importer** - Import Panda3D .egg models              
 🖼️ **Native .RGB Importer** - Supports .rgb alpha transparency 
+
+### Toontown Migration Tooling (Current)
+- ✅ `Toontown/Quick Start` launcher
+- ✅ Bundled sample world for first-run validation
+- ✅ Toontown importer/exporter parse + round-trip scaffold
+- ✅ `Toontown/Validation/Run Sample Smoke Test`
+- ✅ CSV validation report export for mapping/tuning evidence
 
 ### Level Creation & Management
 🏗️ **Level Editor (Prop Browser)** - Visual asset browser and placement tool  
@@ -48,6 +55,14 @@ The whole point of this is to bring out the creativity within our community, cre
 
 Open the project in Unity 6000.1.11f1, then access tools via:
 **Unity Menu Bar → POTCO → [Choose Tool]**
+
+## 🧭 Contribution Workflow
+- Contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Engineering workflow: [`docs/WORKFLOW.md`](docs/WORKFLOW.md)
+- Toontown migration plan: [`docs/TOONTOWN_MIGRATION_PLAN.md`](docs/TOONTOWN_MIGRATION_PLAN.md)
+- Toontown quick start (first runnable flow): [`docs/TOONTOWN_QUICKSTART.md`](docs/TOONTOWN_QUICKSTART.md)
+- Required baseline check before commit:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
 
 ---
 
@@ -108,6 +123,13 @@ Visual asset management and level creation tool:
 4. Drag assets directly into your scene
 5. Assets are automatically categorized and ready for export
 6. Select "🎯Surface" for any placed models either from importing or dragging out to contain collisions to be able to easily drag and drop props on top seemlessly will cause the world importer to take longer
+
+### Toontown First Launch (Current Migration Flow)
+1. Open `Toontown → Quick Start`
+2. Click `Switch Active Game Flavor to Toontown`
+3. Open importer/exporter from quick-start buttons
+4. Use bundled sample actions to run parse + export loop
+5. Run `Toontown → Validation → Run Sample Smoke Test`
 
 
 ### Generate a Cave
@@ -179,9 +201,9 @@ This project is designed for **educational and research purposes**:
 
 ---
 
-## 🏴‍☠️ Set Sail!
+## 🏴‍☠️ Build and Iterate!
 
-Transform Unity into your personal POTCO playground and level creation environment. With the new Level Editor, asset browser, and enhanced import systems, creating custom POTCO content has never been easier!
+Transform Unity into a practical game-world toolkit for POTCO and the ongoing Toontown migration flow. Start with the quick-start path, run smoke checks, and iterate in small validated steps.
 
 **Create, explore, and share your pirate adventures!** ⚓
 
