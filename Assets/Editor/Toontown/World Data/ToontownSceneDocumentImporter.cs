@@ -218,7 +218,9 @@ namespace Toontown.Editor
 
         private static Vector3 ConvertPandaHprToUnityEuler(Vector3 pandaHpr)
         {
-            return new Vector3(-pandaHpr.z, -pandaHpr.x, -pandaHpr.y);
+            // Panda HPR is (heading, pitch, roll). For this parser path we keep raw HPR order,
+            // so the Unity inverse mapping is (-pitch, -heading, -roll).
+            return new Vector3(-pandaHpr.y, -pandaHpr.x, -pandaHpr.z);
         }
 
         private static bool TryGetVector(Dictionary<string, string> properties, string key, out Vector3 vector)
@@ -266,7 +268,7 @@ namespace Toontown.Editor
     {
         public bool UseEggFiles = true;
         public bool AddObjectListInfo = true;
-        public bool CreatePlaceholderForMissingModel = true;
+        public bool CreatePlaceholderForMissingModel = false;
         public string RootObjectName = string.Empty;
     }
 
