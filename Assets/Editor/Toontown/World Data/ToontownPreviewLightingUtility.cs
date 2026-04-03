@@ -22,14 +22,14 @@ namespace Toontown.Editor
 
             RenderSettings.sun = previewSun;
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.64f, 0.74f, 0.82f);
-            RenderSettings.ambientEquatorColor = new Color(0.53f, 0.58f, 0.63f);
-            RenderSettings.ambientGroundColor = new Color(0.37f, 0.34f, 0.30f);
+            RenderSettings.ambientSkyColor = new Color(0.32f, 0.38f, 0.46f);
+            RenderSettings.ambientEquatorColor = new Color(0.24f, 0.28f, 0.33f);
+            RenderSettings.ambientGroundColor = new Color(0.15f, 0.14f, 0.12f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogColor = new Color(0.67f, 0.76f, 0.86f);
-            RenderSettings.fogStartDistance = 220f;
-            RenderSettings.fogEndDistance = 980f;
+            RenderSettings.fogColor = new Color(0.73f, 0.81f, 0.92f);
+            RenderSettings.fogStartDistance = 650f;
+            RenderSettings.fogEndDistance = 2400f;
 
             Scene activeScene = SceneManager.GetActiveScene();
             if (activeScene.IsValid())
@@ -68,10 +68,10 @@ namespace Toontown.Editor
 
             directional.name = PreviewSunName;
             directional.type = LightType.Directional;
-            directional.intensity = 1.25f;
-            directional.color = new Color(1.0f, 0.98f, 0.94f);
+            directional.intensity = 0.95f;
+            directional.color = new Color(1.0f, 0.97f, 0.93f);
             directional.shadows = LightShadows.Soft;
-            directional.shadowStrength = 0.35f;
+            directional.shadowStrength = 0.2f;
             directional.shadowBias = 0.05f;
             directional.transform.rotation = Quaternion.Euler(50f, -35f, 0f);
 

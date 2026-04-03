@@ -1,191 +1,278 @@
-using UnityEngine;
-using UnityEditor;
-using UnityEditor.AssetImporters;
+using System;
 using System.IO;
 using POTCO.Editor;
+using UnityEditor.AssetImporters;
+using UnityEngine;
 
-[ScriptedImporter(1, "rgb")]
+[ScriptedImporter(2, "rgb")]
 public class RgbImporter : ScriptedImporter
 {
+    private const int SgiHeaderSize = 512;
+    private const ushort SgiMagic = 0x01DA;
+
     public override void OnImportAsset(AssetImportContext ctx)
     {
         try
         {
             byte[] sgiData = File.ReadAllBytes(ctx.assetPath);
-            
-            if (sgiData == null || sgiData.Length < 512)
+            if (sgiData == null || sgiData.Length < SgiHeaderSize)
             {
                 DebugLogger.LogWarningEggImporter($"Invalid SGI .rgb file: {ctx.assetPath}");
                 return;
             }
 
-            // Parse SGI header (big-endian format)
-            ushort magic = (ushort)((sgiData[0] << 8) | sgiData[1]);
-            if (magic != 0x01DA)
+            ushort magic = ReadUInt16BE(sgiData, 0);
+            if (magic != SgiMagic)
             {
                 DebugLogger.LogWarningEggImporter($"Invalid SGI magic number in {ctx.assetPath}");
                 return;
             }
 
-            byte storage = sgiData[2]; // 0 = uncompressed, 1 = RLE compressed
-            byte bpc = sgiData[3]; // bytes per channel (1 or 2)
-            ushort dimension = (ushort)((sgiData[4] << 8) | sgiData[5]);
-            ushort width = (ushort)((sgiData[6] << 8) | sgiData[7]);
-            ushort height = (ushort)((sgiData[8] << 8) | sgiData[9]);
-            ushort channels = (ushort)((sgiData[10] << 8) | sgiData[11]);
+            byte storage = sgiData[2]; // 0 = uncompressed, 1 = RLE
+            byte bpc = sgiData[3]; // bytes per channel sample (1 or 2)
+            ushort dimension = ReadUInt16BE(sgiData, 4);
+            ushort width = ReadUInt16BE(sgiData, 6);
+            ushort height = ReadUInt16BE(sgiData, 8);
+            ushort channels = ReadUInt16BE(sgiData, 10);
 
-            DebugLogger.LogEggImporter($"SGI file {ctx.assetPath}: {width}x{height}, {channels} channels, storage={storage}, bpc={bpc}");
+            DebugLogger.LogEggImporter(
+                $"SGI file {ctx.assetPath}: {width}x{height}, {channels} channels, storage={storage}, bpc={bpc}");
 
-            if (bpc != 1 || dimension < 2 || width == 0 || height == 0)
+            if (dimension < 2 || width == 0 || height == 0 || channels == 0 || (storage != 0 && storage != 1))
             {
-                DebugLogger.LogWarningEggImporter($"Unsupported SGI format in {ctx.assetPath}");
+                DebugLogger.LogWarningEggImporter($"Unsupported SGI header values in {ctx.assetPath}");
                 return;
             }
 
-            // Create texture  
-            Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            texture.name = Path.GetFileNameWithoutExtension(ctx.assetPath);
+            if (bpc != 1 && bpc != 2)
+            {
+                DebugLogger.LogWarningEggImporter($"Unsupported SGI bytes-per-channel ({bpc}) in {ctx.assetPath}");
+                return;
+            }
 
-            // Initialize all pixels to transparent black
-            Color[] pixels = new Color[width * height];
+            var pixels = new Color32[width * height];
             for (int i = 0; i < pixels.Length; i++)
             {
-                pixels[i] = new Color(0, 0, 0, 1);
+                pixels[i] = new Color32(0, 0, 0, 255);
             }
 
-            if (storage == 0) // Uncompressed
+            if (storage == 0)
             {
-                DecodeSgiUncompressed(sgiData, pixels, width, height, channels);
+                DecodeUncompressed(sgiData, pixels, width, height, channels, bpc);
             }
-            else // RLE compressed
+            else
             {
-                DecodeSgiRLE(sgiData, pixels, width, height, channels);
+                DecodeRle(sgiData, pixels, width, height, channels);
             }
 
-            texture.SetPixels(pixels);
-            texture.Apply();
-            
-            texture.wrapMode = TextureWrapMode.Repeat;
-            texture.filterMode = FilterMode.Bilinear; // Use bilinear filtering for smooth alpha blending
-            
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                name = Path.GetFileNameWithoutExtension(ctx.assetPath),
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear
+            };
+
+            texture.SetPixels32(pixels);
+            texture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+
             ctx.AddObjectToAsset("Texture", texture);
             ctx.SetMainObject(texture);
-            
             DebugLogger.LogEggImporter($"Imported SGI texture: {ctx.assetPath} as {width}x{height}");
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             DebugLogger.LogErrorEggImporter($"Failed to import SGI file {ctx.assetPath}: {ex.Message}");
         }
     }
 
-    private void DecodeSgiUncompressed(byte[] data, Color[] pixels, int width, int height, int channels)
+    private static void DecodeUncompressed(
+        byte[] data,
+        Color32[] pixels,
+        int width,
+        int height,
+        int channels,
+        int bpc)
     {
-        int offset = 512; // Skip header
-        for (int y = 0; y < height; y++)
+        int offset = SgiHeaderSize;
+        int sampleSize = bpc;
+
+        // SGI stores data in planar order: [channel][row][column].
+        for (int channel = 0; channel < channels; channel++)
         {
-            for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
             {
-                int pixelIndex = (height - 1 - y) * width + x; // Flip Y
-                if (channels == 1)
+                int destinationRow = height - 1 - y;
+                for (int x = 0; x < width; x++)
                 {
-                    float gray = data[offset++] / 255.0f;
-                    pixels[pixelIndex] = new Color(gray, gray, gray, 1.0f);
-                }
-                else
-                {
-                    float r = data[offset++] / 255.0f;
-                    float g = data[offset++] / 255.0f;
-                    float b = data[offset++] / 255.0f;
-                    pixels[pixelIndex] = new Color(r, g, b, 1.0f);
+                    if (offset + sampleSize > data.Length)
+                    {
+                        return;
+                    }
+
+                    byte value;
+                    if (bpc == 1)
+                    {
+                        value = data[offset];
+                    }
+                    else
+                    {
+                        ushort sample16 = ReadUInt16BE(data, offset);
+                        value = (byte)(sample16 >> 8);
+                    }
+
+                    offset += sampleSize;
+                    int pixelIndex = destinationRow * width + x;
+                    SetChannelValue(ref pixels[pixelIndex], channel, channels, value);
                 }
             }
         }
     }
 
-    private void DecodeSgiRLE(byte[] data, Color[] pixels, int width, int height, int channels)
+    private static void DecodeRle(
+        byte[] data,
+        Color32[] pixels,
+        int width,
+        int height,
+        int channels)
     {
-        // SGI RLE uses offset tables at the beginning
-        int tableOffset = 512;
-        uint[] startTable = new uint[height * channels];
-        
-        // Read start offset table (big-endian)
-        for (int i = 0; i < startTable.Length; i++)
+        int rowCount = height * channels;
+        int startTableOffset = SgiHeaderSize;
+        int lengthTableOffset = startTableOffset + (rowCount * 4);
+
+        if (lengthTableOffset + (rowCount * 4) > data.Length)
         {
-            startTable[i] = (uint)((data[tableOffset] << 24) | (data[tableOffset + 1] << 16) | 
-                                  (data[tableOffset + 2] << 8) | data[tableOffset + 3]);
-            tableOffset += 4;
+            return;
         }
 
-        // For SGI format, channels are stored as separate planes
-        // For grayscale (1 channel), decode each row
-        for (int y = 0; y < height; y++)
+        var rowBuffer = new byte[width];
+
+        for (int channel = 0; channel < channels; channel++)
         {
-            int rowIndex = y; // For 1 channel, just use row index
-            if (rowIndex < startTable.Length)
+            for (int y = 0; y < height; y++)
             {
-                int offset = (int)startTable[rowIndex];
-                DecodeRLERow(data, pixels, offset, width, height - 1 - y, 0, channels); // Flip Y
+                int tableIndex = channel * height + y;
+                int start = (int)ReadUInt32BE(data, startTableOffset + (tableIndex * 4));
+                int length = (int)ReadUInt32BE(data, lengthTableOffset + (tableIndex * 4));
+
+                if (start < 0 || length <= 0 || start >= data.Length)
+                {
+                    continue;
+                }
+
+                int end = Math.Min(data.Length, start + length);
+                Array.Clear(rowBuffer, 0, rowBuffer.Length);
+                DecodeRleRow(data, start, end, rowBuffer, width);
+
+                int destinationRow = height - 1 - y;
+                for (int x = 0; x < width; x++)
+                {
+                    int pixelIndex = destinationRow * width + x;
+                    SetChannelValue(ref pixels[pixelIndex], channel, channels, rowBuffer[x]);
+                }
             }
         }
     }
 
-    private void DecodeRLERow(byte[] data, Color[] pixels, int offset, int width, int y, int channel, int totalChannels)
+    private static void DecodeRleRow(byte[] data, int start, int end, byte[] destination, int width)
     {
+        int offset = start;
         int x = 0;
-        while (x < width && offset < data.Length)
+
+        while (x < width && offset < end && offset < data.Length)
         {
-            byte count = data[offset++];
-            if ((count & 0x80) != 0) // Copy literal bytes
+            byte packet = data[offset++];
+            int count = packet & 0x7F;
+            if (count == 0)
             {
-                int literalCount = count & 0x7F;
-                for (int i = 0; i < literalCount && x < width && offset < data.Length; i++, x++)
-                {
-                    int pixelIndex = y * width + x;
-                    float value = data[offset++] / 255.0f;
-                    
-                    if (totalChannels == 1)
-                        pixels[pixelIndex] = new Color(value, value, value, 1.0f);
-                    else
-                        SetChannelValue(ref pixels[pixelIndex], channel, value);
-                }
+                break;
             }
-            else // Run of repeated bytes
+
+            if ((packet & 0x80) != 0)
             {
-                if (offset >= data.Length) break;
-                byte value = data[offset++];
-                float fValue = value / 255.0f;
-                
-                for (int i = 0; i < count && x < width; i++, x++)
+                // Literal packet: copy the next `count` bytes directly.
+                int readable = Math.Min(count, Math.Min(end - offset, data.Length - offset));
+                int writable = Math.Min(readable, width - x);
+                if (writable > 0)
                 {
-                    int pixelIndex = y * width + x;
-                    if (totalChannels == 1)
-                        pixels[pixelIndex] = new Color(fValue, fValue, fValue, 1.0f);
-                    else
-                        SetChannelValue(ref pixels[pixelIndex], channel, fValue);
+                    Buffer.BlockCopy(data, offset, destination, x, writable);
+                    x += writable;
+                }
+
+                offset += count;
+            }
+            else
+            {
+                // Run packet: repeat one value `count` times.
+                if (offset >= end || offset >= data.Length)
+                {
+                    break;
+                }
+
+                byte value = data[offset++];
+                int runLength = Math.Min(count, width - x);
+                for (int i = 0; i < runLength; i++)
+                {
+                    destination[x++] = value;
                 }
             }
         }
     }
 
-    private void SetChannelValue(ref Color pixel, int channel, float value)
+    private static void SetChannelValue(ref Color32 pixel, int channelIndex, int totalChannels, byte value)
     {
-        // For grayscale alpha masks, set all RGB channels to the same value
-        if (channel == 0) // First/only channel becomes grayscale
+        if (totalChannels == 1)
         {
             pixel.r = value;
-            pixel.g = value; 
+            pixel.g = value;
             pixel.b = value;
-            pixel.a = 1.0f;
+            pixel.a = 255;
+            return;
         }
-        else
+
+        if (totalChannels == 2)
         {
-            switch (channel)
+            if (channelIndex == 0)
             {
-                case 1: pixel.g = value; break;
-                case 2: pixel.b = value; break;
-                case 3: pixel.a = value; break;
+                pixel.r = value;
+                pixel.g = value;
+                pixel.b = value;
             }
+            else if (channelIndex == 1)
+            {
+                pixel.a = value;
+            }
+            return;
         }
+
+        // 3+ channels are treated as RGB(A) in channel order.
+        switch (channelIndex)
+        {
+            case 0:
+                pixel.r = value;
+                break;
+            case 1:
+                pixel.g = value;
+                break;
+            case 2:
+                pixel.b = value;
+                break;
+            case 3:
+                pixel.a = value;
+                break;
+        }
+    }
+
+    private static ushort ReadUInt16BE(byte[] data, int offset)
+    {
+        return (ushort)((data[offset] << 8) | data[offset + 1]);
+    }
+
+    private static uint ReadUInt32BE(byte[] data, int offset)
+    {
+        return (uint)(
+            (data[offset] << 24) |
+            (data[offset + 1] << 16) |
+            (data[offset + 2] << 8) |
+            data[offset + 3]);
     }
 }
