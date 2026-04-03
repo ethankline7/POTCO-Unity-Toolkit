@@ -25,6 +25,24 @@ public class MaterialHandler
     // Static texture cache to avoid expensive AssetDatabase calls
     private static Dictionary<string, Texture2D> _textureCache;
     private static bool _textureCacheInitialized = false;
+    private static readonly string[] KnownPhasePrefixes =
+    {
+        "phase_2/",
+        "phase_3/",
+        "phase_3.5/",
+        "phase_4/",
+        "phase_5/",
+        "phase_5.5/",
+        "phase_6/",
+        "phase_7/",
+        "phase_8/",
+        "phase_9/",
+        "phase_10/",
+        "phase_11/",
+        "phase_12/",
+        "phase_13/",
+        "phase_14/"
+    };
     
     // New overload that accepts alpha textures and wrap modes specified by .egg files
     public List<Material> CreateMaterials(Dictionary<string, string> texturePaths, Dictionary<string, string> alphaPaths, Dictionary<string, TextureWrapData> textureWrapModes, GameObject rootGO, string assetPath = "")
@@ -429,36 +447,58 @@ public class MaterialHandler
     
     private Texture2D FindTextureInProject(string texturePath)
     {
+        if (string.IsNullOrWhiteSpace(texturePath))
+        {
+            return null;
+        }
+
         // Initialize texture cache if needed
         if (!_textureCacheInitialized)
         {
             InitializeTextureCache();
         }
 
-        // Normalize path: remove extension and convert to lowercase
-        string normalizedPath = texturePath.Replace("\\", "/").ToLowerInvariant();
-        int extIndex = normalizedPath.LastIndexOf('.');
-        if (extIndex > 0)
-            normalizedPath = normalizedPath.Substring(0, extIndex);
-
-        // Try to find with full path first
-        if (_textureCache.TryGetValue(normalizedPath, out Texture2D cachedTexture))
+        if (TryResolveTextureFromCache(texturePath, out Texture2D cachedTexture))
         {
-            if (cachedTexture != null)
-            {
-                DebugLogger.LogEggImporter($"Found cached texture: {texturePath}");
-                return cachedTexture;
-            }
+            return cachedTexture;
         }
 
-        // Fallback: try just filename
-        string fileName = Path.GetFileNameWithoutExtension(texturePath).ToLowerInvariant();
-        if (_textureCache.TryGetValue(fileName, out cachedTexture))
+        // Cache can be stale while assets are being imported; rebuild once and retry.
+        InitializeTextureCache(forceRebuild: true);
+        if (TryResolveTextureFromCache(texturePath, out cachedTexture))
         {
-            if (cachedTexture != null)
+            DebugLogger.LogEggImporter($"Resolved texture after cache rebuild: {texturePath}");
+            return cachedTexture;
+        }
+
+        // Last resort: targeted AssetDatabase lookup by filename.
+        string fileName = Path.GetFileNameWithoutExtension(texturePath);
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            string[] guids = AssetDatabase.FindAssets($"{fileName} t:Texture2D");
+            foreach (string guid in guids)
             {
-                DebugLogger.LogEggImporter($"Found cached texture by filename: {fileName}");
-                return cachedTexture;
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrWhiteSpace(assetPath))
+                {
+                    continue;
+                }
+
+                string candidateName = Path.GetFileNameWithoutExtension(assetPath);
+                if (!string.Equals(candidateName, fileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                if (texture == null)
+                {
+                    continue;
+                }
+
+                RegisterTextureAliases(assetPath, texture);
+                DebugLogger.LogEggImporter($"Resolved texture via AssetDatabase fallback: {texturePath} -> {assetPath}");
+                return texture;
             }
         }
 
@@ -466,10 +506,86 @@ public class MaterialHandler
         return null;
     }
     
-    private static void InitializeTextureCache()
+    private static bool TryResolveTextureFromCache(string texturePath, out Texture2D texture)
+    {
+        texture = null;
+        if (_textureCache == null || _textureCache.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (string candidate in GetTextureLookupCandidates(texturePath))
+        {
+            if (_textureCache.TryGetValue(candidate, out Texture2D cachedTexture) && cachedTexture != null)
+            {
+                DebugLogger.LogEggImporter($"Found cached texture: {texturePath} -> {candidate}");
+                texture = cachedTexture;
+                return true;
+            }
+        }
+
+        string normalized = NormalizeTextureLookupPath(texturePath);
+        if (!string.IsNullOrWhiteSpace(normalized) && normalized.Contains("/"))
+        {
+            string suffix = "/" + normalized;
+            foreach (KeyValuePair<string, Texture2D> kvp in _textureCache)
+            {
+                if (kvp.Value == null)
+                {
+                    continue;
+                }
+
+                if (kvp.Key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    DebugLogger.LogEggImporter($"Found cached texture by suffix match: {texturePath} -> {kvp.Key}");
+                    texture = kvp.Value;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> GetTextureLookupCandidates(string texturePath)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string normalized = NormalizeTextureLookupPath(texturePath);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return candidates;
+        }
+
+        candidates.Add(normalized);
+
+        string withoutPhase = StripKnownPhasePrefix(normalized);
+        candidates.Add(withoutPhase);
+
+        if (withoutPhase.StartsWith("maps/", StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add(withoutPhase.Substring("maps/".Length));
+        }
+        else if (!withoutPhase.Contains("/"))
+        {
+            candidates.Add("maps/" + withoutPhase);
+        }
+
+        string fileName = Path.GetFileNameWithoutExtension(withoutPhase);
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            candidates.Add(fileName.ToLowerInvariant());
+        }
+
+        return candidates;
+    }
+
+    private static void InitializeTextureCache(bool forceRebuild = false)
     {
         // More robust cache validation
-        if (_textureCacheInitialized && _textureCache != null && _textureCache.Count > 0) return;
+        if (!forceRebuild && _textureCacheInitialized && _textureCache != null && _textureCache.Count > 0)
+        {
+            return;
+        }
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         _textureCache = new Dictionary<string, Texture2D>(System.StringComparer.OrdinalIgnoreCase);
@@ -482,39 +598,119 @@ public class MaterialHandler
         {
             string fullPath = AssetDatabase.GUIDToAssetPath(guid);
             Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(fullPath);
-            if (texture == null) continue;
-
-            // Extract relative path from Resources folder (e.g., "phase_3/maps/texture")
-            int resourcesIndex = fullPath.IndexOf("/Resources/", System.StringComparison.OrdinalIgnoreCase);
-            if (resourcesIndex >= 0)
+            if (texture == null)
             {
-                string relativePath = fullPath.Substring(resourcesIndex + "/Resources/".Length);
-
-                // Remove extension
-                int extIndex = relativePath.LastIndexOf('.');
-                if (extIndex > 0)
-                    relativePath = relativePath.Substring(0, extIndex);
-
-                string normalizedPath = relativePath.Replace("\\", "/").ToLowerInvariant();
-
-                // Store by full relative path (e.g., "phase_3/maps/texture")
-                if (!_textureCache.ContainsKey(normalizedPath))
-                {
-                    _textureCache[normalizedPath] = texture;
-                }
+                continue;
             }
 
-            // Also store by filename only for fallback
-            string fileName = Path.GetFileNameWithoutExtension(fullPath).ToLowerInvariant();
-            if (!_textureCache.ContainsKey(fileName))
-            {
-                _textureCache[fileName] = texture;
-            }
+            RegisterTextureAliases(fullPath, texture);
         }
 
         stopwatch.Stop();
         DebugLogger.LogEggImporter($"Texture cache initialized in {stopwatch.ElapsedMilliseconds}ms with {_textureCache.Count} entries");
         _textureCacheInitialized = true;
+    }
+
+    private static void RegisterTextureAliases(string assetPath, Texture2D texture)
+    {
+        if (texture == null || string.IsNullOrWhiteSpace(assetPath) || _textureCache == null)
+        {
+            return;
+        }
+
+        string normalizedAssetPath = assetPath.Replace("\\", "/");
+        AddTextureCacheKey(Path.GetFileNameWithoutExtension(normalizedAssetPath), texture);
+
+        int resourcesIndex = normalizedAssetPath.IndexOf("/Resources/", StringComparison.OrdinalIgnoreCase);
+        if (resourcesIndex < 0)
+        {
+            return;
+        }
+
+        string relativePath = normalizedAssetPath.Substring(resourcesIndex + "/Resources/".Length);
+        string normalizedRelative = NormalizeTextureLookupPath(relativePath);
+        AddTextureCacheKey(normalizedRelative, texture);
+
+        string withoutPhase = StripKnownPhasePrefix(normalizedRelative);
+        AddTextureCacheKey(withoutPhase, texture);
+
+        if (withoutPhase.StartsWith("maps/", StringComparison.OrdinalIgnoreCase))
+        {
+            AddTextureCacheKey(withoutPhase.Substring("maps/".Length), texture);
+        }
+
+        int mapsIndex = withoutPhase.IndexOf("/maps/", StringComparison.OrdinalIgnoreCase);
+        if (mapsIndex >= 0)
+        {
+            AddTextureCacheKey(withoutPhase.Substring(mapsIndex + "/maps/".Length), texture);
+        }
+    }
+
+    private static void AddTextureCacheKey(string key, Texture2D texture)
+    {
+        if (texture == null || string.IsNullOrWhiteSpace(key) || _textureCache == null)
+        {
+            return;
+        }
+
+        string normalized = NormalizeTextureLookupPath(key);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
+
+        if (!_textureCache.ContainsKey(normalized))
+        {
+            _textureCache[normalized] = texture;
+        }
+    }
+
+    private static string NormalizeTextureLookupPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        string normalized = path.Trim().Trim('"').Replace('\\', '/');
+
+        while (normalized.StartsWith("./", StringComparison.Ordinal))
+        {
+            normalized = normalized.Substring(2);
+        }
+
+        normalized = normalized.TrimStart('/');
+
+        if (normalized.StartsWith("resources/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized.Substring("resources/".Length);
+        }
+
+        int extIndex = normalized.LastIndexOf('.');
+        if (extIndex > 0)
+        {
+            normalized = normalized.Substring(0, extIndex);
+        }
+
+        return normalized.ToLowerInvariant();
+    }
+
+    private static string StripKnownPhasePrefix(string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            return normalizedPath;
+        }
+
+        foreach (string phasePrefix in KnownPhasePrefixes)
+        {
+            if (normalizedPath.StartsWith(phasePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return normalizedPath.Substring(phasePrefix.Length);
+            }
+        }
+
+        return normalizedPath;
     }
 
     private Color GetDefaultColorForMaterial(string materialName)

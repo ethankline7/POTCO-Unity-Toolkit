@@ -193,4 +193,5 @@ Assets/Scripts.meta
 *.jpg.meta
 Assets/Editor/Egg Importer/MultiTexturesImporter.meta
 Assets/Cache.meta
+Assets/Editor/Toontown/Samples/Generated/toontown_dna_asset_manifest.json
 /Assets/Cache

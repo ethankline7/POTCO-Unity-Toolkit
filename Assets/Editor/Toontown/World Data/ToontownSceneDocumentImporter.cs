@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using POTCO;
 using Toolkit.Editor.WorldData.Contracts;
@@ -15,6 +16,19 @@ namespace Toontown.Editor
         private static readonly Regex NumberRegex = new Regex(
             @"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?",
             RegexOptions.Compiled);
+
+        private static readonly Regex PhasePrefixRegex = new Regex(
+            @"^phase_\d+(?:\.\d+)?/",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly string[] FakeShadowNameTokens =
+        {
+            "drop-shadow",
+            "drop_shadow",
+            "square_drop_shadow",
+            "shadow_card",
+            "toon_shadow"
+        };
 
         public static ToontownSceneImportResult ImportDocument(
             WorldDataDocument document,
@@ -75,16 +89,43 @@ namespace Toontown.Editor
 
                     if (modelInstance != null)
                     {
+                        if (obj.Properties.TryGetValue("ResolvedNode", out string resolvedNode) &&
+                            !string.IsNullOrWhiteSpace(resolvedNode))
+                        {
+                            bool allowFuzzyMatch = ShouldAllowFuzzyResolvedNodeMatch(obj.Properties, modelPath);
+                            if (TryIsolateResolvedNodeInstance(go.transform, ref modelInstance, resolvedNode, allowFuzzyMatch))
+                            {
+                                result.ResolvedNodeIsolationsSucceeded++;
+                            }
+                            else
+                            {
+                                result.ResolvedNodeIsolationsFailed++;
+                                result.FailedResolvedNodeEntries.Add(
+                                    $"{obj.Id} :: node '{resolvedNode}' :: model '{modelPath}'");
+                            }
+                        }
+
+                        if (settings.RemoveFakeShadowsByDefault)
+                        {
+                            result.FakeShadowRenderersDisabled += RemoveFakeShadowRenderers(modelInstance.transform);
+                        }
+
                         result.InstantiatedModels++;
                         modelInstantiated = true;
                     }
                     else
                     {
                         result.MissingModels++;
+                        if (!result.MissingModelPaths.Contains(modelPath, StringComparer.OrdinalIgnoreCase))
+                        {
+                            result.MissingModelPaths.Add(modelPath);
+                        }
                     }
                 }
 
-                if (!modelInstantiated && settings.CreatePlaceholderForMissingModel)
+                if (!modelInstantiated &&
+                    !string.IsNullOrWhiteSpace(modelPath) &&
+                    settings.CreatePlaceholderForMissingModel)
                 {
                     CreateMissingModelPlaceholder(go);
                     result.PlaceholdersCreated++;
@@ -98,9 +139,19 @@ namespace Toontown.Editor
                 result.CreatedSceneObjects++;
             }
 
+            if (settings.ApplyPreviewLighting)
+            {
+                ToontownPreviewLightingUtility.ApplyToActiveScene(verbose: false);
+            }
+
             Selection.activeGameObject = root;
             EditorGUIUtility.PingObject(root);
             return result;
+        }
+
+        public static string ResolveModelPathFromProperties(Dictionary<string, string> properties)
+        {
+            return ResolveModelPath(properties);
         }
 
         private static void AttachObjectListInfo(GameObject target, WorldDataObject source, string modelPath)
@@ -164,6 +215,7 @@ namespace Toontown.Editor
 
             string normalized = selected.Trim().Replace('\\', '/');
             normalized = normalized.TrimStart('/');
+            normalized = PhasePrefixRegex.Replace(normalized, string.Empty);
 
             if (normalized.EndsWith(".bam", StringComparison.OrdinalIgnoreCase) ||
                 normalized.EndsWith(".egg", StringComparison.OrdinalIgnoreCase) ||
@@ -174,6 +226,100 @@ namespace Toontown.Editor
             }
 
             return normalized;
+        }
+
+        private static int RemoveFakeShadowRenderers(Transform modelRoot)
+        {
+            if (modelRoot == null)
+            {
+                return 0;
+            }
+
+            Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>(true);
+            int disabledCount = 0;
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
+
+                Material[] mats = renderer.sharedMaterials;
+                if (mats == null || mats.Length == 0)
+                {
+                    continue;
+                }
+
+                bool anyNonShadowMaterial = false;
+                foreach (Material mat in mats)
+                {
+                    if (!IsFakeShadowMaterial(mat))
+                    {
+                        anyNonShadowMaterial = true;
+                        break;
+                    }
+                }
+
+                if (anyNonShadowMaterial)
+                {
+                    continue;
+                }
+
+                renderer.enabled = false;
+                disabledCount++;
+            }
+
+            return disabledCount;
+        }
+
+        private static bool IsFakeShadowMaterial(Material material)
+        {
+            if (material == null)
+            {
+                return false;
+            }
+
+            if (ContainsFakeShadowToken(material.name))
+            {
+                return true;
+            }
+
+            if (!material.HasProperty("_MainTex"))
+            {
+                return false;
+            }
+
+            Texture mainTex = material.GetTexture("_MainTex");
+            if (mainTex == null)
+            {
+                return false;
+            }
+
+            if (ContainsFakeShadowToken(mainTex.name))
+            {
+                return true;
+            }
+
+            string texturePath = AssetDatabase.GetAssetPath(mainTex);
+            return ContainsFakeShadowToken(texturePath);
+        }
+
+        private static bool ContainsFakeShadowToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (string token in FakeShadowNameTokens)
+            {
+                if (value.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void ApplyTransform(Transform target, Dictionary<string, string> properties)
@@ -194,6 +340,218 @@ namespace Toontown.Editor
             }
         }
 
+        private static bool TryIsolateResolvedNodeInstance(
+            Transform parent,
+            ref GameObject modelInstance,
+            string resolvedNodeName,
+            bool allowFuzzyMatch)
+        {
+            if (parent == null || modelInstance == null || string.IsNullOrWhiteSpace(resolvedNodeName))
+            {
+                return false;
+            }
+
+            Transform match = FindResolvedNodeTransform(modelInstance.transform, resolvedNodeName, allowFuzzyMatch);
+            if (match == null)
+            {
+                return false;
+            }
+
+            if (match == modelInstance.transform)
+            {
+                return true;
+            }
+
+            string originalRootName = modelInstance.name;
+            // Never re-parent a child inside a prefab instance directly; clone the subtree instead.
+            GameObject isolatedRoot = UnityEngine.Object.Instantiate(match.gameObject, parent, true);
+            isolatedRoot.name = originalRootName;
+            UnityEngine.Object.DestroyImmediate(modelInstance);
+            modelInstance = isolatedRoot;
+            return true;
+        }
+
+        private static Transform FindResolvedNodeTransform(Transform root, string resolvedNodeName, bool allowFuzzyMatch)
+        {
+            if (root == null || string.IsNullOrWhiteSpace(resolvedNodeName))
+            {
+                return null;
+            }
+
+            string normalizedTarget = NormalizeNodeName(resolvedNodeName);
+            Transform[] allTransforms = root.GetComponentsInChildren<Transform>(true);
+
+            Transform exactMatch = null;
+            int bestDepth = int.MaxValue;
+            foreach (Transform t in allTransforms)
+            {
+                if (!string.Equals(t.name, resolvedNodeName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int depth = GetTransformDepth(t, root);
+                if (depth < bestDepth)
+                {
+                    bestDepth = depth;
+                    exactMatch = t;
+                }
+            }
+
+            if (exactMatch != null)
+            {
+                return exactMatch;
+            }
+
+            Transform normalizedMatch = null;
+            bestDepth = int.MaxValue;
+            foreach (Transform t in allTransforms)
+            {
+                if (!string.Equals(NormalizeNodeName(t.name), normalizedTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int depth = GetTransformDepth(t, root);
+                if (depth < bestDepth)
+                {
+                    bestDepth = depth;
+                    normalizedMatch = t;
+                }
+            }
+
+            if (normalizedMatch != null)
+            {
+                return normalizedMatch;
+            }
+
+            string withoutDirectionalSuffix = StripDirectionalSuffix(normalizedTarget);
+            if (!string.Equals(withoutDirectionalSuffix, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                Transform directionalFallback = null;
+                bestDepth = int.MaxValue;
+                foreach (Transform t in allTransforms)
+                {
+                    if (!string.Equals(
+                            NormalizeNodeName(t.name),
+                            withoutDirectionalSuffix,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    int depth = GetTransformDepth(t, root);
+                    if (depth < bestDepth)
+                    {
+                        bestDepth = depth;
+                        directionalFallback = t;
+                    }
+                }
+
+                if (directionalFallback != null)
+                {
+                    return directionalFallback;
+                }
+            }
+
+            if (!allowFuzzyMatch)
+            {
+                return null;
+            }
+
+            // Last fallback (fuzzy): partial string match for imported node names that may have
+            // importer-added suffixes/prefixes. Used for known module naming variants.
+            Transform partialMatch = null;
+            bestDepth = int.MaxValue;
+            foreach (Transform t in allTransforms)
+            {
+                string normalizedName = NormalizeNodeName(t.name);
+                if (normalizedName.IndexOf(normalizedTarget, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                int depth = GetTransformDepth(t, root);
+                if (depth < bestDepth)
+                {
+                    bestDepth = depth;
+                    partialMatch = t;
+                }
+            }
+
+            return partialMatch;
+        }
+
+        private static int GetTransformDepth(Transform node, Transform root)
+        {
+            int depth = 0;
+            Transform cursor = node;
+            while (cursor != null && cursor != root)
+            {
+                depth++;
+                cursor = cursor.parent;
+            }
+
+            return depth;
+        }
+
+        private static string NormalizeNodeName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            string normalized = value.Trim().Trim('"').Replace(" ", string.Empty);
+            // Some storage mappings use "clothesshop" while model nodes are "clothshop".
+            normalized = normalized.Replace("clothesshop", "clothshop", StringComparison.OrdinalIgnoreCase);
+            return normalized;
+        }
+
+        private static string StripDirectionalSuffix(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            string lower = value.ToLowerInvariant();
+            if (lower.EndsWith("_ur", StringComparison.Ordinal) ||
+                lower.EndsWith("_ul", StringComparison.Ordinal) ||
+                lower.EndsWith("_dr", StringComparison.Ordinal) ||
+                lower.EndsWith("_dl", StringComparison.Ordinal))
+            {
+                return value.Substring(0, value.Length - 3);
+            }
+
+            return value;
+        }
+
+        private static bool ShouldAllowFuzzyResolvedNodeMatch(
+            Dictionary<string, string> properties,
+            string modelPath)
+        {
+            if (properties != null &&
+                properties.TryGetValue("Keyword", out string keyword) &&
+                !string.IsNullOrWhiteSpace(keyword))
+            {
+                if (string.Equals(keyword, "door", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(keyword, "window", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return false;
+            }
+
+            string normalized = modelPath.Replace('\\', '/');
+            return normalized.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static Vector3 ConvertPandaVectorToUnity(Vector3 panda)
         {
             return new Vector3(panda.x, panda.z, panda.y);
@@ -201,7 +559,9 @@ namespace Toontown.Editor
 
         private static Vector3 ConvertPandaHprToUnityEuler(Vector3 pandaHpr)
         {
-            return new Vector3(-pandaHpr.z, -pandaHpr.x, -pandaHpr.y);
+            // Panda HPR is (heading, pitch, roll). For this parser path we keep raw HPR order,
+            // so the Unity inverse mapping is (-pitch, -heading, -roll).
+            return new Vector3(-pandaHpr.y, -pandaHpr.x, -pandaHpr.z);
         }
 
         private static bool TryGetVector(Dictionary<string, string> properties, string key, out Vector3 vector)
@@ -249,7 +609,9 @@ namespace Toontown.Editor
     {
         public bool UseEggFiles = true;
         public bool AddObjectListInfo = true;
-        public bool CreatePlaceholderForMissingModel = true;
+        public bool CreatePlaceholderForMissingModel = false;
+        public bool ApplyPreviewLighting = true;
+        public bool RemoveFakeShadowsByDefault = true;
         public string RootObjectName = string.Empty;
     }
 
@@ -262,5 +624,10 @@ namespace Toontown.Editor
         public int InstantiatedModels;
         public int MissingModels;
         public int PlaceholdersCreated;
+        public int FakeShadowRenderersDisabled;
+        public int ResolvedNodeIsolationsSucceeded;
+        public int ResolvedNodeIsolationsFailed;
+        public List<string> MissingModelPaths = new List<string>();
+        public List<string> FailedResolvedNodeEntries = new List<string>();
     }
 }

@@ -25,7 +25,9 @@ namespace Toontown.Editor
         private bool includeSuggestedStorageSet = true;
         private bool useEggFiles = true;
         private bool addObjectListInfo = true;
-        private bool createPlaceholders = true;
+        private bool createPlaceholders = false;
+        private bool applyPreviewLighting = true;
+        private bool removeFakeShadows = true;
         private string customRootName = string.Empty;
 
         private WorldDataDocument parsedDocument;
@@ -149,6 +151,8 @@ namespace Toontown.Editor
             useEggFiles = EditorGUILayout.ToggleLeft("Use .egg assets (if available)", useEggFiles);
             addObjectListInfo = EditorGUILayout.ToggleLeft("Attach ObjectListInfo components", addObjectListInfo);
             createPlaceholders = EditorGUILayout.ToggleLeft("Create placeholders for missing models", createPlaceholders);
+            applyPreviewLighting = EditorGUILayout.ToggleLeft("Apply Toontown preview lighting", applyPreviewLighting);
+            removeFakeShadows = EditorGUILayout.ToggleLeft("Remove fake shadow cards by default", removeFakeShadows);
             customRootName = EditorGUILayout.TextField("Root Object Name (Optional)", customRootName);
         }
 
@@ -209,6 +213,8 @@ namespace Toontown.Editor
                 UseEggFiles = useEggFiles,
                 AddObjectListInfo = addObjectListInfo,
                 CreatePlaceholderForMissingModel = createPlaceholders,
+                ApplyPreviewLighting = applyPreviewLighting,
+                RemoveFakeShadowsByDefault = removeFakeShadows,
                 RootObjectName = customRootName
             };
 
@@ -405,6 +411,12 @@ namespace Toontown.Editor
                 EditorGUILayout.LabelField("Instantiated Models", lastImportResult.InstantiatedModels.ToString());
                 EditorGUILayout.LabelField("Missing Models", lastImportResult.MissingModels.ToString());
                 EditorGUILayout.LabelField("Placeholders", lastImportResult.PlaceholdersCreated.ToString());
+                EditorGUILayout.LabelField("Fake Shadow Renderers Disabled", lastImportResult.FakeShadowRenderersDisabled.ToString());
+                EditorGUILayout.LabelField("Resolved Node Isolations", lastImportResult.ResolvedNodeIsolationsSucceeded.ToString());
+                if (lastImportResult.ResolvedNodeIsolationsFailed > 0)
+                {
+                    EditorGUILayout.LabelField("Resolved Node Isolation Failures", lastImportResult.ResolvedNodeIsolationsFailed.ToString());
+                }
                 EditorGUILayout.EndVertical();
             }
         }

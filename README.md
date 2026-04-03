@@ -64,6 +64,8 @@ Open the project in Unity 6000.1.11f1, then access tools via:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-smoke.ps1`
 - Optional Toontown DNA resource setup:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1`
+- Optional Toontown DNA MVP batch demo:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-dna-demo.ps1`
 
 ---
 
