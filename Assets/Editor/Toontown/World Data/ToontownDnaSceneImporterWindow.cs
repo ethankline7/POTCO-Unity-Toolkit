@@ -208,6 +208,11 @@ namespace Toontown.Editor
                 }
             }
 
+            if (useEggFiles)
+            {
+                EnsureToontownEggPivotMode();
+            }
+
             var settings = new ToontownSceneImportSettings
             {
                 UseEggFiles = useEggFiles,
@@ -230,6 +235,19 @@ namespace Toontown.Editor
                 lastImportResult = null;
                 statusMessage = $"Scene import failed: {ex.Message}";
             }
+        }
+
+        private static void EnsureToontownEggPivotMode()
+        {
+            EggImporterSettings eggSettings = EggImporterSettings.Instance;
+            if (eggSettings == null || eggSettings.pivotMode == EggImporterSettings.PivotMode.Original)
+            {
+                return;
+            }
+
+            eggSettings.pivotMode = EggImporterSettings.PivotMode.Original;
+            EditorUtility.SetDirty(eggSettings);
+            AssetDatabase.SaveAssets();
         }
 
         private List<string> ResolveStoragePaths()

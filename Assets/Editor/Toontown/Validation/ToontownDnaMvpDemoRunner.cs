@@ -185,7 +185,9 @@ namespace Toontown.Editor.Validation
 
             EggImporterSettings eggSettings = EggImporterSettings.Instance;
             bool originalAutoImport = eggSettings.autoImportEnabled;
+            EggImporterSettings.PivotMode originalPivotMode = eggSettings.pivotMode;
             eggSettings.autoImportEnabled = true;
+            eggSettings.pivotMode = EggImporterSettings.PivotMode.Original;
             EditorUtility.SetDirty(eggSettings);
             AssetDatabase.SaveAssets();
 
@@ -216,6 +218,7 @@ namespace Toontown.Editor.Validation
             finally
             {
                 eggSettings.autoImportEnabled = originalAutoImport;
+                eggSettings.pivotMode = originalPivotMode;
                 EditorUtility.SetDirty(eggSettings);
                 AssetDatabase.SaveAssets();
             }
