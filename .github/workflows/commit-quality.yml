@@ -18,8 +18,16 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout pull request head
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout branch head
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

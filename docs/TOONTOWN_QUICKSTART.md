@@ -31,7 +31,9 @@ This is the fastest way to launch and use the Toontown tools in this repository.
 
 ## 7. Run One-Click Smoke Test
 - Menu: `Toontown/Validation/Run Sample Smoke Test`
-- This runs parse -> export -> re-parse on bundled sample and prints a report to the Unity console.
+- This runs parse -> export -> re-parse on both bundled samples and prints reports to the Unity console:
+  - dictionary-style sample (`toontown_sample_world.py`)
+  - assignment-style sample (`toontown_sample_world_assignment_style.py`)
 
 ## Common Pitfalls
 - If importer/exporter warns about active game flavor, set `Toolkit/Settings` to `Toontown`.
