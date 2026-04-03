@@ -4,6 +4,7 @@ using WorldDataImporter.Data;
 using POTCO;
 using POTCO.Editor;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine.Rendering;
 using DebugLogger = POTCO.Editor.DebugLogger;
@@ -186,6 +187,12 @@ namespace WorldDataImporter.Processors
                     {
                         currentGO.name = objectName;
                     }
+                    break;
+                case "SignFrame":
+                    TryProcessSignCardPropProperty(val, true, currentGO, useEgg, objectData, stats, settings);
+                    break;
+                case "SignImage":
+                    TryProcessSignCardPropProperty(val, false, currentGO, useEgg, objectData, stats, settings);
                     break;
                 case "Model":
                     if (ParsingUtilities.ExtractModelPath(val, out string modelPath))
@@ -755,6 +762,91 @@ namespace WorldDataImporter.Processors
 
             // Note: NPC spawning is now handled after all properties are processed
             // (moved to SceneBuildingAlgorithm when object is complete)
+        }
+
+        private static void TryProcessSignCardPropProperty(
+            string value,
+            bool isFrame,
+            GameObject currentGO,
+            bool useEgg,
+            ObjectData objectData,
+            ImportStatistics stats,
+            ImportSettings settings)
+        {
+            if (objectData == null || currentGO == null)
+            {
+                return;
+            }
+
+            string modelPath = null;
+            if (!ParsingUtilities.ExtractModelPath(value, out modelPath))
+            {
+                modelPath = ParsingUtilities.ExtractStringValue(value);
+            }
+
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return;
+            }
+
+            if (isFrame)
+            {
+                objectData.signFrameModelPath = modelPath;
+            }
+            else
+            {
+                objectData.signImageModelPath = modelPath;
+            }
+
+            if (settings != null && !settings.importSignCardProps)
+            {
+                return;
+            }
+
+            GameObject cardProp = AssetUtilities.InstantiatePrefab(modelPath, currentGO, useEgg, stats);
+            if (cardProp == null)
+            {
+                return;
+            }
+
+            string suffix = isFrame ? "sign_frame" : "sign_image";
+            cardProp.name = $"{Path.GetFileNameWithoutExtension(modelPath)}_{suffix}";
+
+            SignCardPropController controller = EnsureSignCardPropController(currentGO, objectData, settings);
+            controller.RegisterCardProp(cardProp);
+
+            DebugLogger.LogWorldImporter(
+                $"🪧 Imported {(isFrame ? "SignFrame" : "SignImage")} card prop '{modelPath}' on '{currentGO.name}'");
+        }
+
+        private static SignCardPropController EnsureSignCardPropController(
+            GameObject currentGO,
+            ObjectData objectData,
+            ImportSettings settings)
+        {
+            SignCardPropController controller = currentGO.GetComponent<SignCardPropController>();
+            bool created = false;
+            if (controller == null)
+            {
+                controller = currentGO.AddComponent<SignCardPropController>();
+                created = true;
+            }
+
+            controller.SetSourcePaths(objectData.signFrameModelPath, objectData.signImageModelPath);
+
+            if (created && settings != null)
+            {
+                SignCardPropDisplayMode defaultMode = settings.defaultHideSignCardPropsForReplacement
+                    ? SignCardPropDisplayMode.Hide2DCardPropsForReplacement
+                    : SignCardPropDisplayMode.Show2DCardProps;
+                controller.SetDisplayMode(defaultMode);
+            }
+            else
+            {
+                controller.ApplyDisplayMode();
+            }
+
+            return controller;
         }
 
         private static void ApplyDoubleSidedShadowPatch(GameObject currentGO, ImportStatistics stats)

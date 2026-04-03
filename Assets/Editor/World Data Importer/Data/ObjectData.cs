@@ -19,6 +19,8 @@ namespace WorldDataImporter.Data
         public string visSize;
         public string visZone;
         public bool applyDoubleSidedShadows;
+        public string signFrameModelPath;
+        public string signImageModelPath;
         
         // Light properties
         public string lightType;        // AMBIENT, POINT, SPOT

@@ -62,6 +62,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added `Toontown/World Data/DNA Scene Importer (MVP)` to parse `.dna` and build Unity hierarchy with model instantiation attempts.
 - Added quick-start documentation for OpenToontown resource clone + first DNA import workflow.
 - Added export/import rendering patch flow for one-sided model handling (`DoubleSidedShadows`) so imported scenes can force two-sided shadow casting and cull-off material copies when flagged.
+- Added a sign/text card prop system for world imports (`SignFrame`/`SignImage`) with per-object toggle control for 2D card props vs replacement-prep visibility.
 
 ## Phase 4 - Validation
 - Import baseline sample world.
