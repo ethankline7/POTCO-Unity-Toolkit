@@ -55,7 +55,7 @@ namespace Toontown.Editor.Validation
                 {
                     UseEggFiles = true,
                     AddObjectListInfo = true,
-                    CreatePlaceholderForMissingModel = true,
+                    CreatePlaceholderForMissingModel = false,
                     RootObjectName = "ToontownDNA_MVP_Demo"
                 };
 
@@ -74,10 +74,11 @@ namespace Toontown.Editor.Validation
 
                 bool saved = EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), SuggestedOutputScenePath);
                 long outputBytes = File.Exists(SuggestedOutputScenePath) ? new FileInfo(SuggestedOutputScenePath).Length : 0L;
+                bool hasMissingModels = result.MissingModels > 0;
 
                 var report = new StringBuilder();
                 report.AppendLine("Toontown DNA MVP Demo Import");
-                report.AppendLine("Status: PASS");
+                report.AppendLine(hasMissingModels ? "Status: FAIL" : "Status: PASS");
                 report.AppendLine($"Source DNA: {sourcePath}");
                 report.AppendLine($"Storage files: {storagePaths.Count}");
                 report.AppendLine($"Parsed objects: {document.Objects.Count}");
@@ -111,7 +112,7 @@ namespace Toontown.Editor.Validation
                 ShowDialogIfInteractive(
                     "DNA MVP Demo",
                     $"Import finished. Parsed {document.Objects.Count} objects, created {result.CreatedSceneObjects} scene objects.");
-                ExitBatch(0, exitOnFinish);
+                ExitBatch(hasMissingModels ? 1 : 0, exitOnFinish);
             }
             catch (Exception ex)
             {

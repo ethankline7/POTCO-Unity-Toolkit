@@ -22,6 +22,10 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
             @"^\s*(?<keyword>[A-Za-z_][A-Za-z0-9_]*)\s+(?<name>[A-Za-z0-9_:\.-]+)\s*\[\s*$",
             RegexOptions.Compiled);
 
+        private static readonly Regex UnnamedBlockRegex = new Regex(
+            @"^\s*(?<keyword>[A-Za-z_][A-Za-z0-9_]*)\s*\[\s*$",
+            RegexOptions.Compiled);
+
         private static readonly Regex ListPropertyRegex = new Regex(
             @"^\s*(?<key>[A-Za-z_][A-Za-z0-9_]*)\s*\[\s*(?<value>.*)\s*\]\s*$",
             RegexOptions.Compiled);
@@ -29,6 +33,14 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
         private static readonly Regex NumberRegex = new Regex(
             @"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?",
             RegexOptions.Compiled);
+
+        private static readonly HashSet<string> IgnoredUnnamedObjectKeywords = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            "text",
+            "letters",
+            "vis"
+        };
 
         public string FormatId => "toontown.dna.zone";
 
@@ -171,6 +183,13 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
                     continue;
                 }
 
+                Match unnamedBlock = UnnamedBlockRegex.Match(line);
+                if (unnamedBlock.Success)
+                {
+                    PushUnnamedObjectScope(unnamedBlock, scopeStack, targetDocument, idCounts, ref generatedIndex);
+                    continue;
+                }
+
                 if (line.EndsWith("[", StringComparison.Ordinal))
                 {
                     scopeStack.Push(new ScopeFrame { Kind = ScopeKind.Other });
@@ -240,6 +259,64 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 
             node.Properties["Keyword"] = keyword;
             node.Properties["Name"] = displayName;
+
+            if (targetDocument != null)
+            {
+                targetDocument.Objects.Add(new WorldDataObject
+                {
+                    Id = node.Id,
+                    ParentId = node.ParentId,
+                    Properties = node.Properties
+                });
+            }
+
+            scopeStack.Push(new ScopeFrame
+            {
+                Kind = ScopeKind.Object,
+                Node = node
+            });
+
+            generatedIndex++;
+        }
+
+        private static void PushUnnamedObjectScope(
+            Match unnamedMatch,
+            Stack<ScopeFrame> scopeStack,
+            WorldDataDocument targetDocument,
+            Dictionary<string, int> idCounts,
+            ref int generatedIndex)
+        {
+            string keyword = unnamedMatch.Groups["keyword"].Value.Trim();
+            if (IgnoredUnnamedObjectKeywords.Contains(keyword))
+            {
+                scopeStack.Push(new ScopeFrame { Kind = ScopeKind.Other });
+                return;
+            }
+
+            string generatedName = $"{keyword}_{generatedIndex}";
+            string baseId = BuildBaseId(keyword, generatedName);
+            string id = MakeUniqueId(baseId, idCounts);
+
+            string parentId = null;
+            foreach (ScopeFrame frame in scopeStack)
+            {
+                if (frame.Kind == ScopeKind.Object && frame.Node != null)
+                {
+                    parentId = frame.Node.Id;
+                    break;
+                }
+            }
+
+            var node = new DnaParseNode
+            {
+                Id = id,
+                ParentId = parentId,
+                Keyword = keyword,
+                DisplayName = generatedName
+            };
+
+            node.Properties["Keyword"] = keyword;
+            node.Properties["Name"] = generatedName;
 
             if (targetDocument != null)
             {

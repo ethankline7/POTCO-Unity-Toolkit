@@ -25,7 +25,7 @@ namespace Toontown.Editor
         private bool includeSuggestedStorageSet = true;
         private bool useEggFiles = true;
         private bool addObjectListInfo = true;
-        private bool createPlaceholders = true;
+        private bool createPlaceholders = false;
         private string customRootName = string.Empty;
 
         private WorldDataDocument parsedDocument;

@@ -93,7 +93,9 @@ namespace Toontown.Editor
                     }
                 }
 
-                if (!modelInstantiated && settings.CreatePlaceholderForMissingModel)
+                if (!modelInstantiated &&
+                    !string.IsNullOrWhiteSpace(modelPath) &&
+                    settings.CreatePlaceholderForMissingModel)
                 {
                     CreateMissingModelPlaceholder(go);
                     result.PlaceholdersCreated++;
