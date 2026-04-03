@@ -19,6 +19,7 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toontown/ToontownQuickStartWindow.cs',
   'Assets/Editor/Toontown/ToontownToolkitPaths.cs',
   'Assets/Editor/Toontown/Validation/ToontownSampleSmokeTestRunner.cs',
+  'Assets/Editor/Toontown/Validation/ToontownParserRegressionRunner.cs',
   'Assets/Editor/Toontown/Validation/ToontownSampleValidationWindow.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataImporter.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataExporter.cs',

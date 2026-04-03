@@ -26,8 +26,9 @@ This is the fastest way to launch and use the Toontown tools in this repository.
 
 ## 6. Validate Parsing Quality
 1. Open `Toontown/Validation/Sample Validator`.
-2. Click `Validate Bundled Sample`.
+2. Click `Validate Both Bundled Samples`.
 3. Optionally click `Export CSV Report`.
+4. Optionally click `Run Parser Regression Tests` for fixture-based parser checks.
 
 ## 7. Run One-Click Smoke Test
 - Menu: `Toontown/Validation/Run Sample Smoke Test`

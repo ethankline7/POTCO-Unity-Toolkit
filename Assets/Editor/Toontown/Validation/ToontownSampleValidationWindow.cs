@@ -16,6 +16,7 @@ namespace Toontown.Editor.Validation
         private string selectedFilePath;
         private string selectedFolderPath;
         private string statusMessage = "Select a file or folder to validate.";
+        private MessageType statusType = MessageType.Info;
         private Vector2 scroll;
         private readonly List<ValidationResult> results = new List<ValidationResult>();
 
@@ -34,7 +35,7 @@ namespace Toontown.Editor.Validation
             EditorGUILayout.Space();
             DrawActions();
             EditorGUILayout.Space();
-            EditorGUILayout.HelpBox(statusMessage, MessageType.Info);
+            EditorGUILayout.HelpBox(statusMessage, statusType);
 
             if (results.Count > 0)
             {
@@ -86,6 +87,11 @@ namespace Toontown.Editor.Validation
                 ValidateBundledSample();
             }
 
+            if (GUILayout.Button("Validate Both Bundled Samples"))
+            {
+                ValidateBothBundledSamples();
+            }
+
             EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(selectedFolderPath));
             if (GUILayout.Button("Validate Folder"))
             {
@@ -99,6 +105,23 @@ namespace Toontown.Editor.Validation
                 EditorUtility.OpenWithDefaultApp(ToontownObjectTypeMapper.ConfigFullPath);
             }
 
+            if (GUILayout.Button("Run Parser Regression Tests"))
+            {
+                bool passed = ToontownParserRegressionRunner.Run(out string regressionReport);
+                statusMessage = passed
+                    ? "Parser regression tests: PASS. Check Console for details."
+                    : "Parser regression tests: FAIL. Check Console for details.";
+                statusType = passed ? MessageType.Info : MessageType.Error;
+                if (passed)
+                {
+                    Debug.Log(regressionReport);
+                }
+                else
+                {
+                    Debug.LogError(regressionReport);
+                }
+            }
+
             EditorGUI.BeginDisabledGroup(results.Count == 0);
             if (GUILayout.Button("Export CSV Report"))
             {
@@ -110,6 +133,7 @@ namespace Toontown.Editor.Validation
             {
                 results.Clear();
                 statusMessage = "Validation results cleared.";
+                statusType = MessageType.Info;
             }
         }
 
@@ -119,11 +143,42 @@ namespace Toontown.Editor.Validation
             {
                 statusMessage =
                     $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
+                statusType = MessageType.Error;
                 return;
             }
 
             selectedFilePath = ToontownToolkitPaths.BundledSampleFullPath;
             ValidateSingleFile(selectedFilePath);
+        }
+
+        private void ValidateBothBundledSamples()
+        {
+            results.Clear();
+
+            if (!ToontownToolkitPaths.BundledSampleExists() || !ToontownToolkitPaths.BundledAssignmentSampleExists())
+            {
+                if (!ToontownToolkitPaths.BundledSampleExists())
+                {
+                    statusMessage = $"Bundled sample not found at {ToontownToolkitPaths.BundledSampleRelativePath}.";
+                }
+                else
+                {
+                    statusMessage = $"Assignment sample not found at {ToontownToolkitPaths.BundledAssignmentSampleRelativePath}.";
+                }
+                statusType = MessageType.Error;
+                return;
+            }
+
+            results.Add(ValidateFile(ToontownToolkitPaths.BundledSampleFullPath));
+            results.Add(ValidateFile(ToontownToolkitPaths.BundledAssignmentSampleFullPath));
+
+            int pass = results.Count(r => r.Quality == "PASS");
+            int warn = results.Count(r => r.Quality == "WARN");
+            int fail = results.Count(r => r.Quality == "FAIL");
+            string overall = fail > 0 ? "FAIL" : (warn > 0 ? "WARN" : "PASS");
+
+            statusMessage = $"Bundled validation: {overall} (PASS={pass}, WARN={warn}, FAIL={fail}).";
+            statusType = fail > 0 ? MessageType.Error : (warn > 0 ? MessageType.Warning : MessageType.Info);
         }
 
         private void ValidateSingleFile(string path)
@@ -132,6 +187,7 @@ namespace Toontown.Editor.Validation
             var result = ValidateFile(path);
             results.Add(result);
             statusMessage = $"Validated 1 file: {result.FileName} ({result.Quality}).";
+            statusType = result.Quality == "FAIL" ? MessageType.Error : (result.Quality == "WARN" ? MessageType.Warning : MessageType.Info);
         }
 
         private void ValidateFolder(string folderPath)
@@ -140,6 +196,7 @@ namespace Toontown.Editor.Validation
             if (!Directory.Exists(folderPath))
             {
                 statusMessage = "Selected folder does not exist.";
+                statusType = MessageType.Error;
                 return;
             }
 
@@ -148,6 +205,7 @@ namespace Toontown.Editor.Validation
             if (files.Length == 0)
             {
                 statusMessage = "No .py files found in selected folder.";
+                statusType = MessageType.Warning;
                 return;
             }
 
@@ -161,10 +219,15 @@ namespace Toontown.Editor.Validation
             {
                 statusMessage =
                     $"Validated {takeCount}/{files.Length} files (cap {MaxFolderFiles}). Refine folder scope for full coverage.";
+                statusType = MessageType.Warning;
             }
             else
             {
-                statusMessage = $"Validated {results.Count} files.";
+                int fail = results.Count(r => r.Quality == "FAIL");
+                int warn = results.Count(r => r.Quality == "WARN");
+                string overall = fail > 0 ? "FAIL" : (warn > 0 ? "WARN" : "PASS");
+                statusMessage = $"Validated {results.Count} files: {overall}.";
+                statusType = fail > 0 ? MessageType.Error : (warn > 0 ? MessageType.Warning : MessageType.Info);
             }
         }
 
@@ -334,10 +397,12 @@ namespace Toontown.Editor.Validation
                 }
 
                 statusMessage = $"Exported CSV report: {path}";
+                statusType = MessageType.Info;
             }
             catch (Exception ex)
             {
                 statusMessage = $"CSV export failed: {ex.Message}";
+                statusType = MessageType.Error;
             }
         }
 
