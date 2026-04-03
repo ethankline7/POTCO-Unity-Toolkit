@@ -11,27 +11,40 @@ function Resolve-UnityEditorPath {
   param([string]$PreferredPath)
 
   $candidates = New-Object System.Collections.Generic.List[string]
+  $seen = New-Object "System.Collections.Generic.HashSet[string]"
+
+  function Add-Candidate {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+      return
+    }
+
+    if ($seen.Add($Path)) {
+      $candidates.Add($Path)
+    }
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($PreferredPath)) {
-    $candidates.Add($PreferredPath)
+    Add-Candidate $PreferredPath
   }
 
   if (-not [string]::IsNullOrWhiteSpace($env:UNITY_EDITOR_PATH)) {
-    $candidates.Add($env:UNITY_EDITOR_PATH)
+    Add-Candidate $env:UNITY_EDITOR_PATH
   }
+
+  # Prefer project-pinned/recommended editors before trying newest installed versions.
+  Add-Candidate "C:\Program Files\Unity\Hub\Editor\6000.1.11f1\Editor\Unity.exe"
+  Add-Candidate "C:\Program Files\Unity\Hub\Editor\6000.3.12f1\Editor\Unity.exe"
+  Add-Candidate "C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe"
 
   $hubEditorsRoot = "C:\Program Files\Unity\Hub\Editor"
   if (Test-Path $hubEditorsRoot) {
     $versionDirs = Get-ChildItem -Path $hubEditorsRoot -Directory | Sort-Object Name -Descending
     foreach ($dir in $versionDirs) {
       $candidate = Join-Path $dir.FullName "Editor\Unity.exe"
-      $candidates.Add($candidate)
+      Add-Candidate $candidate
     }
   }
-
-  $candidates.Add("C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe")
-  $candidates.Add("C:\Program Files\Unity\Hub\Editor\6000.3.12f1\Editor\Unity.exe")
-  $candidates.Add("C:\Program Files\Unity\Hub\Editor\6000.1.11f1\Editor\Unity.exe")
 
   foreach ($candidate in $candidates) {
     if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
