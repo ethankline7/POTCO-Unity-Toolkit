@@ -48,7 +48,13 @@ namespace Toontown.Editor
                 statusMessage = "Opened Toontown sample validator.";
             }
 
-            if (GUILayout.Button("5) Reveal Bundled Sample File"))
+            if (GUILayout.Button("5) Open DNA Scene Importer (MVP)"))
+            {
+                ToontownDnaSceneImporterWindow.ShowWindow();
+                statusMessage = "Opened Toontown DNA scene importer.";
+            }
+
+            if (GUILayout.Button("6) Reveal Bundled Sample File"))
             {
                 if (!ToontownToolkitPaths.BundledSampleExists())
                 {
@@ -59,6 +65,20 @@ namespace Toontown.Editor
                 {
                     EditorUtility.RevealInFinder(ToontownToolkitPaths.BundledSampleFullPath);
                     statusMessage = "Opened file explorer at bundled sample location.";
+                }
+            }
+
+            if (GUILayout.Button("7) Reveal Suggested OpenToontown DNA Sample"))
+            {
+                if (!ToontownToolkitPaths.SuggestedDnaSampleExists())
+                {
+                    statusMessage =
+                        $"Suggested DNA sample not found at {ToontownToolkitPaths.SuggestedDnaSampleRelativePath}.";
+                }
+                else
+                {
+                    EditorUtility.RevealInFinder(ToontownToolkitPaths.SuggestedDnaSampleFullPath);
+                    statusMessage = "Opened file explorer at suggested DNA sample location.";
                 }
             }
 

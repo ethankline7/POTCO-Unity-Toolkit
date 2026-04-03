@@ -32,6 +32,7 @@ The goal is to support community-made worlds and tooling while keeping migration
 - ✅ `Toontown/Quick Start` launcher
 - ✅ Bundled sample world for first-run validation
 - ✅ Toontown importer/exporter parse + round-trip scaffold
+- ✅ `Toontown/World Data/DNA Scene Importer (MVP)` for `.dna -> Unity` hierarchy import
 - ✅ `Toontown/Validation/Run Sample Smoke Test`
 - ✅ CSV validation report export for mapping/tuning evidence
 
@@ -61,6 +62,8 @@ Open the project in Unity 6000.1.11f1, then access tools via:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
 - Optional local headless smoke check:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-smoke.ps1`
+- Optional Toontown DNA resource setup:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1`
 
 ---
 
@@ -128,6 +131,7 @@ Visual asset management and level creation tool:
 3. Open importer/exporter from quick-start buttons
 4. Use bundled sample actions to run parse + export loop
 5. Run `Toontown → Validation → Run Sample Smoke Test`
+6. Open `Toontown → World Data → DNA Scene Importer (MVP)` for OpenToontown `.dna` scene import
 
 
 ### Generate a Cave
