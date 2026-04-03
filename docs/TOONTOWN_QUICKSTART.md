@@ -50,6 +50,8 @@ This is the fastest way to launch and use the Toontown tools in this repository.
 ## 9. DNA -> Unity Scene Import (MVP)
 1. Ensure OpenToontown resources are cloned (from repo root):
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1`
+  - For full resources checkout (all phases/assets):
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1 -FullCheckout`
   - or manual equivalent:
   - `git clone --filter=blob:none --sparse https://github.com/open-toontown/resources.git External/open-toontown-resources`
   - `git -C External/open-toontown-resources sparse-checkout set phase_3 phase_3.5 phase_4 phase_5 models`

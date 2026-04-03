@@ -408,6 +408,11 @@ namespace Toontown.Editor
                 EditorGUILayout.LabelField("Instantiated Models", lastImportResult.InstantiatedModels.ToString());
                 EditorGUILayout.LabelField("Missing Models", lastImportResult.MissingModels.ToString());
                 EditorGUILayout.LabelField("Placeholders", lastImportResult.PlaceholdersCreated.ToString());
+                EditorGUILayout.LabelField("Resolved Node Isolations", lastImportResult.ResolvedNodeIsolationsSucceeded.ToString());
+                if (lastImportResult.ResolvedNodeIsolationsFailed > 0)
+                {
+                    EditorGUILayout.LabelField("Resolved Node Isolation Failures", lastImportResult.ResolvedNodeIsolationsFailed.ToString());
+                }
                 EditorGUILayout.EndVertical();
             }
         }

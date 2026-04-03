@@ -88,10 +88,20 @@ namespace Toontown.Editor.Validation
                 report.AppendLine($"Instantiated models: {result.InstantiatedModels}");
                 report.AppendLine($"Missing models: {result.MissingModels}");
                 report.AppendLine($"Placeholders created: {result.PlaceholdersCreated}");
+                report.AppendLine($"Resolved-node isolate success: {result.ResolvedNodeIsolationsSucceeded}");
+                report.AppendLine($"Resolved-node isolate failed: {result.ResolvedNodeIsolationsFailed}");
                 report.AppendLine($"Forced EGG imports: {forcedEggImports}");
                 report.AppendLine($"Scene saved: {saved}");
                 report.AppendLine($"Output scene: {SuggestedOutputScenePath}");
                 report.AppendLine($"Output scene size: {outputBytes} bytes");
+                if (result.FailedResolvedNodeEntries.Count > 0)
+                {
+                    report.AppendLine("Resolved-node failures:");
+                    foreach (string failure in result.FailedResolvedNodeEntries.Take(25))
+                    {
+                        report.AppendLine($"- {failure}");
+                    }
+                }
                 if (result.MissingModelPaths.Count > 0)
                 {
                     report.AppendLine("Missing model keys:");
