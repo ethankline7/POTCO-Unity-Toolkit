@@ -21,8 +21,8 @@ jobs:
 
       - name: Run primary checks
         shell: pwsh
-        run: ./scripts/primary-checks.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/primary-checks.ps1
 
       - name: Run Toontown sample sanity
         shell: pwsh
-        run: ./scripts/toontown-sample-sanity.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/toontown-sample-sanity.ps1
