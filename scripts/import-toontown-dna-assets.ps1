@@ -12,7 +12,12 @@ param(
   ),
   [string]$DestinationResourcesRoot = "Assets/Resources",
   [switch]$CopyPhaseMaps = $true,
-  [switch]$Force
+  [switch]$Force,
+  [ValidateSet("Bam", "Egg")]
+  [string]$SourcePreference = "Bam",
+  [bool]$WriteManifest = $true,
+  [string]$ManifestPath = "Assets/Editor/Toontown/Samples/Generated/toontown_dna_asset_manifest.json",
+  [switch]$FailOnTexturelessEgg
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +27,14 @@ function Ensure-Path {
   if (-not (Test-Path $Path)) {
     New-Item -ItemType Directory -Path $Path -Force | Out-Null
   }
+}
+
+function Convert-ToPrcPath {
+  param([string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return ""
+  }
+  return ([System.IO.Path]::GetFullPath($Path)).Replace('\', '/')
 }
 
 function Get-QuotedTokens {
@@ -35,7 +48,38 @@ function Get-QuotedTokens {
   return $tokens
 }
 
+function Get-EggTextureStats {
+  param([string]$EggPath)
+
+  $stats = @{
+    TextureDefinitions = 0
+    TextureReferences = 0
+    MapPhases = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
+  }
+
+  if (-not (Test-Path $EggPath)) {
+    return $stats
+  }
+
+  Get-Content -Path $EggPath | ForEach-Object {
+    $line = $_.Trim()
+    if ($line.StartsWith("<Texture>")) {
+      $stats.TextureDefinitions++
+    }
+    elseif ($line.StartsWith("<TRef>")) {
+      $stats.TextureReferences++
+    }
+
+    if ($line -match '"(phase_[^/"]+)/maps/[^"]+"') {
+      [void]$stats.MapPhases.Add($matches[1])
+    }
+  }
+
+  return $stats
+}
+
 Write-Host "=== Import Toontown DNA Assets ===" -ForegroundColor Cyan
+Write-Host ("Source preference: {0} (BAM keeps more original material/texture references)" -f $SourcePreference) -ForegroundColor Yellow
 
 if (-not (Test-Path $ExternalRoot)) {
   throw "External root not found: $ExternalRoot"
@@ -49,6 +93,22 @@ $bam2eggCmd = Get-Command bam2egg -ErrorAction SilentlyContinue
 if (-not $bam2eggCmd) {
   throw "bam2egg was not found in PATH. Install Panda3D tools or add bam2egg to PATH."
 }
+
+# Ensure Panda tools can resolve referenced textures when converting BAM -> EGG.
+# Without this model-path setup, bam2egg strips texture refs and models import white in Unity.
+$tempPrcDir = Join-Path ([System.IO.Path]::GetTempPath()) ("toontown-bam2egg-prc-" + [guid]::NewGuid().ToString("N"))
+Ensure-Path $tempPrcDir
+$prcPath = Join-Path $tempPrcDir "Config.prc"
+$externalRootPrcPath = Convert-ToPrcPath -Path $ExternalRoot
+$resourcesRootPrcPath = Convert-ToPrcPath -Path $DestinationResourcesRoot
+$prcContent = @(
+  "model-path $externalRootPrcPath"
+  "model-path $resourcesRootPrcPath"
+) -join [Environment]::NewLine
+Set-Content -Path $prcPath -Value $prcContent -NoNewline
+
+$originalPandaPrcDir = $env:PANDA_PRC_DIR
+$env:PANDA_PRC_DIR = $tempPrcDir
 
 $codeRegex = [regex]'^\s*code\s*\[\s*"([^"]+)"'
 $modelRegex = [regex]'^\s*([A-Za-z_][A-Za-z0-9_]*_model|model)\s+"([^"]+)"\s*\['
@@ -115,56 +175,112 @@ Write-Host ("Mapped model paths: {0}" -f $modelPaths.Count) -ForegroundColor Yel
 
 $converted = 0
 $copiedEgg = 0
+$fallbackEggAfterBamFailure = 0
 $missing = New-Object System.Collections.Generic.List[string]
 $alreadyPresent = 0
+$texturelessEggs = New-Object System.Collections.Generic.List[string]
+$manifestRows = New-Object System.Collections.Generic.List[object]
+$phases = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
 
-foreach ($modelPath in ($modelPaths | Sort-Object)) {
-  if ([string]::IsNullOrWhiteSpace($modelPath)) {
-    continue
-  }
+try {
+  foreach ($modelPath in ($modelPaths | Sort-Object)) {
+    if ([string]::IsNullOrWhiteSpace($modelPath)) {
+      continue
+    }
 
-  $normalizedModelPath = $modelPath.Replace('\', '/').TrimStart('/')
-  $sourceEgg = Join-Path $ExternalRoot ($normalizedModelPath + ".egg")
-  $sourceBam = Join-Path $ExternalRoot ($normalizedModelPath + ".bam")
-  $targetEgg = Join-Path $DestinationResourcesRoot ($normalizedModelPath + ".egg")
+    $normalizedModelPath = $modelPath.Replace('\', '/').TrimStart('/')
+    $sourceEgg = Join-Path $ExternalRoot ($normalizedModelPath + ".egg")
+    $sourceBam = Join-Path $ExternalRoot ($normalizedModelPath + ".bam")
+    $targetEgg = Join-Path $DestinationResourcesRoot ($normalizedModelPath + ".egg")
 
-  Ensure-Path (Split-Path -Parent $targetEgg)
+    $slashIdx = $normalizedModelPath.IndexOf('/')
+    if ($slashIdx -gt 0) {
+      $firstSegment = $normalizedModelPath.Substring(0, $slashIdx)
+      if ($firstSegment -like "phase_*") {
+        [void]$phases.Add($firstSegment)
+      }
+    }
 
-  if ((Test-Path $targetEgg) -and -not $Force.IsPresent) {
-    $alreadyPresent++
-    continue
-  }
+    Ensure-Path (Split-Path -Parent $targetEgg)
 
-  if (Test-Path $sourceEgg) {
-    Copy-Item -LiteralPath $sourceEgg -Destination $targetEgg -Force
-    $copiedEgg++
-    continue
-  }
+    if ((Test-Path $targetEgg) -and -not $Force.IsPresent) {
+      $alreadyPresent++
+      continue
+    }
 
-  if (Test-Path $sourceBam) {
-    & bam2egg $sourceBam $targetEgg
-    if ($LASTEXITCODE -ne 0) {
-      $missing.Add("$normalizedModelPath (bam2egg failed)")
+    $hasSourceEgg = Test-Path $sourceEgg
+    $hasSourceBam = Test-Path $sourceBam
+    $selectedSource = $null
+    if ($SourcePreference -eq "Bam") {
+      if ($hasSourceBam) {
+        $selectedSource = "bam"
+      }
+      elseif ($hasSourceEgg) {
+        $selectedSource = "egg"
+      }
     }
     else {
-      $converted++
+      if ($hasSourceEgg) {
+        $selectedSource = "egg"
+      }
+      elseif ($hasSourceBam) {
+        $selectedSource = "bam"
+      }
     }
-    continue
-  }
 
-  $missing.Add("$normalizedModelPath (no .egg or .bam)")
+    if ($selectedSource -eq "bam") {
+      & bam2egg -o $targetEgg $sourceBam
+      if ($LASTEXITCODE -ne 0) {
+        if ($hasSourceEgg) {
+          Copy-Item -LiteralPath $sourceEgg -Destination $targetEgg -Force
+          $copiedEgg++
+          $fallbackEggAfterBamFailure++
+        }
+        else {
+          $missing.Add("$normalizedModelPath (bam2egg failed)")
+          continue
+        }
+      }
+      else {
+        $converted++
+      }
+    }
+    elseif ($selectedSource -eq "egg") {
+      Copy-Item -LiteralPath $sourceEgg -Destination $targetEgg -Force
+      $copiedEgg++
+    }
+    else {
+      $missing.Add("$normalizedModelPath (no .egg or .bam)")
+      continue
+    }
+
+    $textureStats = Get-EggTextureStats -EggPath $targetEgg
+    foreach ($texturePhase in $textureStats.MapPhases) {
+      [void]$phases.Add($texturePhase)
+    }
+
+    if ($textureStats.TextureDefinitions -eq 0) {
+      $texturelessEggs.Add($normalizedModelPath)
+    }
+
+    $manifestRows.Add([PSCustomObject]@{
+      modelPath = $normalizedModelPath
+      source = $selectedSource
+      outputEgg = $targetEgg.Replace('\', '/')
+      textureDefinitions = $textureStats.TextureDefinitions
+      textureReferences = $textureStats.TextureReferences
+    })
+  }
 }
-
-$phases = New-Object System.Collections.Generic.HashSet[string]([System.StringComparer]::OrdinalIgnoreCase)
-foreach ($modelPath in $modelPaths) {
-  $normalized = $modelPath.Replace('\', '/').TrimStart('/')
-  $slashIdx = $normalized.IndexOf('/')
-  if ($slashIdx -gt 0) {
-    $first = $normalized.Substring(0, $slashIdx)
-    if ($first -like "phase_*") {
-      [void]$phases.Add($first)
-    }
+finally {
+  if ($null -eq $originalPandaPrcDir) {
+    Remove-Item Env:PANDA_PRC_DIR -ErrorAction SilentlyContinue
   }
+  else {
+    $env:PANDA_PRC_DIR = $originalPandaPrcDir
+  }
+
+  Remove-Item -LiteralPath $tempPrcDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($CopyPhaseMaps.IsPresent) {
@@ -184,12 +300,45 @@ if ($CopyPhaseMaps.IsPresent) {
 Write-Host "----------------------------------------" -ForegroundColor DarkGray
 Write-Host ("Converted .bam -> .egg: {0}" -f $converted) -ForegroundColor Green
 Write-Host ("Copied existing .egg:   {0}" -f $copiedEgg) -ForegroundColor Green
+Write-Host ("Egg fallback after bam: {0}" -f $fallbackEggAfterBamFailure) -ForegroundColor Green
 Write-Host ("Already present:        {0}" -f $alreadyPresent) -ForegroundColor Green
 Write-Host ("Missing/failed:         {0}" -f $missing.Count) -ForegroundColor Yellow
+Write-Host ("Textureless .egg files: {0}" -f $texturelessEggs.Count) -ForegroundColor Yellow
 
 if ($missing.Count -gt 0) {
   Write-Host "First missing/failed entries:" -ForegroundColor Yellow
   $missing | Select-Object -First 20 | ForEach-Object { Write-Host ("- " + $_) -ForegroundColor Yellow }
+}
+
+if ($texturelessEggs.Count -gt 0) {
+  Write-Host "First textureless .egg entries:" -ForegroundColor Yellow
+  $texturelessEggs | Select-Object -First 20 | ForEach-Object { Write-Host ("- " + $_) -ForegroundColor Yellow }
+}
+
+if ($WriteManifest) {
+  $manifestDirectory = Split-Path -Parent $ManifestPath
+  if (-not [string]::IsNullOrWhiteSpace($manifestDirectory)) {
+    Ensure-Path $manifestDirectory
+  }
+
+  $manifest = [PSCustomObject]@{
+    generatedAtUtc = [DateTime]::UtcNow.ToString("o")
+    sourcePreference = $SourcePreference
+    convertedCount = $converted
+    copiedEggCount = $copiedEgg
+    fallbackEggAfterBamFailureCount = $fallbackEggAfterBamFailure
+    alreadyPresentCount = $alreadyPresent
+    missingCount = $missing.Count
+    texturelessEggCount = $texturelessEggs.Count
+    entries = $manifestRows
+  }
+
+  $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $ManifestPath
+  Write-Host ("Wrote manifest: {0}" -f $ManifestPath) -ForegroundColor Green
+}
+
+if ($FailOnTexturelessEgg.IsPresent -and $texturelessEggs.Count -gt 0) {
+  throw ("Converted/copied files without <Texture> blocks: {0}" -f $texturelessEggs.Count)
 }
 
 Write-Host "Toontown DNA asset import prep complete." -ForegroundColor Cyan

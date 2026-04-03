@@ -49,15 +49,22 @@ This is the fastest way to launch and use the Toontown tools in this repository.
 
 ## 9. DNA -> Unity Scene Import (MVP)
 1. Ensure OpenToontown resources are cloned (from repo root):
-   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1`
-   - or manual equivalent:
-   - `git clone --filter=blob:none --sparse https://github.com/open-toontown/resources.git External/open-toontown-resources`
-   - `git -C External/open-toontown-resources sparse-checkout set phase_3 phase_3.5 phase_4 phase_5 models`
-2. Open `Toontown/World Data/DNA Scene Importer (MVP)`.
-3. Click `Use Suggested OpenToontown Sample` (or select your own `.dna` file).
-4. Keep `Include suggested OpenToontown storage files` enabled.
-5. Click `Parse DNA Preview`, then `Import Parsed DNA Into Scene`.
-6. Inspect the generated root object `ToontownDNA_*` in the hierarchy.
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1`
+  - or manual equivalent:
+  - `git clone --filter=blob:none --sparse https://github.com/open-toontown/resources.git External/open-toontown-resources`
+  - `git -C External/open-toontown-resources sparse-checkout set phase_3 phase_3.5 phase_4 phase_5 models`
+2. Build Unity-ready DNA model assets from OpenToontown (BAM-first, retains texture refs):
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/import-toontown-dna-assets.ps1 -Force`
+  - Default behavior prefers `.bam` over `.egg` when both exist so converted `.egg` files keep original texture/material references.
+  - The script writes a conversion manifest to:
+    - `Assets/Editor/Toontown/Samples/Generated/toontown_dna_asset_manifest.json`
+  - Optional strict mode if you want the command to fail when any output has no `<Texture>` block:
+    - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/import-toontown-dna-assets.ps1 -Force -FailOnTexturelessEgg`
+3. Open `Toontown/World Data/DNA Scene Importer (MVP)`.
+4. Click `Use Suggested OpenToontown Sample` (or select your own `.dna` file).
+5. Keep `Include suggested OpenToontown storage files` enabled.
+6. Click `Parse DNA Preview`, then `Import Parsed DNA Into Scene`.
+7. Inspect the generated root object `ToontownDNA_*` in the hierarchy.
 
 Notes:
 - Best first test file: `phase_4/dna/toontown_central_sz.dna`.
