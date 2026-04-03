@@ -195,6 +195,10 @@ public class MaterialHandler
 
         // Always ensure Default-Material exists
         var defaultMaterial = CreateVertexColorMaterial("Default-Material");
+        if (defaultMaterial.HasProperty("_MainTex"))
+        {
+            defaultMaterial.SetTexture("_MainTex", Texture2D.whiteTexture);
+        }
         materials.Add(defaultMaterial);
         createdMaterialNames.Add("Default-Material");
 
@@ -745,7 +749,7 @@ public class MaterialHandler
     public Dictionary<string, Material> CreateMaterialDictionary(List<Material> materials)
     {
         // Pre-size dictionary to avoid resizing
-        var materialDict = new Dictionary<string, Material>(materials.Count);
+        var materialDict = new Dictionary<string, Material>(materials.Count, System.StringComparer.OrdinalIgnoreCase);
         
         foreach (var mat in materials)
         {
