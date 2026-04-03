@@ -435,6 +435,20 @@ namespace Toontown.Editor
                 {
                     EditorGUILayout.LabelField("Resolved Node Isolation Failures", lastImportResult.ResolvedNodeIsolationsFailed.ToString());
                 }
+
+                if (lastImportResult.DoorWindowParentAnchorsAttempted > 0)
+                {
+                    EditorGUILayout.LabelField(
+                        "Door/Window Parent Anchors",
+                        $"{lastImportResult.DoorWindowParentAnchorsApplied}/{lastImportResult.DoorWindowParentAnchorsAttempted}");
+                }
+
+                if (lastImportResult.DoorWindowParentAnchorsMissed > 0)
+                {
+                    EditorGUILayout.LabelField(
+                        "Door/Window Anchor Misses",
+                        lastImportResult.DoorWindowParentAnchorsMissed.ToString());
+                }
                 EditorGUILayout.EndVertical();
             }
         }

@@ -31,6 +31,21 @@ namespace Toontown.Editor
         };
 
         private static readonly string[] DirectionalSuffixes = { "ur", "ul", "dr", "dl" };
+        private static readonly string[] DoorAnchorFallbackNodeNames =
+        {
+            "door_origin",
+            "door_front",
+            "door_locator",
+            "door"
+        };
+
+        private static readonly string[] WindowAnchorFallbackNodeNames =
+        {
+            "window_origin",
+            "window_locator",
+            "window"
+        };
+
         private static readonly HashSet<string> NodeNoiseTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "prop",
@@ -77,6 +92,8 @@ namespace Toontown.Editor
                 RootObjectName = root.name,
                 TotalDocumentObjects = document.Objects.Count
             };
+            var instantiatedModelRootsByObjectId =
+                new Dictionary<string, Transform>(StringComparer.OrdinalIgnoreCase);
 
             foreach (WorldDataObject obj in document.Objects)
             {
@@ -91,6 +108,33 @@ namespace Toontown.Editor
                 go.transform.SetParent(parent.transform, false);
                 ApplyTransform(go.transform, obj.Properties);
                 string modelPath = ResolveModelPath(obj.Properties);
+                bool shouldAttemptParentAnchor =
+                    ShouldAttemptParentAnchorPlacement(obj.Properties, modelPath) &&
+                    !HasExplicitTransformProperties(obj.Properties);
+
+                if (shouldAttemptParentAnchor)
+                {
+                    result.DoorWindowParentAnchorsAttempted++;
+                    if (TryApplyParentAnchorPlacement(
+                            go.transform,
+                            obj,
+                            instantiatedModelRootsByObjectId,
+                            modelPath,
+                            out string anchorDetails))
+                    {
+                        result.DoorWindowParentAnchorsApplied++;
+                    }
+                    else
+                    {
+                        result.DoorWindowParentAnchorsMissed++;
+                        if (!string.IsNullOrWhiteSpace(anchorDetails) &&
+                            result.DoorWindowParentAnchorWarnings.Count < 100)
+                        {
+                            result.DoorWindowParentAnchorWarnings.Add($"{obj.Id} :: {anchorDetails}");
+                        }
+                    }
+                }
+
                 bool modelInstantiated = false;
                 if (!string.IsNullOrWhiteSpace(modelPath))
                 {
@@ -131,6 +175,7 @@ namespace Toontown.Editor
 
                         result.InstantiatedModels++;
                         modelInstantiated = true;
+                        instantiatedModelRootsByObjectId[obj.Id] = modelInstance.transform;
                     }
                     else
                     {
@@ -357,6 +402,162 @@ namespace Toontown.Editor
             {
                 target.localScale = ConvertPandaVectorToUnity(scale);
             }
+        }
+
+        private static bool ShouldAttemptParentAnchorPlacement(
+            Dictionary<string, string> properties,
+            string modelPath)
+        {
+            if (properties != null &&
+                properties.TryGetValue("Keyword", out string keyword) &&
+                !string.IsNullOrWhiteSpace(keyword))
+            {
+                if (string.Equals(keyword, "door", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(keyword, "windows", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(keyword, "window", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return false;
+            }
+
+            string normalized = modelPath.Replace('\\', '/');
+            return normalized.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool HasExplicitTransformProperties(Dictionary<string, string> properties)
+        {
+            if (properties == null)
+            {
+                return false;
+            }
+
+            return properties.ContainsKey("Pos") ||
+                   properties.ContainsKey("Hpr") ||
+                   properties.ContainsKey("Scale");
+        }
+
+        private static bool TryApplyParentAnchorPlacement(
+            Transform targetObjectTransform,
+            WorldDataObject sourceObject,
+            Dictionary<string, Transform> instantiatedModelRootsByObjectId,
+            string modelPath,
+            out string anchorDetails)
+        {
+            anchorDetails = "no anchor details";
+            if (targetObjectTransform == null || sourceObject == null)
+            {
+                anchorDetails = "missing target transform or source object";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceObject.ParentId))
+            {
+                anchorDetails = "no parent id";
+                return false;
+            }
+
+            if (instantiatedModelRootsByObjectId == null ||
+                !instantiatedModelRootsByObjectId.TryGetValue(sourceObject.ParentId, out Transform parentModelRoot) ||
+                parentModelRoot == null)
+            {
+                anchorDetails = $"parent model root not found for '{sourceObject.ParentId}'";
+                return false;
+            }
+
+            List<string> candidates = BuildParentAnchorCandidates(sourceObject.Properties, modelPath);
+            if (candidates.Count == 0)
+            {
+                anchorDetails = "no parent anchor candidates";
+                return false;
+            }
+
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                ResolvedNodeSearchResult search = FindResolvedNodeTransform(parentModelRoot, candidate, false);
+                if (search.Match == null)
+                {
+                    continue;
+                }
+
+                targetObjectTransform.SetPositionAndRotation(search.Match.position, search.Match.rotation);
+                anchorDetails = $"anchored to parent node '{search.Match.name}' via {search.Strategy}";
+                return true;
+            }
+
+            string candidateSummary = string.Join(", ", candidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8));
+            anchorDetails = $"failed parent anchor lookup; tried: {candidateSummary}";
+            return false;
+        }
+
+        private static List<string> BuildParentAnchorCandidates(
+            Dictionary<string, string> properties,
+            string modelPath)
+        {
+            var candidates = new List<string>();
+            if (properties != null &&
+                properties.TryGetValue("ResolvedNode", out string resolvedNode) &&
+                !string.IsNullOrWhiteSpace(resolvedNode))
+            {
+                candidates.Add(resolvedNode);
+
+                string normalizedNode = NormalizeNodeName(resolvedNode);
+                string strippedNode = StripDirectionalSuffix(normalizedNode);
+                if (!string.IsNullOrWhiteSpace(strippedNode))
+                {
+                    candidates.Add(strippedNode);
+                }
+
+                string directionalSuffix = GetDirectionalSuffix(normalizedNode);
+                if (!string.IsNullOrWhiteSpace(directionalSuffix) &&
+                    !string.IsNullOrWhiteSpace(strippedNode))
+                {
+                    candidates.Add($"{strippedNode}_{directionalSuffix}");
+                }
+            }
+
+            bool isDoor = false;
+            bool isWindow = false;
+            if (properties != null &&
+                properties.TryGetValue("Keyword", out string keyword) &&
+                !string.IsNullOrWhiteSpace(keyword))
+            {
+                isDoor = string.Equals(keyword, "door", StringComparison.OrdinalIgnoreCase);
+                isWindow = string.Equals(keyword, "window", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(keyword, "windows", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (!isDoor && !isWindow && !string.IsNullOrWhiteSpace(modelPath))
+            {
+                string normalizedModel = modelPath.Replace('\\', '/');
+                isDoor = normalizedModel.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0;
+                isWindow = normalizedModel.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            if (isDoor)
+            {
+                candidates.AddRange(DoorAnchorFallbackNodeNames);
+            }
+
+            if (isWindow)
+            {
+                candidates.AddRange(WindowAnchorFallbackNodeNames);
+            }
+
+            return candidates
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private static bool TryIsolateResolvedNodeInstance(
@@ -912,7 +1113,11 @@ namespace Toontown.Editor
         public int FakeShadowRenderersDisabled;
         public int ResolvedNodeIsolationsSucceeded;
         public int ResolvedNodeIsolationsFailed;
+        public int DoorWindowParentAnchorsAttempted;
+        public int DoorWindowParentAnchorsApplied;
+        public int DoorWindowParentAnchorsMissed;
         public List<string> MissingModelPaths = new List<string>();
         public List<string> FailedResolvedNodeEntries = new List<string>();
+        public List<string> DoorWindowParentAnchorWarnings = new List<string>();
     }
 }
