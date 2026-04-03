@@ -28,6 +28,7 @@
   - `PR Readiness` for pull-request base diff sanity and release-style checks.
   - `Manual Readiness` for operator-triggered release sanity checks.
   - `Toontown Smoke Gate` for Toontown-focused pull requests and manual smoke runs.
+  - `Toontown DNA MVP Manual` for on-demand DNA workflow validation (resource sparse clone + sample presence).
   - `Weekly Health` for scheduled baseline checks on the default branch.
   - `Sun Action` for Sunday scheduled baseline checks (with manual dispatch support).
 - Primary checks include a guard that Toontown reader/writer are not reverted to stub-only implementations.
@@ -43,6 +44,7 @@
 | `PR Readiness` | Pull request, manual dispatch | Primary checks plus branch visibility, recent commit trail, and diff summary against PR base |
 | `Manual Readiness` | Manual dispatch | Operator-controlled readiness pass against a chosen base reference |
 | `Toontown Smoke Gate` | Pull request (Toontown paths), manual dispatch | Toontown quick-start safety checks (`primary-checks` + bundled sample sanity) |
+| `Toontown DNA MVP Manual` | Manual dispatch | Primary checks plus OpenToontown sparse resource setup and DNA sample availability |
 | `Weekly Health` | Weekly schedule, manual dispatch | Recurring baseline `primary-checks` run for drift detection |
 | `Sun Action` | Weekly Sunday schedule, manual dispatch | Weekend baseline `primary-checks` run for fast health visibility |
 

@@ -1,0 +1,29 @@
+name: Toontown DNA MVP Manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dna_mvp_check:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run primary checks
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/primary-checks.ps1
+
+      - name: Setup Toontown resources (sparse)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/setup-toontown-resources.ps1
+
+      - name: Verify MVP sample exists
+        shell: pwsh
+        run: |
+          $sample = "External/open-toontown-resources/phase_4/dna/toontown_central_sz.dna"
+          if (-not (Test-Path $sample)) {
+            throw "Expected DNA sample not found: $sample"
+          }
+          Write-Host "Verified DNA sample: $sample"

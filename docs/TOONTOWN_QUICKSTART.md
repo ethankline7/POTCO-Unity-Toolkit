@@ -47,7 +47,24 @@ This is the fastest way to launch and use the Toontown tools in this repository.
   - `0` = pass
   - non-zero = smoke failure (tail of log is printed)
 
+## 9. DNA -> Unity Scene Import (MVP)
+1. Ensure OpenToontown resources are cloned (from repo root):
+   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup-toontown-resources.ps1`
+   - or manual equivalent:
+   - `git clone --filter=blob:none --sparse https://github.com/open-toontown/resources.git External/open-toontown-resources`
+   - `git -C External/open-toontown-resources sparse-checkout set phase_3 phase_3.5 phase_4 phase_5 models`
+2. Open `Toontown/World Data/DNA Scene Importer (MVP)`.
+3. Click `Use Suggested OpenToontown Sample` (or select your own `.dna` file).
+4. Keep `Include suggested OpenToontown storage files` enabled.
+5. Click `Parse DNA Preview`, then `Import Parsed DNA Into Scene`.
+6. Inspect the generated root object `ToontownDNA_*` in the hierarchy.
+
+Notes:
+- Best first test file: `phase_4/dna/toontown_central_sz.dna`.
+- Some street-specific `.dna` files contain routing/suit point records and may import little or no scene geometry in this MVP phase.
+
 ## Common Pitfalls
 - If importer/exporter warns about active game flavor, set `Toolkit/Settings` to `Toontown`.
 - If parse count is zero, verify the source file has an `objectStruct['Objects']` dictionary.
+- For DNA imports, include one or more `storage*.dna` files so `code` entries can resolve to model paths.
 - Keep edits scoped and run `scripts/primary-checks.ps1` before committing.

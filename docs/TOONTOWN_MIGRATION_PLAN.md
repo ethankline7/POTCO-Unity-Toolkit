@@ -58,6 +58,9 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Expanded reader parsing support for assignment-style `objectStruct[...]` path assignments and quoted-key variants.
 - Added parser regression runner (`Toontown/Validation/Run Parser Regression Tests`) with fixture assertions for dictionary and assignment sample formats.
 - Expanded validator UX with `Validate Both Bundled Samples` and clearer overall PASS/WARN/FAIL status messaging.
+- Added `.dna` document reader MVP (`toontown.dna.zone`) with storage mapping support from `storage*.dna` files.
+- Added `Toontown/World Data/DNA Scene Importer (MVP)` to parse `.dna` and build Unity hierarchy with model instantiation attempts.
+- Added quick-start documentation for OpenToontown resource clone + first DNA import workflow.
 
 ## Phase 4 - Validation
 - Import baseline sample world.
