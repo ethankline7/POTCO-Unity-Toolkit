@@ -36,6 +36,17 @@ This is the fastest way to launch and use the Toontown tools in this repository.
   - dictionary-style sample (`toontown_sample_world.py`)
   - assignment-style sample (`toontown_sample_world_assignment_style.py`)
 
+## 8. Run Smoke Test From Terminal (Batch Mode)
+- From the repo root:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-smoke.ps1`
+- Optional explicit Unity path:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-smoke.ps1 -UnityExePath "C:\Program Files\Unity\Hub\Editor\6000.3.12f1\Editor\Unity.exe"`
+- Optional custom log path:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-smoke.ps1 -LogPath "Temp/toontown-smoke-custom.log"`
+- Exit codes:
+  - `0` = pass
+  - non-zero = smoke failure (tail of log is printed)
+
 ## Common Pitfalls
 - If importer/exporter warns about active game flavor, set `Toolkit/Settings` to `Toontown`.
 - If parse count is zero, verify the source file has an `objectStruct['Objects']` dictionary.

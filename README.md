@@ -59,6 +59,8 @@ Open the project in Unity 6000.1.11f1, then access tools via:
 - Toontown quick start (first runnable flow): [`docs/TOONTOWN_QUICKSTART.md`](docs/TOONTOWN_QUICKSTART.md)
 - Required baseline check before commit:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
+- Optional local headless smoke check:
+  - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run-toontown-smoke.ps1`
 
 ---
 

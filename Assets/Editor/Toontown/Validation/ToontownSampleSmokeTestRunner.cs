@@ -28,6 +28,7 @@ namespace Toontown.Editor.Validation
                 string missing = missingBuilder.ToString().Trim();
                 Debug.LogError(missing);
                 ShowDialogIfInteractive("Toontown Smoke Test", missing);
+                ExitBatch(1);
                 return;
             }
 
@@ -44,6 +45,7 @@ namespace Toontown.Editor.Validation
                 sampleLabel: "Bundled Assignment Sample");
 
             string finalStatus = (firstPass && secondPass) ? "PASS" : "WARN";
+            ExitBatch(firstPass && secondPass ? 0 : 1);
             ShowDialogIfInteractive("Toontown Smoke Test", $"Completed with status: {finalStatus}");
         }
 
@@ -104,6 +106,16 @@ namespace Toontown.Editor.Validation
             }
 
             EditorUtility.DisplayDialog(title, message, "OK");
+        }
+
+        private static void ExitBatch(int exitCode)
+        {
+            if (!Application.isBatchMode)
+            {
+                return;
+            }
+
+            EditorApplication.Exit(exitCode);
         }
     }
 }
