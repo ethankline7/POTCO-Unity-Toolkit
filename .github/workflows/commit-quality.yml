@@ -33,7 +33,8 @@ jobs:
 
       - name: Fetch default base
         shell: pwsh
-        run: git fetch origin main --depth=1
+        run: |
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
 
       - name: Commit check for pull request
         if: ${{ github.event_name == 'pull_request' }}

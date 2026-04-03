@@ -10,8 +10,15 @@ Write-Host ("Base reference: {0}" -f $BaseRef) -ForegroundColor Yellow
 $pattern = '^(feat|fix|chore|docs|refactor|test|ci)(\([a-z0-9_\/-]+\))?: [A-Za-z0-9].+'
 
 git rev-parse --verify $BaseRef *> $null
+if ($LASTEXITCODE -ne 0 -and $BaseRef -match '^origin\/([A-Za-z0-9._\/-]+)$') {
+  $branchName = $Matches[1]
+  Write-Host ("Base ref missing locally. Fetching origin/{0}..." -f $branchName) -ForegroundColor Yellow
+  git fetch --no-tags --prune origin ("+refs/heads/{0}:refs/remotes/origin/{0}" -f $branchName) *> $null
+}
+
+git rev-parse --verify $BaseRef *> $null
 if ($LASTEXITCODE -ne 0) {
-  throw "Base ref not found locally: $BaseRef"
+  throw "Base ref not found locally after fetch attempt: $BaseRef"
 }
 
 $subjects = git log --format=%s "$BaseRef..HEAD"
