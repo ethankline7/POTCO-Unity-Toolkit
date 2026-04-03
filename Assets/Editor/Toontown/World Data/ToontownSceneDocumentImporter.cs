@@ -109,6 +109,11 @@ namespace Toontown.Editor
                 result.CreatedSceneObjects++;
             }
 
+            if (settings.ApplyPreviewLighting)
+            {
+                ToontownPreviewLightingUtility.ApplyToActiveScene(verbose: false);
+            }
+
             Selection.activeGameObject = root;
             EditorGUIUtility.PingObject(root);
             return result;
@@ -269,6 +274,7 @@ namespace Toontown.Editor
         public bool UseEggFiles = true;
         public bool AddObjectListInfo = true;
         public bool CreatePlaceholderForMissingModel = false;
+        public bool ApplyPreviewLighting = true;
         public string RootObjectName = string.Empty;
     }
 

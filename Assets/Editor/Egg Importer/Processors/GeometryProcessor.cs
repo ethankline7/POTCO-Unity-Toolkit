@@ -266,10 +266,11 @@ public class GeometryProcessor
         mesh.RecalculateBounds();
         DebugLogger.LogEggImporter($"Mesh bounds: {mesh.bounds}");
 
-        // Only recalculate normals if we don't have them
-        if (masterNormals == null || masterNormals.Length == 0)
+        // Recalculate normals when they are missing or effectively invalid.
+        if (ShouldRecalculateNormals(meshNormals, meshVertices.Length))
         {
             mesh.RecalculateNormals();
+            DebugLogger.LogEggImporter("Recalculated mesh normals for stable lighting.");
         }
 
         // Force the mesh to be visible by ensuring bounds are reasonable
@@ -1888,6 +1889,26 @@ public class GeometryProcessor
 
         DebugLogger.LogEggImporter($"🎯 Best available named LOD quality: {bestQuality}");
         return bestQuality;
+    }
+
+    private static bool ShouldRecalculateNormals(Vector3[] normals, int vertexCount)
+    {
+        if (normals == null || normals.Length == 0 || normals.Length != vertexCount)
+        {
+            return true;
+        }
+
+        int validNormalCount = 0;
+        for (int i = 0; i < normals.Length; i++)
+        {
+            if (normals[i].sqrMagnitude > 0.0001f)
+            {
+                validNormalCount++;
+            }
+        }
+
+        // If almost all normals are zero vectors, recompute to avoid dark/unlit-looking meshes.
+        return validNormalCount < Mathf.Max(1, normals.Length / 50);
     }
     
     private Material GetCachedDefaultMaterial(string materialName)

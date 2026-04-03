@@ -26,6 +26,7 @@ namespace Toontown.Editor
         private bool useEggFiles = true;
         private bool addObjectListInfo = true;
         private bool createPlaceholders = false;
+        private bool applyPreviewLighting = true;
         private string customRootName = string.Empty;
 
         private WorldDataDocument parsedDocument;
@@ -149,6 +150,7 @@ namespace Toontown.Editor
             useEggFiles = EditorGUILayout.ToggleLeft("Use .egg assets (if available)", useEggFiles);
             addObjectListInfo = EditorGUILayout.ToggleLeft("Attach ObjectListInfo components", addObjectListInfo);
             createPlaceholders = EditorGUILayout.ToggleLeft("Create placeholders for missing models", createPlaceholders);
+            applyPreviewLighting = EditorGUILayout.ToggleLeft("Apply Toontown preview lighting", applyPreviewLighting);
             customRootName = EditorGUILayout.TextField("Root Object Name (Optional)", customRootName);
         }
 
@@ -209,6 +211,7 @@ namespace Toontown.Editor
                 UseEggFiles = useEggFiles,
                 AddObjectListInfo = addObjectListInfo,
                 CreatePlaceholderForMissingModel = createPlaceholders,
+                ApplyPreviewLighting = applyPreviewLighting,
                 RootObjectName = customRootName
             };
 

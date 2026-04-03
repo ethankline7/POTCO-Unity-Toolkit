@@ -56,6 +56,7 @@ namespace Toontown.Editor.Validation
                     UseEggFiles = true,
                     AddObjectListInfo = true,
                     CreatePlaceholderForMissingModel = false,
+                    ApplyPreviewLighting = true,
                     RootObjectName = "ToontownDNA_MVP_Demo"
                 };
 
