@@ -91,7 +91,7 @@ if ($process.ExitCode -eq 0) {
   Write-Host "DNA MVP demo import completed successfully." -ForegroundColor Green
 
   if (Test-Path $logFullPath) {
-    $keyLines = Select-String -Path $logFullPath -Pattern "Toontown DNA MVP Demo Import|Status:|Parsed objects:|Created scene objects:|Instantiated models:|Missing models:|Placeholders created:|Output scene:"
+    $keyLines = Select-String -Path $logFullPath -Pattern "Toontown DNA MVP Demo Import|Status:|Parsed objects:|Created scene objects:|Instantiated models:|Missing models:|Placeholders created:|Forced EGG imports:|Output scene:"
     if ($keyLines) {
       Write-Host "Summary from log:" -ForegroundColor Cyan
       foreach ($line in $keyLines) {

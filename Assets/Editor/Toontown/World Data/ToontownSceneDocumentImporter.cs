@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using POTCO;
 using Toolkit.Editor.WorldData.Contracts;
@@ -15,6 +16,10 @@ namespace Toontown.Editor
         private static readonly Regex NumberRegex = new Regex(
             @"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?",
             RegexOptions.Compiled);
+
+        private static readonly Regex PhasePrefixRegex = new Regex(
+            @"^phase_\d+(?:\.\d+)?/",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public static ToontownSceneImportResult ImportDocument(
             WorldDataDocument document,
@@ -81,6 +86,10 @@ namespace Toontown.Editor
                     else
                     {
                         result.MissingModels++;
+                        if (!result.MissingModelPaths.Contains(modelPath, StringComparer.OrdinalIgnoreCase))
+                        {
+                            result.MissingModelPaths.Add(modelPath);
+                        }
                     }
                 }
 
@@ -101,6 +110,11 @@ namespace Toontown.Editor
             Selection.activeGameObject = root;
             EditorGUIUtility.PingObject(root);
             return result;
+        }
+
+        public static string ResolveModelPathFromProperties(Dictionary<string, string> properties)
+        {
+            return ResolveModelPath(properties);
         }
 
         private static void AttachObjectListInfo(GameObject target, WorldDataObject source, string modelPath)
@@ -164,6 +178,7 @@ namespace Toontown.Editor
 
             string normalized = selected.Trim().Replace('\\', '/');
             normalized = normalized.TrimStart('/');
+            normalized = PhasePrefixRegex.Replace(normalized, string.Empty);
 
             if (normalized.EndsWith(".bam", StringComparison.OrdinalIgnoreCase) ||
                 normalized.EndsWith(".egg", StringComparison.OrdinalIgnoreCase) ||
@@ -262,5 +277,6 @@ namespace Toontown.Editor
         public int InstantiatedModels;
         public int MissingModels;
         public int PlaceholdersCreated;
+        public List<string> MissingModelPaths = new List<string>();
     }
 }

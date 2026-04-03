@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -58,6 +59,10 @@ namespace Toontown.Editor.Validation
                     RootObjectName = "ToontownDNA_MVP_Demo"
                 };
 
+                int forcedEggImports = settings.UseEggFiles
+                    ? ForceImportRequiredEggAssets(document)
+                    : 0;
+
                 EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
                 ToontownSceneImportResult result = ToontownSceneDocumentImporter.ImportDocument(document, settings);
 
@@ -81,9 +86,18 @@ namespace Toontown.Editor.Validation
                 report.AppendLine($"Instantiated models: {result.InstantiatedModels}");
                 report.AppendLine($"Missing models: {result.MissingModels}");
                 report.AppendLine($"Placeholders created: {result.PlaceholdersCreated}");
+                report.AppendLine($"Forced EGG imports: {forcedEggImports}");
                 report.AppendLine($"Scene saved: {saved}");
                 report.AppendLine($"Output scene: {SuggestedOutputScenePath}");
                 report.AppendLine($"Output scene size: {outputBytes} bytes");
+                if (result.MissingModelPaths.Count > 0)
+                {
+                    report.AppendLine("Missing model keys:");
+                    foreach (string missingModel in result.MissingModelPaths.Take(25))
+                    {
+                        report.AppendLine($"- {missingModel}");
+                    }
+                }
                 if (document.Warnings.Count > 0)
                 {
                     report.AppendLine("Top warnings:");
@@ -125,6 +139,74 @@ namespace Toontown.Editor.Validation
             }
 
             EditorApplication.Exit(exitCode);
+        }
+
+        private static int ForceImportRequiredEggAssets(WorldDataDocument document)
+        {
+            if (document == null)
+            {
+                return 0;
+            }
+
+            var modelPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (WorldDataObject obj in document.Objects)
+            {
+                string modelPath = ToontownSceneDocumentImporter.ResolveModelPathFromProperties(obj.Properties);
+                if (!string.IsNullOrWhiteSpace(modelPath))
+                {
+                    modelPaths.Add(modelPath);
+                }
+            }
+
+            if (modelPaths.Count == 0)
+            {
+                return 0;
+            }
+
+            string[] phaseRoots = Directory.GetDirectories("Assets/Resources", "phase_*", SearchOption.AllDirectories);
+            if (phaseRoots.Length == 0)
+            {
+                return 0;
+            }
+
+            EggImporterSettings eggSettings = EggImporterSettings.Instance;
+            bool originalAutoImport = eggSettings.autoImportEnabled;
+            eggSettings.autoImportEnabled = true;
+            EditorUtility.SetDirty(eggSettings);
+            AssetDatabase.SaveAssets();
+
+            int importCount = 0;
+            try
+            {
+                foreach (string modelPath in modelPaths)
+                {
+                    foreach (string phaseRoot in phaseRoots)
+                    {
+                        string candidatePath = Path.Combine(phaseRoot, modelPath + ".egg").Replace('\\', '/');
+                        if (!File.Exists(candidatePath))
+                        {
+                            continue;
+                        }
+
+                        AssetDatabase.ImportAsset(
+                            candidatePath,
+                            ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                        importCount++;
+                        break;
+                    }
+                }
+
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            }
+            finally
+            {
+                eggSettings.autoImportEnabled = originalAutoImport;
+                EditorUtility.SetDirty(eggSettings);
+                AssetDatabase.SaveAssets();
+            }
+
+            return importCount;
         }
     }
 }
