@@ -22,7 +22,8 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toontown/Validation/ToontownSampleValidationWindow.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataImporter.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataExporter.cs',
-  'Assets/Editor/Toontown/Samples/toontown_sample_world.py'
+  'Assets/Editor/Toontown/Samples/toontown_sample_world.py',
+  'Assets/Editor/Toontown/Samples/toontown_sample_world_assignment_style.py'
 )
 
 foreach ($path in $requiredToolkitFiles) {

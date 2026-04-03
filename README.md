@@ -2,16 +2,12 @@
 
 > A Unity Editor toolkit for Panda3D-style game assets and world data workflows, with POTCO support and an active Toontown migration path.
 ---
-<p align="center">
-Got any questions?
-  </p>
-<p align="center">
-  <a href="https://discord.gg/Dr6YR8HkPJ" target="_blank">
-    <img alt="Join our Discord"
-      src="https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white">
-  </a>
-</p>
 
+## Fork Notice and Authorship Disclosure
+- This repository is a community fork derived from the original upstream project.
+- The maintainer of this fork is **not affiliated** with the original creator.
+- The modifications introduced in this fork’s migration work were produced through a **vibe-coding workflow using Codex tooling**.
+- Upstream project ownership and original authorship remain with their respective contributors.
 
 ---
 ## ⚠️ Unity may take up to an hour to process all .egg files during the initial import, as it needs to cache all model data. Your patience is appreciated! ⚠️

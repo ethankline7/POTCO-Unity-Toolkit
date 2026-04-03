@@ -24,6 +24,10 @@ $invalid = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 
 foreach ($subject in $subjects) {
+  if ($subject -like "Merge *") {
+    continue
+  }
+
   if ($subject.Length -gt 72) {
     $warnings.Add("Subject longer than 72 chars (recommended max): $subject")
   }
