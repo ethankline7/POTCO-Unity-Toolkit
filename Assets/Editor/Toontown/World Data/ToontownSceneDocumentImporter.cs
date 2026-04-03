@@ -21,6 +21,15 @@ namespace Toontown.Editor
             @"^phase_\d+(?:\.\d+)?/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly string[] FakeShadowNameTokens =
+        {
+            "drop-shadow",
+            "drop_shadow",
+            "square_drop_shadow",
+            "shadow_card",
+            "toon_shadow"
+        };
+
         public static ToontownSceneImportResult ImportDocument(
             WorldDataDocument document,
             ToontownSceneImportSettings settings)
@@ -81,10 +90,10 @@ namespace Toontown.Editor
                     if (modelInstance != null)
                     {
                         if (obj.Properties.TryGetValue("ResolvedNode", out string resolvedNode) &&
-                            ShouldAttemptResolvedNodeIsolation(obj.Properties, modelPath) &&
                             !string.IsNullOrWhiteSpace(resolvedNode))
                         {
-                            if (TryIsolateResolvedNodeInstance(go.transform, ref modelInstance, resolvedNode))
+                            bool allowFuzzyMatch = ShouldAllowFuzzyResolvedNodeMatch(obj.Properties, modelPath);
+                            if (TryIsolateResolvedNodeInstance(go.transform, ref modelInstance, resolvedNode, allowFuzzyMatch))
                             {
                                 result.ResolvedNodeIsolationsSucceeded++;
                             }
@@ -94,6 +103,11 @@ namespace Toontown.Editor
                                 result.FailedResolvedNodeEntries.Add(
                                     $"{obj.Id} :: node '{resolvedNode}' :: model '{modelPath}'");
                             }
+                        }
+
+                        if (settings.RemoveFakeShadowsByDefault)
+                        {
+                            result.FakeShadowRenderersDisabled += RemoveFakeShadowRenderers(modelInstance.transform);
                         }
 
                         result.InstantiatedModels++;
@@ -214,6 +228,100 @@ namespace Toontown.Editor
             return normalized;
         }
 
+        private static int RemoveFakeShadowRenderers(Transform modelRoot)
+        {
+            if (modelRoot == null)
+            {
+                return 0;
+            }
+
+            Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>(true);
+            int disabledCount = 0;
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
+
+                Material[] mats = renderer.sharedMaterials;
+                if (mats == null || mats.Length == 0)
+                {
+                    continue;
+                }
+
+                bool anyNonShadowMaterial = false;
+                foreach (Material mat in mats)
+                {
+                    if (!IsFakeShadowMaterial(mat))
+                    {
+                        anyNonShadowMaterial = true;
+                        break;
+                    }
+                }
+
+                if (anyNonShadowMaterial)
+                {
+                    continue;
+                }
+
+                renderer.enabled = false;
+                disabledCount++;
+            }
+
+            return disabledCount;
+        }
+
+        private static bool IsFakeShadowMaterial(Material material)
+        {
+            if (material == null)
+            {
+                return false;
+            }
+
+            if (ContainsFakeShadowToken(material.name))
+            {
+                return true;
+            }
+
+            if (!material.HasProperty("_MainTex"))
+            {
+                return false;
+            }
+
+            Texture mainTex = material.GetTexture("_MainTex");
+            if (mainTex == null)
+            {
+                return false;
+            }
+
+            if (ContainsFakeShadowToken(mainTex.name))
+            {
+                return true;
+            }
+
+            string texturePath = AssetDatabase.GetAssetPath(mainTex);
+            return ContainsFakeShadowToken(texturePath);
+        }
+
+        private static bool ContainsFakeShadowToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (string token in FakeShadowNameTokens)
+            {
+                if (value.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static void ApplyTransform(Transform target, Dictionary<string, string> properties)
         {
             if (TryGetVector(properties, "Pos", out Vector3 pos))
@@ -235,14 +343,15 @@ namespace Toontown.Editor
         private static bool TryIsolateResolvedNodeInstance(
             Transform parent,
             ref GameObject modelInstance,
-            string resolvedNodeName)
+            string resolvedNodeName,
+            bool allowFuzzyMatch)
         {
             if (parent == null || modelInstance == null || string.IsNullOrWhiteSpace(resolvedNodeName))
             {
                 return false;
             }
 
-            Transform match = FindResolvedNodeTransform(modelInstance.transform, resolvedNodeName);
+            Transform match = FindResolvedNodeTransform(modelInstance.transform, resolvedNodeName, allowFuzzyMatch);
             if (match == null)
             {
                 return false;
@@ -254,15 +363,15 @@ namespace Toontown.Editor
             }
 
             string originalRootName = modelInstance.name;
-            match.SetParent(parent, true);
-            GameObject isolatedRoot = match.gameObject;
+            // Never re-parent a child inside a prefab instance directly; clone the subtree instead.
+            GameObject isolatedRoot = UnityEngine.Object.Instantiate(match.gameObject, parent, true);
             isolatedRoot.name = originalRootName;
             UnityEngine.Object.DestroyImmediate(modelInstance);
             modelInstance = isolatedRoot;
             return true;
         }
 
-        private static Transform FindResolvedNodeTransform(Transform root, string resolvedNodeName)
+        private static Transform FindResolvedNodeTransform(Transform root, string resolvedNodeName, bool allowFuzzyMatch)
         {
             if (root == null || string.IsNullOrWhiteSpace(resolvedNodeName))
             {
@@ -345,8 +454,13 @@ namespace Toontown.Editor
                 }
             }
 
-            // Last fallback: partial string match for imported node names that may have
-            // importer-added suffixes/prefixes. Choose shallowest transform.
+            if (!allowFuzzyMatch)
+            {
+                return null;
+            }
+
+            // Last fallback (fuzzy): partial string match for imported node names that may have
+            // importer-added suffixes/prefixes. Used for known module naming variants.
             Transform partialMatch = null;
             bestDepth = int.MaxValue;
             foreach (Transform t in allTransforms)
@@ -413,7 +527,7 @@ namespace Toontown.Editor
             return value;
         }
 
-        private static bool ShouldAttemptResolvedNodeIsolation(
+        private static bool ShouldAllowFuzzyResolvedNodeMatch(
             Dictionary<string, string> properties,
             string modelPath)
         {
@@ -497,6 +611,7 @@ namespace Toontown.Editor
         public bool AddObjectListInfo = true;
         public bool CreatePlaceholderForMissingModel = false;
         public bool ApplyPreviewLighting = true;
+        public bool RemoveFakeShadowsByDefault = true;
         public string RootObjectName = string.Empty;
     }
 
@@ -509,6 +624,7 @@ namespace Toontown.Editor
         public int InstantiatedModels;
         public int MissingModels;
         public int PlaceholdersCreated;
+        public int FakeShadowRenderersDisabled;
         public int ResolvedNodeIsolationsSucceeded;
         public int ResolvedNodeIsolationsFailed;
         public List<string> MissingModelPaths = new List<string>();

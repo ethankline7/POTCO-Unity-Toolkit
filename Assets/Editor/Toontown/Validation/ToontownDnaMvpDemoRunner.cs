@@ -57,6 +57,7 @@ namespace Toontown.Editor.Validation
                     AddObjectListInfo = true,
                     CreatePlaceholderForMissingModel = false,
                     ApplyPreviewLighting = true,
+                    RemoveFakeShadowsByDefault = true,
                     RootObjectName = "ToontownDNA_MVP_Demo"
                 };
 
@@ -88,6 +89,7 @@ namespace Toontown.Editor.Validation
                 report.AppendLine($"Instantiated models: {result.InstantiatedModels}");
                 report.AppendLine($"Missing models: {result.MissingModels}");
                 report.AppendLine($"Placeholders created: {result.PlaceholdersCreated}");
+                report.AppendLine($"Fake shadow renderers disabled: {result.FakeShadowRenderersDisabled}");
                 report.AppendLine($"Resolved-node isolate success: {result.ResolvedNodeIsolationsSucceeded}");
                 report.AppendLine($"Resolved-node isolate failed: {result.ResolvedNodeIsolationsFailed}");
                 report.AppendLine($"Forced EGG imports: {forcedEggImports}");
