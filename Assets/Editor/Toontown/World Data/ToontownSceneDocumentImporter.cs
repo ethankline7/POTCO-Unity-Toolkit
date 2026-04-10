@@ -127,6 +127,7 @@ namespace Toontown.Editor
                     else
                     {
                         result.DoorWindowParentAnchorsMissed++;
+                        result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
                         if (!string.IsNullOrWhiteSpace(anchorDetails) &&
                             result.DoorWindowParentAnchorWarnings.Count < 100)
                         {
@@ -163,6 +164,7 @@ namespace Toontown.Editor
                             else
                             {
                                 result.ResolvedNodeIsolationsFailed++;
+                                result.AddWarningCategory(ToontownSceneImportResult.MissingResolvedNodeCategory);
                                 result.FailedResolvedNodeEntries.Add(
                                     $"{obj.Id} :: node '{resolvedNode}' :: model '{modelPath}' :: {isolateDetails}");
                             }
@@ -170,7 +172,11 @@ namespace Toontown.Editor
 
                         if (settings.RemoveFakeShadowsByDefault)
                         {
-                            result.FakeShadowRenderersDisabled += RemoveFakeShadowRenderers(modelInstance.transform);
+                            int disabledFakeShadows = RemoveFakeShadowRenderers(modelInstance.transform);
+                            result.FakeShadowRenderersDisabled += disabledFakeShadows;
+                            result.AddWarningCategory(
+                                ToontownSceneImportResult.FakeShadowRemovalCategory,
+                                disabledFakeShadows);
                         }
 
                         result.InstantiatedModels++;
@@ -180,6 +186,7 @@ namespace Toontown.Editor
                     else
                     {
                         result.MissingModels++;
+                        result.AddWarningCategory(ToontownSceneImportResult.MissingModelCategory);
                         if (!result.MissingModelPaths.Contains(modelPath, StringComparer.OrdinalIgnoreCase))
                         {
                             result.MissingModelPaths.Add(modelPath);
@@ -1119,6 +1126,13 @@ namespace Toontown.Editor
     [Serializable]
     public sealed class ToontownSceneImportResult
     {
+        public const string MissingModelCategory = "missing model";
+        public const string MissingResolvedNodeCategory = "missing resolved node";
+        public const string FallbackPlacementCategory = "fallback placement";
+        public const string MaterialFallbackCategory = "material fallback";
+        public const string FakeShadowRemovalCategory = "fake shadow removal";
+        public const string UncategorizedDocumentWarningCategory = "uncategorized document warning";
+
         public string RootObjectName;
         public int TotalDocumentObjects;
         public int CreatedSceneObjects;
@@ -1134,5 +1148,34 @@ namespace Toontown.Editor
         public List<string> MissingModelPaths = new List<string>();
         public List<string> FailedResolvedNodeEntries = new List<string>();
         public List<string> DoorWindowParentAnchorWarnings = new List<string>();
+        public Dictionary<string, int> WarningCategoryCounts =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        public void AddWarningCategory(string category, int count = 1)
+        {
+            if (string.IsNullOrWhiteSpace(category) || count <= 0)
+            {
+                return;
+            }
+
+            if (WarningCategoryCounts.TryGetValue(category, out int current))
+            {
+                WarningCategoryCounts[category] = current + count;
+            }
+            else
+            {
+                WarningCategoryCounts[category] = count;
+            }
+        }
+
+        public int GetWarningCategoryCount(string category)
+        {
+            if (string.IsNullOrWhiteSpace(category) || WarningCategoryCounts == null)
+            {
+                return 0;
+            }
+
+            return WarningCategoryCounts.TryGetValue(category, out int count) ? count : 0;
+        }
     }
 }

@@ -248,11 +248,26 @@ namespace Toontown.Editor.Validation
             WorldDataDocument document,
             ToontownSceneImportResult result)
         {
-            int missingModel = result?.MissingModels ?? 0;
-            int missingResolvedNode = result?.ResolvedNodeIsolationsFailed ?? 0;
-            int fallbackPlacement = result?.DoorWindowParentAnchorsMissed ?? 0;
-            int materialFallback = 0;
-            int fakeShadowRemoval = result?.FakeShadowRenderersDisabled ?? 0;
+            int missingModel = GetResultCategoryCount(
+                result,
+                ToontownSceneImportResult.MissingModelCategory,
+                result?.MissingModels ?? 0);
+            int missingResolvedNode = GetResultCategoryCount(
+                result,
+                ToontownSceneImportResult.MissingResolvedNodeCategory,
+                result?.ResolvedNodeIsolationsFailed ?? 0);
+            int fallbackPlacement = GetResultCategoryCount(
+                result,
+                ToontownSceneImportResult.FallbackPlacementCategory,
+                result?.DoorWindowParentAnchorsMissed ?? 0);
+            int materialFallback = GetResultCategoryCount(
+                result,
+                ToontownSceneImportResult.MaterialFallbackCategory,
+                0);
+            int fakeShadowRemoval = GetResultCategoryCount(
+                result,
+                ToontownSceneImportResult.FakeShadowRemovalCategory,
+                result?.FakeShadowRenderersDisabled ?? 0);
             int uncategorizedDocumentWarnings = 0;
 
             if (document?.Warnings != null)
@@ -288,13 +303,28 @@ namespace Toontown.Editor.Validation
 
             return new List<KeyValuePair<string, int>>
             {
-                new KeyValuePair<string, int>("missing model", missingModel),
-                new KeyValuePair<string, int>("missing resolved node", missingResolvedNode),
-                new KeyValuePair<string, int>("fallback placement", fallbackPlacement),
-                new KeyValuePair<string, int>("material fallback", materialFallback),
-                new KeyValuePair<string, int>("fake shadow removal", fakeShadowRemoval),
-                new KeyValuePair<string, int>("uncategorized document warning", uncategorizedDocumentWarnings)
+                new KeyValuePair<string, int>(ToontownSceneImportResult.MissingModelCategory, missingModel),
+                new KeyValuePair<string, int>(ToontownSceneImportResult.MissingResolvedNodeCategory, missingResolvedNode),
+                new KeyValuePair<string, int>(ToontownSceneImportResult.FallbackPlacementCategory, fallbackPlacement),
+                new KeyValuePair<string, int>(ToontownSceneImportResult.MaterialFallbackCategory, materialFallback),
+                new KeyValuePair<string, int>(ToontownSceneImportResult.FakeShadowRemovalCategory, fakeShadowRemoval),
+                new KeyValuePair<string, int>(
+                    ToontownSceneImportResult.UncategorizedDocumentWarningCategory,
+                    uncategorizedDocumentWarnings)
             };
+        }
+
+        private static int GetResultCategoryCount(
+            ToontownSceneImportResult result,
+            string category,
+            int fallbackValue)
+        {
+            if (result == null || result.WarningCategoryCounts == null || result.WarningCategoryCounts.Count == 0)
+            {
+                return fallbackValue;
+            }
+
+            return result.GetWarningCategoryCount(category);
         }
 
         private static bool WarningContainsAny(string warning, params string[] tokens)
