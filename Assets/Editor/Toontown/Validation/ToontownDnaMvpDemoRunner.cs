@@ -92,10 +92,21 @@ namespace Toontown.Editor.Validation
                 report.AppendLine($"Fake shadow renderers disabled: {result.FakeShadowRenderersDisabled}");
                 report.AppendLine($"Resolved-node isolate success: {result.ResolvedNodeIsolationsSucceeded}");
                 report.AppendLine($"Resolved-node isolate failed: {result.ResolvedNodeIsolationsFailed}");
+                report.AppendLine(
+                    $"Door/window parent anchors: {result.DoorWindowParentAnchorsApplied}/{result.DoorWindowParentAnchorsAttempted}");
+                report.AppendLine($"Door/window parent anchor misses: {result.DoorWindowParentAnchorsMissed}");
                 report.AppendLine($"Forced EGG imports: {forcedEggImports}");
                 report.AppendLine($"Scene saved: {saved}");
                 report.AppendLine($"Output scene: {SuggestedOutputScenePath}");
                 report.AppendLine($"Output scene size: {outputBytes} bytes");
+                if (result.DoorWindowParentAnchorWarnings.Count > 0)
+                {
+                    report.AppendLine("Door/window anchor warnings:");
+                    foreach (string warning in result.DoorWindowParentAnchorWarnings.Take(25))
+                    {
+                        report.AppendLine($"- {warning}");
+                    }
+                }
                 if (result.FailedResolvedNodeEntries.Count > 0)
                 {
                     report.AppendLine("Resolved-node failures:");
@@ -185,7 +196,9 @@ namespace Toontown.Editor.Validation
 
             EggImporterSettings eggSettings = EggImporterSettings.Instance;
             bool originalAutoImport = eggSettings.autoImportEnabled;
+            EggImporterSettings.PivotMode originalPivotMode = eggSettings.pivotMode;
             eggSettings.autoImportEnabled = true;
+            eggSettings.pivotMode = EggImporterSettings.PivotMode.Original;
             EditorUtility.SetDirty(eggSettings);
             AssetDatabase.SaveAssets();
 
@@ -216,6 +229,7 @@ namespace Toontown.Editor.Validation
             finally
             {
                 eggSettings.autoImportEnabled = originalAutoImport;
+                eggSettings.pivotMode = originalPivotMode;
                 EditorUtility.SetDirty(eggSettings);
                 AssetDatabase.SaveAssets();
             }

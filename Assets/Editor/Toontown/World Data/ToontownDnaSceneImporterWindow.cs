@@ -208,6 +208,11 @@ namespace Toontown.Editor
                 }
             }
 
+            if (useEggFiles)
+            {
+                EnsureToontownEggPivotMode();
+            }
+
             var settings = new ToontownSceneImportSettings
             {
                 UseEggFiles = useEggFiles,
@@ -230,6 +235,19 @@ namespace Toontown.Editor
                 lastImportResult = null;
                 statusMessage = $"Scene import failed: {ex.Message}";
             }
+        }
+
+        private static void EnsureToontownEggPivotMode()
+        {
+            EggImporterSettings eggSettings = EggImporterSettings.Instance;
+            if (eggSettings == null || eggSettings.pivotMode == EggImporterSettings.PivotMode.Original)
+            {
+                return;
+            }
+
+            eggSettings.pivotMode = EggImporterSettings.PivotMode.Original;
+            EditorUtility.SetDirty(eggSettings);
+            AssetDatabase.SaveAssets();
         }
 
         private List<string> ResolveStoragePaths()
@@ -416,6 +434,20 @@ namespace Toontown.Editor
                 if (lastImportResult.ResolvedNodeIsolationsFailed > 0)
                 {
                     EditorGUILayout.LabelField("Resolved Node Isolation Failures", lastImportResult.ResolvedNodeIsolationsFailed.ToString());
+                }
+
+                if (lastImportResult.DoorWindowParentAnchorsAttempted > 0)
+                {
+                    EditorGUILayout.LabelField(
+                        "Door/Window Parent Anchors",
+                        $"{lastImportResult.DoorWindowParentAnchorsApplied}/{lastImportResult.DoorWindowParentAnchorsAttempted}");
+                }
+
+                if (lastImportResult.DoorWindowParentAnchorsMissed > 0)
+                {
+                    EditorGUILayout.LabelField(
+                        "Door/Window Anchor Misses",
+                        lastImportResult.DoorWindowParentAnchorsMissed.ToString());
                 }
                 EditorGUILayout.EndVertical();
             }

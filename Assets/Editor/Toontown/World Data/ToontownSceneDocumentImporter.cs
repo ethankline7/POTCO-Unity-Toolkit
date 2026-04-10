@@ -30,6 +30,34 @@ namespace Toontown.Editor
             "toon_shadow"
         };
 
+        private static readonly string[] DirectionalSuffixes = { "ur", "ul", "dr", "dl" };
+        private static readonly string[] DoorAnchorFallbackNodeNames =
+        {
+            "door_origin",
+            "door_front",
+            "door_locator",
+            "door"
+        };
+
+        private static readonly string[] WindowAnchorFallbackNodeNames =
+        {
+            "window_origin",
+            "window_locator",
+            "window"
+        };
+
+        private static readonly HashSet<string> NodeNoiseTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "prop",
+            "toon",
+            "landmark",
+            "building",
+            "animated",
+            "dna",
+            "root",
+            "tt"
+        };
+
         public static ToontownSceneImportResult ImportDocument(
             WorldDataDocument document,
             ToontownSceneImportSettings settings)
@@ -64,6 +92,8 @@ namespace Toontown.Editor
                 RootObjectName = root.name,
                 TotalDocumentObjects = document.Objects.Count
             };
+            var instantiatedModelRootsByObjectId =
+                new Dictionary<string, Transform>(StringComparer.OrdinalIgnoreCase);
 
             foreach (WorldDataObject obj in document.Objects)
             {
@@ -78,6 +108,33 @@ namespace Toontown.Editor
                 go.transform.SetParent(parent.transform, false);
                 ApplyTransform(go.transform, obj.Properties);
                 string modelPath = ResolveModelPath(obj.Properties);
+                bool shouldAttemptParentAnchor =
+                    ShouldAttemptParentAnchorPlacement(obj.Properties, modelPath) &&
+                    !HasExplicitTransformProperties(obj.Properties);
+
+                if (shouldAttemptParentAnchor)
+                {
+                    result.DoorWindowParentAnchorsAttempted++;
+                    if (TryApplyParentAnchorPlacement(
+                            go.transform,
+                            obj,
+                            instantiatedModelRootsByObjectId,
+                            modelPath,
+                            out string anchorDetails))
+                    {
+                        result.DoorWindowParentAnchorsApplied++;
+                    }
+                    else
+                    {
+                        result.DoorWindowParentAnchorsMissed++;
+                        if (!string.IsNullOrWhiteSpace(anchorDetails) &&
+                            result.DoorWindowParentAnchorWarnings.Count < 100)
+                        {
+                            result.DoorWindowParentAnchorWarnings.Add($"{obj.Id} :: {anchorDetails}");
+                        }
+                    }
+                }
+
                 bool modelInstantiated = false;
                 if (!string.IsNullOrWhiteSpace(modelPath))
                 {
@@ -90,10 +147,16 @@ namespace Toontown.Editor
                     if (modelInstance != null)
                     {
                         if (obj.Properties.TryGetValue("ResolvedNode", out string resolvedNode) &&
+                            ShouldAttemptResolvedNodeIsolation(obj.Properties, modelPath) &&
                             !string.IsNullOrWhiteSpace(resolvedNode))
                         {
                             bool allowFuzzyMatch = ShouldAllowFuzzyResolvedNodeMatch(obj.Properties, modelPath);
-                            if (TryIsolateResolvedNodeInstance(go.transform, ref modelInstance, resolvedNode, allowFuzzyMatch))
+                            if (TryIsolateResolvedNodeInstance(
+                                    go.transform,
+                                    ref modelInstance,
+                                    resolvedNode,
+                                    allowFuzzyMatch,
+                                    out string isolateDetails))
                             {
                                 result.ResolvedNodeIsolationsSucceeded++;
                             }
@@ -101,7 +164,7 @@ namespace Toontown.Editor
                             {
                                 result.ResolvedNodeIsolationsFailed++;
                                 result.FailedResolvedNodeEntries.Add(
-                                    $"{obj.Id} :: node '{resolvedNode}' :: model '{modelPath}'");
+                                    $"{obj.Id} :: node '{resolvedNode}' :: model '{modelPath}' :: {isolateDetails}");
                             }
                         }
 
@@ -112,6 +175,7 @@ namespace Toontown.Editor
 
                         result.InstantiatedModels++;
                         modelInstantiated = true;
+                        instantiatedModelRootsByObjectId[obj.Id] = modelInstance.transform;
                     }
                     else
                     {
@@ -340,146 +404,415 @@ namespace Toontown.Editor
             }
         }
 
-        private static bool TryIsolateResolvedNodeInstance(
-            Transform parent,
-            ref GameObject modelInstance,
-            string resolvedNodeName,
-            bool allowFuzzyMatch)
+        private static bool ShouldAttemptParentAnchorPlacement(
+            Dictionary<string, string> properties,
+            string modelPath)
         {
-            if (parent == null || modelInstance == null || string.IsNullOrWhiteSpace(resolvedNodeName))
+            if (properties != null &&
+                properties.TryGetValue("Keyword", out string keyword) &&
+                !string.IsNullOrWhiteSpace(keyword))
+            {
+                if (string.Equals(keyword, "door", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(keyword, "windows", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(keyword, "window", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(modelPath))
             {
                 return false;
             }
 
-            Transform match = FindResolvedNodeTransform(modelInstance.transform, resolvedNodeName, allowFuzzyMatch);
+            string normalized = modelPath.Replace('\\', '/');
+            return normalized.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool HasExplicitTransformProperties(Dictionary<string, string> properties)
+        {
+            if (properties == null)
+            {
+                return false;
+            }
+
+            return properties.ContainsKey("Pos") ||
+                   properties.ContainsKey("Hpr") ||
+                   properties.ContainsKey("Scale");
+        }
+
+        private static bool TryApplyParentAnchorPlacement(
+            Transform targetObjectTransform,
+            WorldDataObject sourceObject,
+            Dictionary<string, Transform> instantiatedModelRootsByObjectId,
+            string modelPath,
+            out string anchorDetails)
+        {
+            anchorDetails = "no anchor details";
+            if (targetObjectTransform == null || sourceObject == null)
+            {
+                anchorDetails = "missing target transform or source object";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceObject.ParentId))
+            {
+                anchorDetails = "no parent id";
+                return false;
+            }
+
+            if (instantiatedModelRootsByObjectId == null ||
+                !instantiatedModelRootsByObjectId.TryGetValue(sourceObject.ParentId, out Transform parentModelRoot) ||
+                parentModelRoot == null)
+            {
+                anchorDetails = $"parent model root not found for '{sourceObject.ParentId}'";
+                return false;
+            }
+
+            List<string> candidates = BuildParentAnchorCandidates(sourceObject.Properties, modelPath);
+            if (candidates.Count == 0)
+            {
+                anchorDetails = "no parent anchor candidates";
+                return false;
+            }
+
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                ResolvedNodeSearchResult search = FindResolvedNodeTransform(parentModelRoot, candidate, false);
+                if (search.Match == null)
+                {
+                    continue;
+                }
+
+                targetObjectTransform.SetPositionAndRotation(search.Match.position, search.Match.rotation);
+                anchorDetails = $"anchored to parent node '{search.Match.name}' via {search.Strategy}";
+                return true;
+            }
+
+            string candidateSummary = string.Join(", ", candidates.Distinct(StringComparer.OrdinalIgnoreCase).Take(8));
+            anchorDetails = $"failed parent anchor lookup; tried: {candidateSummary}";
+            return false;
+        }
+
+        private static List<string> BuildParentAnchorCandidates(
+            Dictionary<string, string> properties,
+            string modelPath)
+        {
+            var candidates = new List<string>();
+            if (properties != null &&
+                properties.TryGetValue("ResolvedNode", out string resolvedNode) &&
+                !string.IsNullOrWhiteSpace(resolvedNode))
+            {
+                candidates.Add(resolvedNode);
+
+                string normalizedNode = NormalizeNodeName(resolvedNode);
+                string strippedNode = StripDirectionalSuffix(normalizedNode);
+                if (!string.IsNullOrWhiteSpace(strippedNode))
+                {
+                    candidates.Add(strippedNode);
+                }
+
+                string directionalSuffix = GetDirectionalSuffix(normalizedNode);
+                if (!string.IsNullOrWhiteSpace(directionalSuffix) &&
+                    !string.IsNullOrWhiteSpace(strippedNode))
+                {
+                    candidates.Add($"{strippedNode}_{directionalSuffix}");
+                }
+            }
+
+            bool isDoor = false;
+            bool isWindow = false;
+            if (properties != null &&
+                properties.TryGetValue("Keyword", out string keyword) &&
+                !string.IsNullOrWhiteSpace(keyword))
+            {
+                isDoor = string.Equals(keyword, "door", StringComparison.OrdinalIgnoreCase);
+                isWindow = string.Equals(keyword, "window", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(keyword, "windows", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (!isDoor && !isWindow && !string.IsNullOrWhiteSpace(modelPath))
+            {
+                string normalizedModel = modelPath.Replace('\\', '/');
+                isDoor = normalizedModel.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0;
+                isWindow = normalizedModel.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            if (isDoor)
+            {
+                candidates.AddRange(DoorAnchorFallbackNodeNames);
+            }
+
+            if (isWindow)
+            {
+                candidates.AddRange(WindowAnchorFallbackNodeNames);
+            }
+
+            return candidates
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static bool TryIsolateResolvedNodeInstance(
+            Transform parent,
+            ref GameObject modelInstance,
+            string resolvedNodeName,
+            bool allowFuzzyMatch,
+            out string isolateDetails)
+        {
+            isolateDetails = "uninitialized";
+            if (parent == null || modelInstance == null || string.IsNullOrWhiteSpace(resolvedNodeName))
+            {
+                isolateDetails = "invalid isolate parameters";
+                return false;
+            }
+
+            ResolvedNodeSearchResult searchResult =
+                FindResolvedNodeTransform(modelInstance.transform, resolvedNodeName, allowFuzzyMatch);
+            Transform match = searchResult.Match;
             if (match == null)
             {
+                isolateDetails = searchResult.Diagnostics;
                 return false;
             }
 
             if (match == modelInstance.transform)
             {
+                isolateDetails = $"matched root via {searchResult.Strategy}";
                 return true;
             }
 
             string originalRootName = modelInstance.name;
+            string matchedName = match.name;
             // Never re-parent a child inside a prefab instance directly; clone the subtree instead.
             GameObject isolatedRoot = UnityEngine.Object.Instantiate(match.gameObject, parent, true);
             isolatedRoot.name = originalRootName;
             UnityEngine.Object.DestroyImmediate(modelInstance);
             modelInstance = isolatedRoot;
+            isolateDetails = $"matched '{matchedName}' via {searchResult.Strategy}";
             return true;
         }
 
-        private static Transform FindResolvedNodeTransform(Transform root, string resolvedNodeName, bool allowFuzzyMatch)
+        private static ResolvedNodeSearchResult FindResolvedNodeTransform(
+            Transform root,
+            string resolvedNodeName,
+            bool allowFuzzyMatch)
         {
             if (root == null || string.IsNullOrWhiteSpace(resolvedNodeName))
             {
-                return null;
+                return ResolvedNodeSearchResult.Failure("no root or resolved-node supplied");
             }
 
             string normalizedTarget = NormalizeNodeName(resolvedNodeName);
+            string strippedTarget = StripDirectionalSuffix(normalizedTarget);
             Transform[] allTransforms = root.GetComponentsInChildren<Transform>(true);
+            string targetDirectionalSuffix = GetDirectionalSuffix(normalizedTarget);
 
-            Transform exactMatch = null;
-            int bestDepth = int.MaxValue;
-            foreach (Transform t in allTransforms)
-            {
-                if (!string.Equals(t.name, resolvedNodeName, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                int depth = GetTransformDepth(t, root);
-                if (depth < bestDepth)
-                {
-                    bestDepth = depth;
-                    exactMatch = t;
-                }
-            }
-
+            Transform exactMatch = FindBestTransform(
+                allTransforms,
+                root,
+                t => string.Equals(t.name, resolvedNodeName, StringComparison.OrdinalIgnoreCase));
             if (exactMatch != null)
             {
-                return exactMatch;
+                return ResolvedNodeSearchResult.Success(exactMatch, "exact-name");
             }
 
-            Transform normalizedMatch = null;
-            bestDepth = int.MaxValue;
-            foreach (Transform t in allTransforms)
-            {
-                if (!string.Equals(NormalizeNodeName(t.name), normalizedTarget, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                int depth = GetTransformDepth(t, root);
-                if (depth < bestDepth)
-                {
-                    bestDepth = depth;
-                    normalizedMatch = t;
-                }
-            }
-
+            Transform normalizedMatch = FindBestTransform(
+                allTransforms,
+                root,
+                t => string.Equals(NormalizeNodeName(t.name), normalizedTarget, StringComparison.OrdinalIgnoreCase));
             if (normalizedMatch != null)
             {
-                return normalizedMatch;
+                return ResolvedNodeSearchResult.Success(normalizedMatch, "normalized-name");
             }
 
-            string withoutDirectionalSuffix = StripDirectionalSuffix(normalizedTarget);
-            if (!string.Equals(withoutDirectionalSuffix, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(strippedTarget, normalizedTarget, StringComparison.OrdinalIgnoreCase))
             {
-                Transform directionalFallback = null;
-                bestDepth = int.MaxValue;
-                foreach (Transform t in allTransforms)
+                Transform strippedMatch = FindBestTransform(
+                    allTransforms,
+                    root,
+                    t => string.Equals(NormalizeNodeName(t.name), strippedTarget, StringComparison.OrdinalIgnoreCase));
+                if (strippedMatch != null)
                 {
-                    if (!string.Equals(
-                            NormalizeNodeName(t.name),
-                            withoutDirectionalSuffix,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    int depth = GetTransformDepth(t, root);
-                    if (depth < bestDepth)
-                    {
-                        bestDepth = depth;
-                        directionalFallback = t;
-                    }
+                    return ResolvedNodeSearchResult.Success(strippedMatch, "directional-strip");
                 }
+            }
 
-                if (directionalFallback != null)
+            if (!string.IsNullOrWhiteSpace(targetDirectionalSuffix))
+            {
+                foreach (string suffix in GetDirectionalFallbackOrder(targetDirectionalSuffix))
                 {
-                    return directionalFallback;
+                    string candidateName = $"{strippedTarget}_{suffix}";
+                    Transform directionalMatch = FindBestTransform(
+                        allTransforms,
+                        root,
+                        t => string.Equals(
+                            NormalizeNodeName(t.name),
+                            candidateName,
+                            StringComparison.OrdinalIgnoreCase));
+                    if (directionalMatch != null)
+                    {
+                        string strategy = string.Equals(suffix, targetDirectionalSuffix, StringComparison.OrdinalIgnoreCase)
+                            ? "directional-exact"
+                            : $"directional-fallback:{suffix}";
+                        return ResolvedNodeSearchResult.Success(directionalMatch, strategy);
+                    }
                 }
             }
 
             if (!allowFuzzyMatch)
             {
-                return null;
+                return ResolvedNodeSearchResult.Failure(BuildResolvedNodeFailureDiagnostics(
+                    resolvedNodeName,
+                    normalizedTarget,
+                    strippedTarget,
+                    allTransforms));
             }
 
-            // Last fallback (fuzzy): partial string match for imported node names that may have
-            // importer-added suffixes/prefixes. Used for known module naming variants.
-            Transform partialMatch = null;
-            bestDepth = int.MaxValue;
-            foreach (Transform t in allTransforms)
+            Transform tokenOverlapMatch = FindBestTokenOverlapTransform(allTransforms, root, normalizedTarget);
+            if (tokenOverlapMatch != null)
             {
-                string normalizedName = NormalizeNodeName(t.name);
-                if (normalizedName.IndexOf(normalizedTarget, StringComparison.OrdinalIgnoreCase) < 0)
+                return ResolvedNodeSearchResult.Success(tokenOverlapMatch, "token-overlap");
+            }
+
+            Transform startsWithMatch = FindBestTransform(
+                allTransforms,
+                root,
+                t => NormalizeNodeName(t.name).StartsWith(normalizedTarget, StringComparison.OrdinalIgnoreCase));
+            if (startsWithMatch != null)
+            {
+                return ResolvedNodeSearchResult.Success(startsWithMatch, "fuzzy-starts-with");
+            }
+
+            Transform containsMatch = FindBestTransform(
+                allTransforms,
+                root,
+                t => NormalizeNodeName(t.name).IndexOf(normalizedTarget, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (containsMatch != null)
+            {
+                return ResolvedNodeSearchResult.Success(containsMatch, "fuzzy-contains");
+            }
+
+            if (!string.IsNullOrWhiteSpace(strippedTarget))
+            {
+                Transform strippedContainsMatch = FindBestTransform(
+                    allTransforms,
+                    root,
+                    t => NormalizeNodeName(t.name).IndexOf(strippedTarget, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (strippedContainsMatch != null)
+                {
+                    return ResolvedNodeSearchResult.Success(strippedContainsMatch, "fuzzy-contains-stripped");
+                }
+            }
+
+            return ResolvedNodeSearchResult.Failure(BuildResolvedNodeFailureDiagnostics(
+                resolvedNodeName,
+                normalizedTarget,
+                strippedTarget,
+                allTransforms));
+        }
+
+        private static Transform FindBestTransform(
+            IEnumerable<Transform> transforms,
+            Transform root,
+            Func<Transform, bool> predicate)
+        {
+            Transform best = null;
+            int bestDepth = int.MaxValue;
+            int bestNameLength = int.MaxValue;
+            string bestName = string.Empty;
+
+            foreach (Transform candidate in transforms)
+            {
+                if (candidate == null || !predicate(candidate))
                 {
                     continue;
                 }
 
-                int depth = GetTransformDepth(t, root);
-                if (depth < bestDepth)
+                int depth = GetTransformDepth(candidate, root);
+                int nameLength = candidate.name?.Length ?? int.MaxValue;
+                if (best == null ||
+                    depth < bestDepth ||
+                    (depth == bestDepth && nameLength < bestNameLength) ||
+                    (depth == bestDepth &&
+                     nameLength == bestNameLength &&
+                     string.Compare(candidate.name, bestName, StringComparison.OrdinalIgnoreCase) < 0))
                 {
+                    best = candidate;
                     bestDepth = depth;
-                    partialMatch = t;
+                    bestNameLength = nameLength;
+                    bestName = candidate.name ?? string.Empty;
                 }
             }
 
-            return partialMatch;
+            return best;
+        }
+
+        private static Transform FindBestTokenOverlapTransform(
+            IEnumerable<Transform> transforms,
+            Transform root,
+            string normalizedTarget)
+        {
+            HashSet<string> targetTokens = TokenizeNodeName(normalizedTarget);
+            if (targetTokens.Count == 0)
+            {
+                return null;
+            }
+
+            Transform best = null;
+            int bestTokenScore = 0;
+            int bestDepth = int.MaxValue;
+            int bestNameLength = int.MaxValue;
+            string bestName = string.Empty;
+
+            foreach (Transform candidate in transforms)
+            {
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                HashSet<string> candidateTokens = TokenizeNodeName(NormalizeNodeName(candidate.name));
+                if (candidateTokens.Count == 0)
+                {
+                    continue;
+                }
+
+                int sharedTokenCount = targetTokens.Count(token => candidateTokens.Contains(token));
+                if (sharedTokenCount <= 0)
+                {
+                    continue;
+                }
+
+                int depth = GetTransformDepth(candidate, root);
+                int nameLength = candidate.name?.Length ?? int.MaxValue;
+                if (best == null ||
+                    sharedTokenCount > bestTokenScore ||
+                    (sharedTokenCount == bestTokenScore && depth < bestDepth) ||
+                    (sharedTokenCount == bestTokenScore &&
+                     depth == bestDepth &&
+                     nameLength < bestNameLength) ||
+                    (sharedTokenCount == bestTokenScore &&
+                     depth == bestDepth &&
+                     nameLength == bestNameLength &&
+                     string.Compare(candidate.name, bestName, StringComparison.OrdinalIgnoreCase) < 0))
+                {
+                    best = candidate;
+                    bestTokenScore = sharedTokenCount;
+                    bestDepth = depth;
+                    bestNameLength = nameLength;
+                    bestName = candidate.name ?? string.Empty;
+                }
+            }
+
+            return best;
         }
 
         private static int GetTransformDepth(Transform node, Transform root)
@@ -525,6 +858,132 @@ namespace Toontown.Editor
             }
 
             return value;
+        }
+
+        private static string GetDirectionalSuffix(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            foreach (string suffix in DirectionalSuffixes)
+            {
+                if (value.EndsWith("_" + suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return suffix;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static IEnumerable<string> GetDirectionalFallbackOrder(string targetSuffix)
+        {
+            if (!string.IsNullOrWhiteSpace(targetSuffix))
+            {
+                yield return targetSuffix.ToLowerInvariant();
+            }
+
+            foreach (string suffix in DirectionalSuffixes)
+            {
+                if (!string.Equals(suffix, targetSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return suffix;
+                }
+            }
+        }
+
+        private static bool ShouldAttemptResolvedNodeIsolation(
+            Dictionary<string, string> properties,
+            string modelPath)
+        {
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return false;
+            }
+
+            string normalizedModelPath = modelPath.Replace('\\', '/');
+            if (normalizedModelPath.IndexOf("models/modules/", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (properties != null &&
+                properties.TryGetValue("Keyword", out string keyword) &&
+                !string.IsNullOrWhiteSpace(keyword))
+            {
+                if (string.Equals(keyword, "door", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(keyword, "window", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static HashSet<string> TokenizeNodeName(string normalizedNodeName)
+        {
+            var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(normalizedNodeName))
+            {
+                return tokens;
+            }
+
+            string[] parts = normalizedNodeName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string part in parts)
+            {
+                string token = part.Trim();
+                if (string.IsNullOrWhiteSpace(token) || NodeNoiseTokens.Contains(token))
+                {
+                    continue;
+                }
+
+                tokens.Add(token);
+            }
+
+            return tokens;
+        }
+
+        private static string BuildResolvedNodeFailureDiagnostics(
+            string resolvedNodeName,
+            string normalizedTarget,
+            string strippedTarget,
+            IReadOnlyList<Transform> candidates)
+        {
+            IEnumerable<Transform> likelyCandidates = candidates
+                .Where(t =>
+                {
+                    string normalized = NormalizeNodeName(t.name);
+                    return normalized.IndexOf(normalizedTarget, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                           (!string.IsNullOrWhiteSpace(strippedTarget) &&
+                            normalized.IndexOf(strippedTarget, StringComparison.OrdinalIgnoreCase) >= 0);
+                });
+
+            List<string> topNames = likelyCandidates
+                .Select(t => t.name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(8)
+                .ToList();
+
+            if (topNames.Count == 0)
+            {
+                topNames = candidates
+                    .Select(t => t.name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(8)
+                    .ToList();
+            }
+
+            if (topNames.Count == 0)
+            {
+                return $"no candidates in model for resolved node '{resolvedNodeName}'";
+            }
+
+            return $"no match for '{resolvedNodeName}', closest candidates: {string.Join(", ", topNames)}";
         }
 
         private static bool ShouldAllowFuzzyResolvedNodeMatch(
@@ -602,6 +1061,33 @@ namespace Toontown.Editor
 
             return values;
         }
+
+        private sealed class ResolvedNodeSearchResult
+        {
+            public Transform Match;
+            public string Strategy;
+            public string Diagnostics;
+
+            public static ResolvedNodeSearchResult Success(Transform match, string strategy)
+            {
+                return new ResolvedNodeSearchResult
+                {
+                    Match = match,
+                    Strategy = strategy,
+                    Diagnostics = string.Empty
+                };
+            }
+
+            public static ResolvedNodeSearchResult Failure(string diagnostics)
+            {
+                return new ResolvedNodeSearchResult
+                {
+                    Match = null,
+                    Strategy = string.Empty,
+                    Diagnostics = diagnostics ?? string.Empty
+                };
+            }
+        }
     }
 
     [Serializable]
@@ -627,7 +1113,11 @@ namespace Toontown.Editor
         public int FakeShadowRenderersDisabled;
         public int ResolvedNodeIsolationsSucceeded;
         public int ResolvedNodeIsolationsFailed;
+        public int DoorWindowParentAnchorsAttempted;
+        public int DoorWindowParentAnchorsApplied;
+        public int DoorWindowParentAnchorsMissed;
         public List<string> MissingModelPaths = new List<string>();
         public List<string> FailedResolvedNodeEntries = new List<string>();
+        public List<string> DoorWindowParentAnchorWarnings = new List<string>();
     }
 }

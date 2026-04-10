@@ -4,6 +4,7 @@ using UnityEditor.AssetImporters;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using POTCO.Editor;
@@ -249,10 +250,17 @@ public class GeometryProcessor
                     mesh.SetTriangles(localTriangles, j, false);
                 }
             }
-            if (materialDict.TryGetValue(matName, out Material mat))
+            if (TryResolveMaterialForPolygon(matName, materialDict, out Material mat, out string resolvedMaterialKey))
             {
                 rendererMaterials.Add(mat);
-                DebugLogger.LogEggImporter($"Added material: {matName}");
+                if (!string.Equals(matName, resolvedMaterialKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    DebugLogger.LogEggImporter($"Added material via fallback: {matName} -> {resolvedMaterialKey}");
+                }
+                else
+                {
+                    DebugLogger.LogEggImporter($"Added material: {matName}");
+                }
             }
             else
             {
@@ -748,11 +756,18 @@ public class GeometryProcessor
     }
 
 
-    private void ParsePolygon(string[] lines, ref int i, Dictionary<string, List<int>> subMeshes, List<string> materialNames, bool isInCollisionGroup = false)
+    private void ParsePolygon(
+        string[] lines,
+        ref int i,
+        Dictionary<string, List<int>> subMeshes,
+        List<string> materialNames,
+        bool isInCollisionGroup = false,
+        IReadOnlyList<string> inheritedTextureRefs = null,
+        bool inheritedAlphaBlend = false)
     {
         string polygonTextureRef = "Default-Material";
         int blockEnd = _parserUtils.FindMatchingBrace(lines, i);
-        bool hasAlphaBlend = false;
+        bool hasAlphaBlend = inheritedAlphaBlend;
 
         // Check for collision tags and alpha blend at polygon level
         bool isCollisionPolygon = isInCollisionGroup;
@@ -825,6 +840,19 @@ public class GeometryProcessor
             {
                 // Single texture
                 polygonTextureRef = textureRefs[0];
+            }
+            else if (inheritedTextureRefs != null && inheritedTextureRefs.Count > 0)
+            {
+                if (inheritedTextureRefs.Count > 1)
+                {
+                    polygonTextureRef = string.Join("||", inheritedTextureRefs);
+                }
+                else
+                {
+                    polygonTextureRef = inheritedTextureRefs[0];
+                }
+
+                DebugLogger.LogEggImporter($"[InheritedTRef] Polygon inherited texture ref(s): {polygonTextureRef}");
             }
             // else keep "Default-Material"
         }
@@ -969,8 +997,20 @@ public class GeometryProcessor
         i = blockEnd;
     }
 
-    public void BuildHierarchyAndMapGeometry(string[] lines, int start, int end, string currentPath, Dictionary<string, Transform> hierarchyMap, Dictionary<string, GeometryData> geometryMap, bool isInCollisionContext = false)
+    public void BuildHierarchyAndMapGeometry(
+        string[] lines,
+        int start,
+        int end,
+        string currentPath,
+        Dictionary<string, Transform> hierarchyMap,
+        Dictionary<string, GeometryData> geometryMap,
+        bool isInCollisionContext = false,
+        IReadOnlyList<string> inheritedTextureRefs = null,
+        bool inheritedAlphaBlend = false)
     {
+        var scopedTextureRefs = CloneTextureRefs(inheritedTextureRefs);
+        bool scopedAlphaBlend = inheritedAlphaBlend;
+
         // Detect ship LOD variant sets at this level if we're in a ship model
         Dictionary<string, List<string>> shipLODVariantSets = new Dictionary<string, List<string>>();
         if (IsShipModel())
@@ -989,6 +1029,35 @@ public class GeometryProcessor
         {
             // Use Span for zero-allocation string operations (optimization: 30-50% faster)
             ReadOnlySpan<char> trimmedLine = lines[i].AsSpan().Trim();
+            if (trimmedLine.StartsWith("<Texture>".AsSpan(), StringComparison.Ordinal) ||
+                trimmedLine.StartsWith("<Material>".AsSpan(), StringComparison.Ordinal))
+            {
+                int definitionEnd = _parserUtils.FindMatchingBrace(lines, i);
+                i = definitionEnd >= i ? definitionEnd + 1 : i + 1;
+                continue;
+            }
+
+            if (trimmedLine.StartsWith("<TRef>".AsSpan(), StringComparison.Ordinal))
+            {
+                if (TryExtractBraceValue(lines[i], out string textureRef) &&
+                    !string.IsNullOrWhiteSpace(textureRef) &&
+                    !scopedTextureRefs.Contains(textureRef))
+                {
+                    scopedTextureRefs.Add(textureRef);
+                }
+
+                i++;
+                continue;
+            }
+
+            if (trimmedLine.StartsWith("<Scalar> alpha".AsSpan(), StringComparison.Ordinal) &&
+                lines[i].IndexOf("blend", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                scopedAlphaBlend = true;
+                i++;
+                continue;
+            }
+
             if (trimmedLine.StartsWith("<Group>".AsSpan(), StringComparison.Ordinal))
             {
                 string groupName = _parserUtils.GetGroupNameSpan(trimmedLine);
@@ -1074,7 +1143,16 @@ public class GeometryProcessor
 
                 // Pass collision context down recursively - either from parent context OR if this group is a collision group
                 bool childIsInCollisionContext = isInCollisionContext || isCollisionGroup;
-                BuildHierarchyAndMapGeometry(lines, i + 1, groupEnd, newPath, hierarchyMap, geometryMap, childIsInCollisionContext);
+                BuildHierarchyAndMapGeometry(
+                    lines,
+                    i + 1,
+                    groupEnd,
+                    newPath,
+                    hierarchyMap,
+                    geometryMap,
+                    childIsInCollisionContext,
+                    scopedTextureRefs,
+                    scopedAlphaBlend);
                 i = groupEnd + 1;
             }
             else if (trimmedLine.StartsWith("<Transform>".AsSpan(), StringComparison.Ordinal))
@@ -1111,7 +1189,14 @@ public class GeometryProcessor
                 {
                     geometryMap[currentPath] = new GeometryData();
                 }
-                ParsePolygon(lines, ref i, geometryMap[currentPath].subMeshes, geometryMap[currentPath].materialNames, isInCollisionContext);
+                ParsePolygon(
+                    lines,
+                    ref i,
+                    geometryMap[currentPath].subMeshes,
+                    geometryMap[currentPath].materialNames,
+                    isInCollisionContext,
+                    scopedTextureRefs,
+                    scopedAlphaBlend);
             }
             else
             {
@@ -1889,6 +1974,133 @@ public class GeometryProcessor
 
         DebugLogger.LogEggImporter($"🎯 Best available named LOD quality: {bestQuality}");
         return bestQuality;
+    }
+
+    private static List<string> CloneTextureRefs(IReadOnlyList<string> textureRefs)
+    {
+        if (textureRefs == null || textureRefs.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        var clone = new List<string>(textureRefs.Count);
+        for (int i = 0; i < textureRefs.Count; i++)
+        {
+            string textureRef = textureRefs[i];
+            if (!string.IsNullOrWhiteSpace(textureRef) && !clone.Contains(textureRef))
+            {
+                clone.Add(textureRef);
+            }
+        }
+
+        return clone;
+    }
+
+    private static bool TryExtractBraceValue(string line, out string value)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        int openBraceIndex = line.IndexOf('{');
+        int closeBraceIndex = line.LastIndexOf('}');
+        if (openBraceIndex < 0 || closeBraceIndex <= openBraceIndex)
+        {
+            return false;
+        }
+
+        value = line.Substring(openBraceIndex + 1, closeBraceIndex - openBraceIndex - 1).Trim();
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static bool TryResolveMaterialForPolygon(
+        string requestedMaterialName,
+        Dictionary<string, Material> materialDict,
+        out Material material,
+        out string resolvedMaterialName)
+    {
+        material = null;
+        resolvedMaterialName = requestedMaterialName;
+        if (materialDict == null || materialDict.Count == 0 || string.IsNullOrWhiteSpace(requestedMaterialName))
+        {
+            return false;
+        }
+
+        foreach (string candidate in GetMaterialLookupCandidates(requestedMaterialName))
+        {
+            if (materialDict.TryGetValue(candidate, out material))
+            {
+                resolvedMaterialName = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<string> GetMaterialLookupCandidates(string materialName)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string normalized = NormalizeMaterialLookupName(materialName);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            yield break;
+        }
+
+        AddCandidate(candidates, normalized);
+        string withoutAlphaSuffix = StripAlphaBlendSuffix(normalized);
+        AddCandidate(candidates, withoutAlphaSuffix);
+        AddCandidate(candidates, withoutAlphaSuffix + "_ALPHABLEND");
+
+        string[] multiTextureParts = withoutAlphaSuffix.Split(new[] { "||" }, StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < multiTextureParts.Length; i++)
+        {
+            string part = NormalizeMaterialLookupName(multiTextureParts[i]);
+            AddCandidate(candidates, part);
+            AddCandidate(candidates, StripAlphaBlendSuffix(part));
+            AddCandidate(candidates, Path.GetFileNameWithoutExtension(part));
+        }
+
+        AddCandidate(candidates, Path.GetFileNameWithoutExtension(withoutAlphaSuffix));
+        AddCandidate(candidates, "Default-Material");
+
+        foreach (string candidate in candidates)
+        {
+            yield return candidate;
+        }
+    }
+
+    private static string NormalizeMaterialLookupName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Trim().Replace('\\', '/');
+    }
+
+    private static string StripAlphaBlendSuffix(string materialName)
+    {
+        const string alphaBlendSuffix = "_ALPHABLEND";
+        if (string.IsNullOrWhiteSpace(materialName))
+        {
+            return string.Empty;
+        }
+
+        return materialName.EndsWith(alphaBlendSuffix, StringComparison.OrdinalIgnoreCase)
+            ? materialName.Substring(0, materialName.Length - alphaBlendSuffix.Length)
+            : materialName;
+    }
+
+    private static void AddCandidate(HashSet<string> candidates, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            candidates.Add(value);
+        }
     }
 
     private static bool ShouldRecalculateNormals(Vector3[] normals, int vertexCount)

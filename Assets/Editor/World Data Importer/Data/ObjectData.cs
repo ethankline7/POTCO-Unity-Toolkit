@@ -18,6 +18,9 @@ namespace WorldDataImporter.Data
         public bool isInstanced;
         public string visSize;
         public string visZone;
+        public bool applyDoubleSidedShadows;
+        public string signFrameModelPath;
+        public string signImageModelPath;
         
         // Light properties
         public string lightType;        // AMBIENT, POINT, SPOT
@@ -73,6 +76,7 @@ namespace WorldDataImporter.Data
         public int collisionRemoved;
         public int lightsCreated;
         public int visualColorsApplied;
+        public int doubleSidedShadowPatchesApplied;
         public Dictionary<string, int> objectTypeCount = new Dictionary<string, int>();
         public List<string> missingModelPaths = new List<string>();
         public float importTime;

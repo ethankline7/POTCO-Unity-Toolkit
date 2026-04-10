@@ -4,7 +4,9 @@ using WorldDataImporter.Data;
 using POTCO;
 using POTCO.Editor;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using UnityEngine.Rendering;
 using DebugLogger = POTCO.Editor.DebugLogger;
 
 namespace WorldDataImporter.Processors
@@ -185,6 +187,12 @@ namespace WorldDataImporter.Processors
                     {
                         currentGO.name = objectName;
                     }
+                    break;
+                case "SignFrame":
+                    TryProcessSignCardPropProperty(val, true, currentGO, useEgg, objectData, stats, settings);
+                    break;
+                case "SignImage":
+                    TryProcessSignCardPropProperty(val, false, currentGO, useEgg, objectData, stats, settings);
                     break;
                 case "Model":
                     if (ParsingUtilities.ExtractModelPath(val, out string modelPath))
@@ -395,6 +403,11 @@ namespace WorldDataImporter.Processors
                             {
                                 DebugLogger.LogWorldImporter($"⚠️ BLOCKED: Attempted to apply Visual color to root GameObject {currentGO.name} - Root should never have visual colors!");
                             }
+
+                            if (settings?.applyDoubleSidedShadowPatches == true && objectData.applyDoubleSidedShadows)
+                            {
+                                ApplyDoubleSidedShadowPatch(currentGO, stats);
+                            }
                         }
                     }
                     
@@ -476,6 +489,17 @@ namespace WorldDataImporter.Processors
                         if (visZoneTypeInfo != null)
                         {
                             visZoneTypeInfo.visZone = visZone;
+                        }
+                    }
+                    break;
+                case "DoubleSidedShadows":
+                    if (objectData != null && ParsingUtilities.ParseBool(val, out bool applyPatch))
+                    {
+                        objectData.applyDoubleSidedShadows = applyPatch;
+
+                        if (applyPatch && settings?.applyDoubleSidedShadowPatches == true)
+                        {
+                            ApplyDoubleSidedShadowPatch(currentGO, stats);
                         }
                     }
                     break;
@@ -738,6 +762,246 @@ namespace WorldDataImporter.Processors
 
             // Note: NPC spawning is now handled after all properties are processed
             // (moved to SceneBuildingAlgorithm when object is complete)
+        }
+
+        private static void TryProcessSignCardPropProperty(
+            string value,
+            bool isFrame,
+            GameObject currentGO,
+            bool useEgg,
+            ObjectData objectData,
+            ImportStatistics stats,
+            ImportSettings settings)
+        {
+            if (objectData == null || currentGO == null)
+            {
+                return;
+            }
+
+            string modelPath = null;
+            if (!ParsingUtilities.ExtractModelPath(value, out modelPath))
+            {
+                modelPath = ParsingUtilities.ExtractStringValue(value);
+            }
+
+            if (string.IsNullOrWhiteSpace(modelPath))
+            {
+                return;
+            }
+
+            if (isFrame)
+            {
+                objectData.signFrameModelPath = modelPath;
+            }
+            else
+            {
+                objectData.signImageModelPath = modelPath;
+            }
+
+            if (settings != null && !settings.importSignCardProps)
+            {
+                return;
+            }
+
+            GameObject cardProp = AssetUtilities.InstantiatePrefab(modelPath, currentGO, useEgg, stats);
+            if (cardProp == null)
+            {
+                return;
+            }
+
+            string suffix = isFrame ? "sign_frame" : "sign_image";
+            cardProp.name = $"{Path.GetFileNameWithoutExtension(modelPath)}_{suffix}";
+
+            SignCardPropController controller = EnsureSignCardPropController(currentGO, objectData, settings);
+            controller.RegisterCardProp(cardProp);
+
+            DebugLogger.LogWorldImporter(
+                $"🪧 Imported {(isFrame ? "SignFrame" : "SignImage")} card prop '{modelPath}' on '{currentGO.name}'");
+        }
+
+        private static SignCardPropController EnsureSignCardPropController(
+            GameObject currentGO,
+            ObjectData objectData,
+            ImportSettings settings)
+        {
+            SignCardPropController controller = currentGO.GetComponent<SignCardPropController>();
+            bool created = false;
+            if (controller == null)
+            {
+                controller = currentGO.AddComponent<SignCardPropController>();
+                created = true;
+            }
+
+            controller.SetSourcePaths(objectData.signFrameModelPath, objectData.signImageModelPath);
+
+            if (created && settings != null)
+            {
+                SignCardPropDisplayMode defaultMode = settings.defaultHideSignCardPropsForReplacement
+                    ? SignCardPropDisplayMode.Hide2DCardPropsForReplacement
+                    : SignCardPropDisplayMode.Show2DCardProps;
+                controller.SetDisplayMode(defaultMode);
+            }
+            else
+            {
+                controller.ApplyDisplayMode();
+            }
+
+            return controller;
+        }
+
+        private static void ApplyDoubleSidedShadowPatch(GameObject currentGO, ImportStatistics stats)
+        {
+            if (currentGO == null)
+            {
+                return;
+            }
+
+            var renderers = currentGO.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                return;
+            }
+
+            bool patchApplied = false;
+            foreach (var renderer in renderers)
+            {
+                if (renderer is ParticleSystemRenderer || renderer is TrailRenderer || renderer is LineRenderer)
+                {
+                    continue;
+                }
+
+                if (renderer.shadowCastingMode != ShadowCastingMode.TwoSided)
+                {
+                    renderer.shadowCastingMode = ShadowCastingMode.TwoSided;
+                    patchApplied = true;
+                }
+
+                if (PatchRendererMaterialsDoubleSided(renderer))
+                {
+                    patchApplied = true;
+                }
+            }
+
+            if (!patchApplied)
+            {
+                return;
+            }
+
+            if (stats != null)
+            {
+                stats.doubleSidedShadowPatchesApplied++;
+            }
+
+            DebugLogger.LogWorldImporter($"🩹 Applied DoubleSidedShadows patch on '{currentGO.name}'");
+        }
+
+        private static bool PatchRendererMaterialsDoubleSided(Renderer renderer)
+        {
+            if (renderer == null)
+            {
+                return false;
+            }
+
+            Material[] sharedMaterials = renderer.sharedMaterials;
+            if (sharedMaterials == null || sharedMaterials.Length == 0)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            for (int i = 0; i < sharedMaterials.Length; i++)
+            {
+                Material source = sharedMaterials[i];
+                if (source == null || !MaterialSupportsDoubleSidedPatch(source) || MaterialAlreadyDoubleSided(source))
+                {
+                    continue;
+                }
+
+                Material patched = new Material(source)
+                {
+                    name = $"{source.name}_TwoSidedPatch"
+                };
+
+                SetCullOffIfPresent(patched, "_Cull");
+                SetCullOffIfPresent(patched, "_CullMode");
+                SetCullOffIfPresent(patched, "_CullModeForward");
+                SetCullOffIfPresent(patched, "_CullModeShadow");
+
+                if (patched.HasProperty("_DoubleSidedEnable"))
+                {
+                    patched.SetFloat("_DoubleSidedEnable", 1f);
+                }
+
+                if (patched.HasProperty("_RenderFace"))
+                {
+                    // URP convention: 2 == both faces.
+                    patched.SetFloat("_RenderFace", 2f);
+                }
+
+                sharedMaterials[i] = patched;
+                changed = true;
+            }
+
+            if (changed)
+            {
+                renderer.sharedMaterials = sharedMaterials;
+            }
+
+            return changed;
+        }
+
+        private static bool MaterialSupportsDoubleSidedPatch(Material material)
+        {
+            if (material == null)
+            {
+                return false;
+            }
+
+            return material.HasProperty("_Cull")
+                || material.HasProperty("_CullMode")
+                || material.HasProperty("_CullModeForward")
+                || material.HasProperty("_CullModeShadow")
+                || material.HasProperty("_DoubleSidedEnable")
+                || material.HasProperty("_RenderFace");
+        }
+
+        private static bool MaterialAlreadyDoubleSided(Material material)
+        {
+            if (material == null)
+            {
+                return true;
+            }
+
+            if (material.HasProperty("_DoubleSidedEnable") && material.GetFloat("_DoubleSidedEnable") > 0.5f)
+            {
+                return true;
+            }
+
+            return IsCullOff(material, "_Cull")
+                || IsCullOff(material, "_CullMode")
+                || IsCullOff(material, "_CullModeForward")
+                || IsCullOff(material, "_CullModeShadow");
+        }
+
+        private static bool IsCullOff(Material material, string propertyName)
+        {
+            if (material == null || !material.HasProperty(propertyName))
+            {
+                return false;
+            }
+
+            int raw = Mathf.RoundToInt(material.GetFloat(propertyName));
+            return raw == (int)CullMode.Off;
+        }
+
+        private static void SetCullOffIfPresent(Material material, string propertyName)
+        {
+            if (material == null || !material.HasProperty(propertyName))
+            {
+                return;
+            }
+
+            material.SetFloat(propertyName, (float)CullMode.Off);
         }
 
         public static void SpawnNPC(GameObject currentGO, ObjectData objectData, ImportStatistics stats)

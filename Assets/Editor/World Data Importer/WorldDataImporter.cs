@@ -142,6 +142,28 @@ public class WorldSceneBuilderEditor : EditorWindow
             if (settings.importHolidayObjects) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.LabelField("   Include objects with Holiday properties (uncheck to skip holiday decorations)", EditorStyles.miniLabel);
+
+            GUILayout.Space(5);
+            GUILayout.Label("Sign/Text Card Systems", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            settings.importSignCardProps = EditorGUILayout.Toggle("Import Sign 2D Card Props", settings.importSignCardProps);
+            if (settings.importSignCardProps) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Imports SignFrame + SignImage card props and attaches a sign toggle controller", EditorStyles.miniLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            settings.defaultHideSignCardPropsForReplacement = EditorGUILayout.Toggle("Default To Replacement Prep", settings.defaultHideSignCardPropsForReplacement);
+            if (settings.defaultHideSignCardPropsForReplacement) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   New sign controllers start with 2D card props hidden for future replacement workflows", EditorStyles.miniLabel);
+
+            GUILayout.Space(5);
+            GUILayout.Label("Rendering Patches", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            settings.applyDoubleSidedShadowPatches = EditorGUILayout.Toggle("Apply Two-Sided Shadow Patches", settings.applyDoubleSidedShadowPatches);
+            if (settings.applyDoubleSidedShadowPatches) EditorGUILayout.LabelField("✅", GUILayout.Width(20));
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.LabelField("   Reads 'DoubleSidedShadows' from world data and applies two-sided shadow/material patching", EditorStyles.miniLabel);
             
             GUILayout.Space(5);
             GUILayout.Label("Performance Options", EditorStyles.boldLabel);
@@ -247,6 +269,7 @@ public class WorldSceneBuilderEditor : EditorWindow
             EditorGUILayout.LabelField("Collisions Removed:", lastImportStats.collisionRemoved.ToString());
             EditorGUILayout.LabelField("Lights Created:", lastImportStats.lightsCreated.ToString());
             EditorGUILayout.LabelField("Visual Colors Applied:", lastImportStats.visualColorsApplied.ToString());
+            EditorGUILayout.LabelField("Two-Sided Shadow Patches:", lastImportStats.doubleSidedShadowPatchesApplied.ToString());
 
             if (lastImportStats.objectTypeCount.Count > 0)
             {

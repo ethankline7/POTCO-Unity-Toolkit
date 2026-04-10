@@ -108,6 +108,15 @@ namespace WorldDataExporter
             settings.exportHolidayObjects = EditorGUILayout.Toggle("Export Holiday Objects", settings.exportHolidayObjects);
             EditorGUILayout.LabelField("   Include objects with Holiday properties", EditorStyles.miniLabel);
 
+            GUILayout.Space(5);
+            GUILayout.Label("Rendering Patches", EditorStyles.boldLabel);
+            settings.patchSingleSidedModelsForShadows = EditorGUILayout.Toggle(
+                "Patch One-Sided Models For Shadows",
+                settings.patchSingleSidedModelsForShadows);
+            EditorGUILayout.LabelField(
+                "   Adds 'DoubleSidedShadows: True' for detected one-sided materials during export",
+                EditorStyles.miniLabel);
+
             EditorGUILayout.EndVertical();
         }
 
@@ -479,6 +488,7 @@ namespace WorldDataExporter
                 EditorGUILayout.LabelField("Lighting Objects:", lastExportStats.lightingObjectsExported.ToString());
                 EditorGUILayout.LabelField("Collision Objects:", lastExportStats.collisionObjectsExported.ToString());
                 EditorGUILayout.LabelField("Node Objects:", lastExportStats.nodeObjectsExported.ToString());
+                EditorGUILayout.LabelField("Two-Sided Shadow Patches:", lastExportStats.doubleSidedShadowPatchesExported.ToString());
                 EditorGUILayout.LabelField("File Size:", $"{lastExportStats.fileSizeKB:F1} KB");
 
                 if (lastExportStats.objectTypeCount.Count > 0)

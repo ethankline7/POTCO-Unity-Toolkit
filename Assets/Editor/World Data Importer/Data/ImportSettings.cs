@@ -25,6 +25,13 @@ namespace WorldDataImporter.Data
         public bool importHolidayObjects = true;
         public List<string> excludeObjectTypes = new List<string>();
         public List<string> includeObjectTypes = new List<string>();
+
+        [Header("Sign/Text Card Systems")]
+        public bool importSignCardProps = true;
+        public bool defaultHideSignCardPropsForReplacement = false;
+
+        [Header("Rendering Patches")]
+        public bool applyDoubleSidedShadowPatches = true;
         
         [Header("Performance Options")]
         public bool showImportStatistics = true;

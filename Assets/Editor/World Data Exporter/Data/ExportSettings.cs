@@ -30,5 +30,8 @@ namespace WorldDataExporter.Data
         public List<string> includeObjectTypes = new List<string>();
         public bool preserveHierarchy = true;
         public bool generateUniqueIds = true;
+
+        [Header("Rendering Patches")]
+        public bool patchSingleSidedModelsForShadows = true;
     }
 }

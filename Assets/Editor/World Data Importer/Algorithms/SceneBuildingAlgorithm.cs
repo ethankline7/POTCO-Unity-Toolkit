@@ -662,6 +662,7 @@ namespace WorldDataImporter.Algorithms
             DebugLogger.LogWorldImporter($"   • Visual Colors Applied: {stats.visualColorsApplied}");
             DebugLogger.LogWorldImporter($"   • Collision Disabled: {stats.collisionDisabled}");
             DebugLogger.LogWorldImporter($"   • Import Time: {stats.importTime:F2}s");
+            DebugLogger.LogWorldImporter($"   • Two-Sided Shadow Patches: {stats.doubleSidedShadowPatchesApplied}");
             
             if (stats.objectTypeCount.Count > 0)
             {
