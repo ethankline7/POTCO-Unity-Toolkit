@@ -667,12 +667,6 @@ namespace Toontown.Editor
                 }
             }
 
-            Transform tokenOverlapMatch = FindBestTokenOverlapTransform(allTransforms, root, normalizedTarget);
-            if (tokenOverlapMatch != null)
-            {
-                return ResolvedNodeSearchResult.Success(tokenOverlapMatch, "token-overlap");
-            }
-
             if (!allowFuzzyMatch)
             {
                 return ResolvedNodeSearchResult.Failure(BuildResolvedNodeFailureDiagnostics(
@@ -680,6 +674,12 @@ namespace Toontown.Editor
                     normalizedTarget,
                     strippedTarget,
                     allTransforms));
+            }
+
+            Transform tokenOverlapMatch = FindBestTokenOverlapTransform(allTransforms, root, normalizedTarget);
+            if (tokenOverlapMatch != null)
+            {
+                return ResolvedNodeSearchResult.Success(tokenOverlapMatch, "token-overlap");
             }
 
             Transform startsWithMatch = FindBestTransform(

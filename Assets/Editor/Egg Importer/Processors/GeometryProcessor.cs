@@ -1029,6 +1029,14 @@ public class GeometryProcessor
         {
             // Use Span for zero-allocation string operations (optimization: 30-50% faster)
             ReadOnlySpan<char> trimmedLine = lines[i].AsSpan().Trim();
+            if (trimmedLine.StartsWith("<Texture>".AsSpan(), StringComparison.Ordinal) ||
+                trimmedLine.StartsWith("<Material>".AsSpan(), StringComparison.Ordinal))
+            {
+                int definitionEnd = _parserUtils.FindMatchingBrace(lines, i);
+                i = definitionEnd >= i ? definitionEnd + 1 : i + 1;
+                continue;
+            }
+
             if (trimmedLine.StartsWith("<TRef>".AsSpan(), StringComparison.Ordinal))
             {
                 if (TryExtractBraceValue(lines[i], out string textureRef) &&
