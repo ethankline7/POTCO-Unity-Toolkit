@@ -35,6 +35,7 @@ The goal is to support community-made worlds and tooling while keeping migration
 - ✅ `Toontown/World Data/DNA Scene Importer (MVP)` for `.dna -> Unity` hierarchy import
 - ✅ `Toontown/Validation/Run Sample Smoke Test`
 - ✅ CSV validation report export for mapping/tuning evidence
+- ✅ `Toontown/Environment Switcher` for quick scene lighting, skybox, fog, audio, and effect preset passes
 
 ### Level Creation & Management
 🏗️ **Level Editor (Prop Browser)** - Visual asset browser and placement tool  
@@ -58,6 +59,7 @@ Open the project in Unity 6000.1.11f1, then access tools via:
 - Engineering workflow: [`docs/WORKFLOW.md`](docs/WORKFLOW.md)
 - Toontown migration plan: [`docs/TOONTOWN_MIGRATION_PLAN.md`](docs/TOONTOWN_MIGRATION_PLAN.md)
 - Toontown quick start (first runnable flow): [`docs/TOONTOWN_QUICKSTART.md`](docs/TOONTOWN_QUICKSTART.md)
+- Current branch/project status: [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md)
 - Required baseline check before commit:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
 - Optional local headless smoke check:

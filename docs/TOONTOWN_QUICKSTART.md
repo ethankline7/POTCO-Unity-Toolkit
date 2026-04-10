@@ -92,6 +92,12 @@ Notes:
 - If Unity is not auto-detected, set:
   - `set UNITY_EDITOR_PATH=C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe`
 
+## 12. Environment Presets
+1. Open `Toontown/Environment Switcher`.
+2. Click `Auto-Find Main Light + Ambient Audio Source`.
+3. Apply a preset such as `Classic Toontown`, `Night`, `Sunset`, or `Stormy`.
+4. Assign managed effect roots if the scene has particle/weather groups that should toggle with presets.
+
 ## Common Pitfalls
 - If importer/exporter warns about active game flavor, set `Toolkit/Settings` to `Toontown`.
 - If parse count is zero, verify the source file has an `objectStruct['Objects']` dictionary.
