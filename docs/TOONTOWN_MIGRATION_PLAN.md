@@ -56,6 +56,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Updated smoke test runner to be batch-safe (no modal dialog in headless execution).
 - Updated smoke test runner to validate both bundled sample formats (dictionary-style and assignment-style) in one run.
 - Expanded reader parsing support for assignment-style `objectStruct[...]` path assignments and quoted-key variants.
+- Normalized quoted scalar values in parsed Toontown properties so direct assignment-style fields round-trip as document values.
 - Added parser regression runner (`Toontown/Validation/Run Parser Regression Tests`) with fixture assertions for dictionary and assignment sample formats.
 - Expanded validator UX with `Validate Both Bundled Samples` and clearer overall PASS/WARN/FAIL status messaging.
 - Added `.dna` document reader MVP (`toontown.dna.zone`) with storage mapping support from `storage*.dna` files.
