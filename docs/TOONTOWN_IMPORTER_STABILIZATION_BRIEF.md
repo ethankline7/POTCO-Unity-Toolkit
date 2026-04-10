@@ -20,6 +20,7 @@ This pass should harden the existing MVP path:
 ## In Scope
 - Strict vs fuzzy resolved-node regression coverage.
 - DNA demo metrics that can be copied into PR descriptions.
+- Material audit metrics that can be thresholded as the baseline tightens.
 - Warning category counts for importer health tracking.
 - A command-line parser regression runner.
 - Lightweight primary-check guards for fragile importer assumptions.
@@ -35,6 +36,7 @@ This pass should harden the existing MVP path:
 - `scripts\run-action.cmd primary-checks`
 - `scripts\run-action.cmd parser-regression`
 - `scripts\run-action.cmd dna-demo -SkipResourceSetup`
+- `scripts\run-action.cmd material-audit -MaxMissingMainTex 46`
 
 Use `primary-checks` before every commit. Use the Unity-backed commands when the matching Unity editor is available and the project can be opened without mixing in upgrade churn.
 
@@ -44,6 +46,7 @@ The Unity-backed scripts check the project-pinned editor version before launchin
 - Primary checks pass.
 - Parser regression passes in Unity or the editor blocker is documented.
 - DNA demo runs and records metrics, or the blocker is documented.
+- Material audit runs against the generated DNA demo scene when material/texture behavior changes.
 - No generated resource dump is staged.
 - No Unity/package version changes are mixed into this branch.
 - PR description includes DNA demo metrics when available.

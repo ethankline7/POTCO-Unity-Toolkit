@@ -75,6 +75,7 @@ Open the project in Unity 6000.1.11f1, then access tools via:
   - `scripts\run-action.cmd primary-checks`
   - `scripts\run-action.cmd smoke`
   - `scripts\run-action.cmd dna-demo`
+  - `scripts\run-action.cmd material-audit`
 
 ---
 
