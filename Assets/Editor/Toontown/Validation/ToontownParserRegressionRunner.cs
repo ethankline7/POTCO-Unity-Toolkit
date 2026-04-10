@@ -61,6 +61,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
             checks.Add(RunResolvedNodeParentAnchorAliasFixtureCheck());
             checks.Add(RunZeroCountWindowGroupFixtureCheck());
+            checks.Add(RunEggMaterialScopeFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
             var sb = new StringBuilder();
@@ -508,6 +509,117 @@ namespace Toontown.Editor.Validation
                     UnityEngine.Object.DestroyImmediate(root);
                 }
             }
+        }
+
+        private static RegressionCheckResult RunEggMaterialScopeFixtureCheck()
+        {
+            const string rootName = "__ToontownEggMaterialScopeRegression";
+            var root = new GameObject(rootName);
+
+            try
+            {
+                string[] lines =
+                {
+                    "<Group> parent {",
+                    "  <TRef> { parent_tex }",
+                    "  <Group> alpha_child {",
+                    "    <Scalar> alpha { blend }",
+                    "    <Polygon> {",
+                    "    }",
+                    "  }",
+                    "  <Group> child_textured {",
+                    "    <TRef> { child_tex }",
+                    "    <Polygon> {",
+                    "    }",
+                    "  }",
+                    "  <Group> sibling {",
+                    "    <Polygon> {",
+                    "    }",
+                    "  }",
+                    "}",
+                    "<Group> isolated {",
+                    "  <Texture> unused_tex {",
+                    "    \"phase_4/maps/unused.png\"",
+                    "  }",
+                    "  <Material> unused_mat {",
+                    "  }",
+                    "  <Polygon> {",
+                    "  }",
+                    "}"
+                };
+
+                var hierarchyMap = new Dictionary<string, Transform>
+                {
+                    { string.Empty, root.transform }
+                };
+                var geometryMap = new Dictionary<string, GeometryData>();
+                var processor = new GeometryProcessor();
+
+                processor.BuildHierarchyAndMapGeometry(
+                    lines,
+                    0,
+                    lines.Length,
+                    string.Empty,
+                    hierarchyMap,
+                    geometryMap);
+
+                string alphaChildMaterials = GetMaterialSummary(geometryMap, "parent/alpha_child");
+                if (alphaChildMaterials != "parent_tex_ALPHABLEND")
+                {
+                    return RegressionCheckResult.Fail(
+                        "EGG material scope",
+                        $"Expected alpha_child to inherit parent_tex with alpha blend, got '{alphaChildMaterials}'.");
+                }
+
+                string childTexturedMaterials = GetMaterialSummary(geometryMap, "parent/child_textured");
+                if (childTexturedMaterials != "parent_tex||child_tex")
+                {
+                    return RegressionCheckResult.Fail(
+                        "EGG material scope",
+                        $"Expected child_textured to combine scoped parent and child texture refs, got '{childTexturedMaterials}'.");
+                }
+
+                string siblingMaterials = GetMaterialSummary(geometryMap, "parent/sibling");
+                if (siblingMaterials != "parent_tex")
+                {
+                    return RegressionCheckResult.Fail(
+                        "EGG material scope",
+                        $"Expected sibling to inherit only parent_tex, got '{siblingMaterials}'.");
+                }
+
+                string isolatedMaterials = GetMaterialSummary(geometryMap, "isolated");
+                if (isolatedMaterials != "Default-Material")
+                {
+                    return RegressionCheckResult.Fail(
+                        "EGG material scope",
+                        $"Expected isolated group to ignore texture/material definitions without TRef, got '{isolatedMaterials}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "EGG material scope",
+                    "Scoped texture refs and alpha blend inheritance stay within their EGG group boundaries.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static string GetMaterialSummary(
+            Dictionary<string, GeometryData> geometryMap,
+            string path)
+        {
+            if (!geometryMap.TryGetValue(path, out GeometryData geometry))
+            {
+                return "<missing geometry>";
+            }
+
+            if (geometry.materialNames.Count == 0)
+            {
+                return "<none>";
+            }
+
+            return string.Join(",", geometry.materialNames);
         }
 
         private sealed class RegressionCheckResult

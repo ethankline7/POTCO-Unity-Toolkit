@@ -68,6 +68,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added door/window parent-anchor placement pass with diagnostics so module props can align against parent model anchor nodes more closely to source DNA behavior.
 - Added generic parent-anchor alias fallback for prefixed landmark building door origins while leaving wall/window count placement as a diagnostic.
 - Split wall/window count-layout diagnostics from anchor lookup misses and skip zero-count window groups during import.
+- Added Unity-backed EGG material-scope regression coverage for scoped `<TRef>` inheritance and alpha blend isolation.
 - Added `Toontown/Environment Switcher` for quick editor-side skybox, lighting, fog, ambient audio, and effect preset passes while reviewing imported DNA scenes.
 
 ## Phase 4 - Validation
@@ -78,8 +79,8 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
 - Stabilize the current Toontown DNA importer before adding more feature surface.
-- Add regression coverage for strict vs fuzzy resolved-node matching.
-- Add validation around EGG alpha/material scope so texture/material definitions cannot leak into unrelated geometry.
+- Keep strict vs fuzzy resolved-node matching covered in Unity-backed parser regression.
+- Keep expanding validation around EGG alpha/material scope so texture/material definitions cannot leak into unrelated geometry.
 - Capture DNA demo metrics in PR descriptions so visual/import quality changes are comparable between runs.
 - Keep Unity/package upgrade work isolated in draft PR #10 until editor import and compile behavior is confirmed.
 
