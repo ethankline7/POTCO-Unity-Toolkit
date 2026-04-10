@@ -55,6 +55,7 @@ namespace Toontown.Editor.Validation
 
             checks.Add(RunDictionaryFixtureCheck(reader));
             checks.Add(RunAssignmentFixtureCheck(reader));
+            checks.Add(RunDnaStorageFixtureCheck());
             checks.Add(RunResolvedNodeStrictFixtureCheck());
             checks.Add(RunResolvedNodeFuzzyFixtureCheck());
 
@@ -163,6 +164,59 @@ namespace Toontown.Editor.Validation
             {
                 return RegressionCheckResult.Fail(
                     "Bundled assignment fixture",
+                    $"Exception while parsing fixture: {ex.Message}");
+            }
+        }
+
+        private static RegressionCheckResult RunDnaStorageFixtureCheck()
+        {
+            if (!ToontownToolkitPaths.BundledDnaRegressionSamplesExist())
+            {
+                return RegressionCheckResult.Fail(
+                    "Bundled DNA storage fixture",
+                    $"Missing fixture pair: {ToontownToolkitPaths.BundledDnaZoneRegressionRelativePath}, " +
+                    $"{ToontownToolkitPaths.BundledDnaStorageRegressionRelativePath}");
+            }
+
+            try
+            {
+                var reader = new ToontownDnaDocumentReader();
+                WorldDataDocument doc = reader.ReadFromFileWithStorage(
+                    ToontownToolkitPaths.BundledDnaZoneRegressionFullPath,
+                    new[] { ToontownToolkitPaths.BundledDnaStorageRegressionFullPath });
+
+                WorldDataObject door = doc.Objects.FirstOrDefault(o => o.Id == "prop:front-door");
+                if (door == null)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Bundled DNA storage fixture",
+                        "Expected DNA object id 'prop:front-door' was not parsed.");
+                }
+
+                if (!door.Properties.TryGetValue("ResolvedModel", out string resolvedModel) ||
+                    resolvedModel != "phase_4/models/modules/tt_m_ara_int_regression_model")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Bundled DNA storage fixture",
+                        $"Expected ResolvedModel from storage mapping, got '{resolvedModel}'.");
+                }
+
+                if (!door.Properties.TryGetValue("ResolvedNode", out string resolvedNode) ||
+                    resolvedNode != "door_origin_ul")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Bundled DNA storage fixture",
+                        $"Expected ResolvedNode 'door_origin_ul', got '{resolvedNode}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Bundled DNA storage fixture",
+                    $"Resolved storage mapping for prop:front-door (warnings={doc.Warnings.Count}).");
+            }
+            catch (System.Exception ex)
+            {
+                return RegressionCheckResult.Fail(
+                    "Bundled DNA storage fixture",
                     $"Exception while parsing fixture: {ex.Message}");
             }
         }

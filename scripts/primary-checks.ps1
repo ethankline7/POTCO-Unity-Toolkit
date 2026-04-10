@@ -25,6 +25,8 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toontown/World Data/ToontownWorldDataExporter.cs',
   'Assets/Editor/Toontown/Samples/toontown_sample_world.py',
   'Assets/Editor/Toontown/Samples/toontown_sample_world_assignment_style.py',
+  'Assets/Editor/Toontown/Samples/toontown_dna_zone_regression.dna',
+  'Assets/Editor/Toontown/Samples/toontown_dna_storage_regression.dna',
   'scripts/run-toontown-parser-regression.ps1'
 )
 

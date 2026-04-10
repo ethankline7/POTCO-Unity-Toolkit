@@ -1,0 +1,7 @@
+group "regression-zone" [
+  prop "front-door" [
+    code [ "tt_test_door" ]
+    pos [ 1 2 3 ]
+    hpr [ 10 20 30 ]
+  ]
+]
