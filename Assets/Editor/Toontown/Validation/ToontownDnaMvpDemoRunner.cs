@@ -97,6 +97,9 @@ namespace Toontown.Editor.Validation
                 report.AppendLine(
                     $"Door/window parent anchors: {result.DoorWindowParentAnchorsApplied}/{result.DoorWindowParentAnchorsAttempted}");
                 report.AppendLine($"Door/window parent anchor misses: {result.DoorWindowParentAnchorsMissed}");
+                report.AppendLine($"Zero-count window groups skipped: {result.ZeroCountWindowGroupsSkipped}");
+                report.AppendLine($"Window count layout groups pending: {result.WindowCountLayoutGroupsPending}");
+                report.AppendLine($"Window count layout requested instances: {result.WindowCountLayoutRequestedInstances}");
                 report.AppendLine($"Forced EGG imports: {forcedEggImports}");
                 report.AppendLine($"Scene saved: {saved}");
                 report.AppendLine($"Output scene: {SuggestedOutputScenePath}");
@@ -110,6 +113,14 @@ namespace Toontown.Editor.Validation
                 {
                     report.AppendLine("Door/window anchor warnings:");
                     foreach (string warning in result.DoorWindowParentAnchorWarnings.Take(25))
+                    {
+                        report.AppendLine($"- {warning}");
+                    }
+                }
+                if (result.WindowCountLayoutWarnings.Count > 0)
+                {
+                    report.AppendLine("Window count layout warnings:");
+                    foreach (string warning in result.WindowCountLayoutWarnings.Take(25))
                     {
                         report.AppendLine($"- {warning}");
                     }
@@ -260,6 +271,10 @@ namespace Toontown.Editor.Validation
                 result,
                 ToontownSceneImportResult.FallbackPlacementCategory,
                 result?.DoorWindowParentAnchorsMissed ?? 0);
+            int windowCountLayout = GetResultCategoryCount(
+                result,
+                ToontownSceneImportResult.WindowCountLayoutCategory,
+                result?.WindowCountLayoutGroupsPending ?? 0);
             int materialFallback = GetResultCategoryCount(
                 result,
                 ToontownSceneImportResult.MaterialFallbackCategory,
@@ -286,6 +301,11 @@ namespace Toontown.Editor.Validation
                     {
                         fallbackPlacement++;
                     }
+                    else if (WarningContainsAny(warning, "window count layout"))
+                    {
+                        fallbackPlacement++;
+                        windowCountLayout++;
+                    }
                     else if (WarningContainsAny(warning, "material fallback", "fallback material", "texture fallback"))
                     {
                         materialFallback++;
@@ -306,6 +326,7 @@ namespace Toontown.Editor.Validation
                 new KeyValuePair<string, int>(ToontownSceneImportResult.MissingModelCategory, missingModel),
                 new KeyValuePair<string, int>(ToontownSceneImportResult.MissingResolvedNodeCategory, missingResolvedNode),
                 new KeyValuePair<string, int>(ToontownSceneImportResult.FallbackPlacementCategory, fallbackPlacement),
+                new KeyValuePair<string, int>(ToontownSceneImportResult.WindowCountLayoutCategory, windowCountLayout),
                 new KeyValuePair<string, int>(ToontownSceneImportResult.MaterialFallbackCategory, materialFallback),
                 new KeyValuePair<string, int>(ToontownSceneImportResult.FakeShadowRemovalCategory, fakeShadowRemoval),
                 new KeyValuePair<string, int>(

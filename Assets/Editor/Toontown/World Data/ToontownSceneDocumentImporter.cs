@@ -98,6 +98,11 @@ namespace Toontown.Editor
             };
             var instantiatedModelRootsByObjectId =
                 new Dictionary<string, Transform>(StringComparer.OrdinalIgnoreCase);
+            var sourceObjectsById = new Dictionary<string, WorldDataObject>(StringComparer.OrdinalIgnoreCase);
+            foreach (WorldDataObject obj in document.Objects)
+            {
+                sourceObjectsById[obj.Id] = obj;
+            }
 
             foreach (WorldDataObject obj in document.Objects)
             {
@@ -112,9 +117,21 @@ namespace Toontown.Editor
                 go.transform.SetParent(parent.transform, false);
                 ApplyTransform(go.transform, obj.Properties);
                 string modelPath = ResolveModelPath(obj.Properties);
+                bool skipModelInstantiation = ShouldSkipZeroCountWindowGroup(obj.Properties);
+                if (skipModelInstantiation)
+                {
+                    result.ZeroCountWindowGroupsSkipped++;
+                }
+
                 bool shouldAttemptParentAnchor =
+                    !skipModelInstantiation &&
                     ShouldAttemptParentAnchorPlacement(obj.Properties, modelPath) &&
                     !HasExplicitTransformProperties(obj.Properties);
+                if (shouldAttemptParentAnchor &&
+                    TryRegisterWindowCountLayoutPending(obj, sourceObjectsById, result))
+                {
+                    shouldAttemptParentAnchor = false;
+                }
 
                 if (shouldAttemptParentAnchor)
                 {
@@ -141,7 +158,7 @@ namespace Toontown.Editor
                 }
 
                 bool modelInstantiated = false;
-                if (!string.IsNullOrWhiteSpace(modelPath))
+                if (!skipModelInstantiation && !string.IsNullOrWhiteSpace(modelPath))
                 {
                     GameObject modelInstance = AssetUtilities.InstantiatePrefab(
                         modelPath,
@@ -199,6 +216,7 @@ namespace Toontown.Editor
                 }
 
                 if (!modelInstantiated &&
+                    !skipModelInstantiation &&
                     !string.IsNullOrWhiteSpace(modelPath) &&
                     settings.CreatePlaceholderForMissingModel)
                 {
@@ -1070,6 +1088,64 @@ namespace Toontown.Editor
                    normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static bool TryRegisterWindowCountLayoutPending(
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            ToontownSceneImportResult result)
+        {
+            if (sourceObject == null ||
+                sourceObject.Properties == null ||
+                result == null ||
+                !IsWindowKeyword(sourceObject.Properties) ||
+                !TryGetIntProperty(sourceObject.Properties, "Count", out int requestedCount) ||
+                requestedCount <= 0)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceObject.ParentId) ||
+                sourceObjectsById == null ||
+                !sourceObjectsById.TryGetValue(sourceObject.ParentId, out WorldDataObject parentObject) ||
+                parentObject == null ||
+                parentObject.Properties == null ||
+                !HasKeyword(parentObject.Properties, "wall"))
+            {
+                return false;
+            }
+
+            result.WindowCountLayoutGroupsPending++;
+            result.WindowCountLayoutRequestedInstances += requestedCount;
+            result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
+            result.AddWarningCategory(ToontownSceneImportResult.WindowCountLayoutCategory);
+
+            if (result.WindowCountLayoutWarnings.Count < 100)
+            {
+                result.WindowCountLayoutWarnings.Add(
+                    $"{sourceObject.Id} :: wall/window count layout pending; count={requestedCount}; parent={sourceObject.ParentId}");
+            }
+
+            return true;
+        }
+
+        private static bool ShouldSkipZeroCountWindowGroup(Dictionary<string, string> properties)
+        {
+            return IsWindowKeyword(properties) &&
+                   TryGetIntProperty(properties, "Count", out int count) &&
+                   count <= 0;
+        }
+
+        private static bool IsWindowKeyword(Dictionary<string, string> properties)
+        {
+            return HasKeyword(properties, "window") || HasKeyword(properties, "windows");
+        }
+
+        private static bool HasKeyword(Dictionary<string, string> properties, string expected)
+        {
+            return properties != null &&
+                   properties.TryGetValue("Keyword", out string keyword) &&
+                   string.Equals(keyword, expected, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static Vector3 ConvertPandaVectorToUnity(Vector3 panda)
         {
             return new Vector3(panda.x, panda.z, panda.y);
@@ -1103,6 +1179,29 @@ namespace Toontown.Editor
             }
 
             vector = new Vector3(values[0], values[1], values[2]);
+            return true;
+        }
+
+        private static bool TryGetIntProperty(
+            Dictionary<string, string> properties,
+            string key,
+            out int value)
+        {
+            value = 0;
+            if (properties == null ||
+                !properties.TryGetValue(key, out string raw) ||
+                string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            List<float> values = ParseNumbers(raw);
+            if (values.Count == 0)
+            {
+                return false;
+            }
+
+            value = Mathf.RoundToInt(values[0]);
             return true;
         }
 
@@ -1166,6 +1265,7 @@ namespace Toontown.Editor
         public const string MissingModelCategory = "missing model";
         public const string MissingResolvedNodeCategory = "missing resolved node";
         public const string FallbackPlacementCategory = "fallback placement";
+        public const string WindowCountLayoutCategory = "window count layout pending";
         public const string MaterialFallbackCategory = "material fallback";
         public const string FakeShadowRemovalCategory = "fake shadow removal";
         public const string UncategorizedDocumentWarningCategory = "uncategorized document warning";
@@ -1182,9 +1282,13 @@ namespace Toontown.Editor
         public int DoorWindowParentAnchorsAttempted;
         public int DoorWindowParentAnchorsApplied;
         public int DoorWindowParentAnchorsMissed;
+        public int ZeroCountWindowGroupsSkipped;
+        public int WindowCountLayoutGroupsPending;
+        public int WindowCountLayoutRequestedInstances;
         public List<string> MissingModelPaths = new List<string>();
         public List<string> FailedResolvedNodeEntries = new List<string>();
         public List<string> DoorWindowParentAnchorWarnings = new List<string>();
+        public List<string> WindowCountLayoutWarnings = new List<string>();
         public Dictionary<string, int> WarningCategoryCounts =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 

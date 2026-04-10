@@ -60,6 +60,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunResolvedNodeFuzzyFixtureCheck());
             checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
             checks.Add(RunResolvedNodeParentAnchorAliasFixtureCheck());
+            checks.Add(RunZeroCountWindowGroupFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
             var sb = new StringBuilder();
@@ -425,6 +426,87 @@ namespace Toontown.Editor.Validation
             finally
             {
                 UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static RegressionCheckResult RunZeroCountWindowGroupFixtureCheck()
+        {
+            const string rootName = "__ToontownZeroCountWindowRegression";
+            var document = new WorldDataDocument
+            {
+                Name = "zero_count_window_regression"
+            };
+
+            document.Objects.Add(new WorldDataObject
+            {
+                Id = "wall:fixture",
+                Properties = new Dictionary<string, string>
+                {
+                    { "Keyword", "wall" },
+                    { "Name", "wall_fixture" }
+                }
+            });
+
+            document.Objects.Add(new WorldDataObject
+            {
+                Id = "windows:fixture",
+                ParentId = "wall:fixture",
+                Properties = new Dictionary<string, string>
+                {
+                    { "Keyword", "windows" },
+                    { "Count", "0" },
+                    { "ResolvedModel", "models/modules/windows" },
+                    { "ResolvedNode", "window_sm_round_ur" }
+                }
+            });
+
+            try
+            {
+                var result = ToontownSceneDocumentImporter.ImportDocument(
+                    document,
+                    new ToontownSceneImportSettings
+                    {
+                        UseEggFiles = false,
+                        AddObjectListInfo = false,
+                        CreatePlaceholderForMissingModel = true,
+                        ApplyPreviewLighting = false,
+                        RemoveFakeShadowsByDefault = false,
+                        RootObjectName = rootName
+                    });
+
+                if (result.ZeroCountWindowGroupsSkipped != 1)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Zero-count window group import",
+                        $"Expected one skipped zero-count window group, got {result.ZeroCountWindowGroupsSkipped}.");
+                }
+
+                if (result.MissingModels != 0 || result.PlaceholdersCreated != 0)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Zero-count window group import",
+                        $"Expected no missing model or placeholder for skipped window group, got missing={result.MissingModels}, placeholders={result.PlaceholdersCreated}.");
+                }
+
+                if (result.DoorWindowParentAnchorsAttempted != 0 ||
+                    result.WindowCountLayoutGroupsPending != 0)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Zero-count window group import",
+                        $"Expected no anchor/layout attempt for skipped window group, got anchors={result.DoorWindowParentAnchorsAttempted}, pendingLayouts={result.WindowCountLayoutGroupsPending}.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Zero-count window group import",
+                    "Skipped zero-count wall window groups without model or placement work.");
+            }
+            finally
+            {
+                GameObject root = GameObject.Find(rootName);
+                if (root != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(root);
+                }
             }
         }
 

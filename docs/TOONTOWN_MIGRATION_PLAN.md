@@ -67,6 +67,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added a sign/text card prop system for world imports (`SignFrame`/`SignImage`) with per-object toggle control for 2D card props vs replacement-prep visibility.
 - Added door/window parent-anchor placement pass with diagnostics so module props can align against parent model anchor nodes more closely to source DNA behavior.
 - Added generic parent-anchor alias fallback for prefixed landmark building door origins while leaving wall/window count placement as a diagnostic.
+- Split wall/window count-layout diagnostics from anchor lookup misses and skip zero-count window groups during import.
 - Added `Toontown/Environment Switcher` for quick editor-side skybox, lighting, fog, ambient audio, and effect preset passes while reviewing imported DNA scenes.
 
 ## Phase 4 - Validation

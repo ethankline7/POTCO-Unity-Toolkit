@@ -98,7 +98,7 @@ if ($process.ExitCode -eq 0) {
   Write-Host "DNA MVP demo import completed successfully." -ForegroundColor Green
 
   if (Test-Path $logFullPath) {
-    $keyLines = Select-String -Path $logFullPath -Pattern "Toontown DNA MVP Demo Import|Status:|Parsed objects:|Document warnings:|Created scene objects:|Instantiated models:|Missing models:|Placeholders created:|Fake shadow renderers disabled:|Resolved-node isolate success:|Resolved-node isolate failed:|Door/window parent anchors:|Door/window parent anchor misses:|Forced EGG imports:|Warning categories:|- missing model:|- missing resolved node:|- fallback placement:|- material fallback:|- fake shadow removal:|- uncategorized document warning:|Output scene:"
+    $keyLines = Select-String -Path $logFullPath -Pattern "Toontown DNA MVP Demo Import|Status:|Parsed objects:|Document warnings:|Created scene objects:|Instantiated models:|Missing models:|Placeholders created:|Fake shadow renderers disabled:|Resolved-node isolate success:|Resolved-node isolate failed:|Door/window parent anchors:|Door/window parent anchor misses:|Zero-count window groups skipped:|Window count layout groups pending:|Window count layout requested instances:|Forced EGG imports:|Warning categories:|- missing model:|- missing resolved node:|- fallback placement:|- window count layout pending:|- material fallback:|- fake shadow removal:|- uncategorized document warning:|Output scene:"
     if ($keyLines) {
       Write-Host "Summary from log:" -ForegroundColor Cyan
       foreach ($line in $keyLines) {
