@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/unity-version-guard.ps1"
 
 function Resolve-UnityEditorPath {
   param([string]$PreferredPath)
@@ -56,62 +57,16 @@ function Resolve-UnityEditorPath {
   return $null
 }
 
-function Get-ProjectEditorVersion {
-  param([string]$ProjectRoot)
-
-  $projectVersionPath = Join-Path $ProjectRoot "ProjectSettings\ProjectVersion.txt"
-  if (-not (Test-Path $projectVersionPath)) {
-    return $null
-  }
-
-  $match = Select-String -Path $projectVersionPath -Pattern '^m_EditorVersion:\s*(.+)$' | Select-Object -First 1
-  if (-not $match) {
-    return $null
-  }
-
-  return $match.Matches[0].Groups[1].Value.Trim()
-}
-
-function Get-UnityEditorVersionFromPath {
-  param([string]$UnityPath)
-
-  if ([string]::IsNullOrWhiteSpace($UnityPath)) {
-    return $null
-  }
-
-  $editorDirectory = Split-Path -Parent $UnityPath
-  $versionDirectory = Split-Path -Parent $editorDirectory
-  return Split-Path -Leaf $versionDirectory
-}
-
-function Assert-UnityEditorMatchesProject {
-  param(
-    [string]$ProjectRoot,
-    [string]$UnityPath
-  )
-
-  if ($AllowEditorVersionMismatch.IsPresent) {
-    return
-  }
-
-  $projectEditorVersion = Get-ProjectEditorVersion -ProjectRoot $ProjectRoot
-  $unityEditorVersion = Get-UnityEditorVersionFromPath -UnityPath $UnityPath
-  if ([string]::IsNullOrWhiteSpace($projectEditorVersion) -or
-      [string]::IsNullOrWhiteSpace($unityEditorVersion) -or
-      $projectEditorVersion -eq $unityEditorVersion) {
-    return
-  }
-
-  throw "Unity editor version mismatch. Project is pinned to $projectEditorVersion, but resolved editor is $unityEditorVersion. Pass -UnityExePath for the pinned editor, or pass -AllowEditorVersionMismatch only when intentionally validating the Unity upgrade lane."
-}
-
 $projectFullPath = (Resolve-Path $ProjectPath).Path
 $unityPath = Resolve-UnityEditorPath -PreferredPath $UnityExePath
 if ([string]::IsNullOrWhiteSpace($unityPath)) {
   throw "Unity editor executable not found. Pass -UnityExePath or set UNITY_EDITOR_PATH."
 }
 
-Assert-UnityEditorMatchesProject -ProjectRoot $projectFullPath -UnityPath $unityPath
+Assert-UnityEditorMatchesProject `
+  -ProjectRoot $projectFullPath `
+  -UnityPath $unityPath `
+  -AllowMismatch:$AllowEditorVersionMismatch.IsPresent
 
 if (-not $SkipResourceSetup.IsPresent) {
   & "$PSScriptRoot/setup-toontown-resources.ps1"

@@ -27,6 +27,7 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toontown/Samples/toontown_sample_world_assignment_style.py',
   'Assets/Editor/Toontown/Samples/toontown_dna_zone_regression.dna',
   'Assets/Editor/Toontown/Samples/toontown_dna_storage_regression.dna',
+  'scripts/unity-version-guard.ps1',
   'scripts/run-toontown-parser-regression.ps1'
 )
 
