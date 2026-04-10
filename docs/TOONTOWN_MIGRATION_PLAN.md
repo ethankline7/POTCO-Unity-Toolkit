@@ -76,6 +76,9 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Export round-trip sample and verify structure.
 - Add migration notes and troubleshooting docs.
 
+### Phase 4 Progress
+- Added a scripted Unity batch wrapper for the Toontown scene material audit, including optional `_MainTex` threshold enforcement for future baseline tightening.
+
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
 - Stabilize the current Toontown DNA importer before adding more feature surface.
