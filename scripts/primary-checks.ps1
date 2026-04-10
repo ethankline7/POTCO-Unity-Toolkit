@@ -24,7 +24,8 @@ $requiredToolkitFiles = @(
   'Assets/Editor/Toontown/World Data/ToontownWorldDataImporter.cs',
   'Assets/Editor/Toontown/World Data/ToontownWorldDataExporter.cs',
   'Assets/Editor/Toontown/Samples/toontown_sample_world.py',
-  'Assets/Editor/Toontown/Samples/toontown_sample_world_assignment_style.py'
+  'Assets/Editor/Toontown/Samples/toontown_sample_world_assignment_style.py',
+  'scripts/run-toontown-parser-regression.ps1'
 )
 
 foreach ($path in $requiredToolkitFiles) {
@@ -63,6 +64,26 @@ if ($LASTEXITCODE -eq 0 -and $stubMatches) {
 }
 
 Write-Host 'Toontown reader/writer implementation guard: OK' -ForegroundColor Green
+
+# Guard the EGG importer behavior that keeps inherited texture and alpha metadata scoped
+# to the current group branch instead of leaking into unrelated polygons.
+$geometryProcessorPath = 'Assets/Editor/Egg Importer/Processors/GeometryProcessor.cs'
+$geometryProcessor = Get-Content -Raw $geometryProcessorPath
+$alphaScopeNeedles = @(
+  'var scopedTextureRefs = CloneTextureRefs(inheritedTextureRefs);',
+  'bool scopedAlphaBlend = inheritedAlphaBlend;',
+  'scopedTextureRefs,',
+  'scopedAlphaBlend);',
+  'bool hasAlphaBlend = inheritedAlphaBlend;'
+)
+
+foreach ($needle in $alphaScopeNeedles) {
+  if (-not $geometryProcessor.Contains($needle)) {
+    throw "EGG alpha/material scope guard failed. Missing expected code in ${geometryProcessorPath}: $needle"
+  }
+}
+
+Write-Host 'EGG alpha/material scope guard: OK' -ForegroundColor Green
 
 # Validate bundled sample world for first-run quick-start flow.
 & "$PSScriptRoot/toontown-sample-sanity.ps1"

@@ -218,6 +218,21 @@ namespace Toontown.Editor
             return ResolveModelPath(properties);
         }
 
+        internal static bool TryFindResolvedNodeForRegression(
+            Transform root,
+            string resolvedNodeName,
+            bool allowFuzzyMatch,
+            out string matchedName,
+            out string strategy,
+            out string diagnostics)
+        {
+            ResolvedNodeSearchResult result = FindResolvedNodeTransform(root, resolvedNodeName, allowFuzzyMatch);
+            matchedName = result.Match != null ? result.Match.name : string.Empty;
+            strategy = result.Strategy ?? string.Empty;
+            diagnostics = result.Diagnostics ?? string.Empty;
+            return result.Match != null;
+        }
+
         private static void AttachObjectListInfo(GameObject target, WorldDataObject source, string modelPath)
         {
             ObjectListInfo info = target.GetComponent<ObjectListInfo>();

@@ -77,6 +77,8 @@ namespace Toontown.Editor.Validation
                 bool saved = EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), SuggestedOutputScenePath);
                 long outputBytes = File.Exists(SuggestedOutputScenePath) ? new FileInfo(SuggestedOutputScenePath).Length : 0L;
                 bool hasMissingModels = result.MissingModels > 0;
+                List<KeyValuePair<string, int>> warningCategoryMetrics =
+                    BuildWarningCategoryMetrics(document, result);
 
                 var report = new StringBuilder();
                 report.AppendLine("Toontown DNA MVP Demo Import");
@@ -99,6 +101,11 @@ namespace Toontown.Editor.Validation
                 report.AppendLine($"Scene saved: {saved}");
                 report.AppendLine($"Output scene: {SuggestedOutputScenePath}");
                 report.AppendLine($"Output scene size: {outputBytes} bytes");
+                report.AppendLine("Warning categories:");
+                foreach (KeyValuePair<string, int> metric in warningCategoryMetrics)
+                {
+                    report.AppendLine($"- {metric.Key}: {metric.Value}");
+                }
                 if (result.DoorWindowParentAnchorWarnings.Count > 0)
                 {
                     report.AppendLine("Door/window anchor warnings:");
@@ -235,6 +242,78 @@ namespace Toontown.Editor.Validation
             }
 
             return importCount;
+        }
+
+        private static List<KeyValuePair<string, int>> BuildWarningCategoryMetrics(
+            WorldDataDocument document,
+            ToontownSceneImportResult result)
+        {
+            int missingModel = result?.MissingModels ?? 0;
+            int missingResolvedNode = result?.ResolvedNodeIsolationsFailed ?? 0;
+            int fallbackPlacement = result?.DoorWindowParentAnchorsMissed ?? 0;
+            int materialFallback = 0;
+            int fakeShadowRemoval = result?.FakeShadowRenderersDisabled ?? 0;
+            int uncategorizedDocumentWarnings = 0;
+
+            if (document?.Warnings != null)
+            {
+                foreach (string warning in document.Warnings)
+                {
+                    if (WarningContainsAny(warning, "missing model", "model not found", "could not resolve model"))
+                    {
+                        missingModel++;
+                    }
+                    else if (WarningContainsAny(warning, "missing resolved node", "resolved-node", "resolved node"))
+                    {
+                        missingResolvedNode++;
+                    }
+                    else if (WarningContainsAny(warning, "fallback placement", "parent anchor", "anchor miss"))
+                    {
+                        fallbackPlacement++;
+                    }
+                    else if (WarningContainsAny(warning, "material fallback", "fallback material", "texture fallback"))
+                    {
+                        materialFallback++;
+                    }
+                    else if (WarningContainsAny(warning, "fake shadow", "shadow renderer"))
+                    {
+                        fakeShadowRemoval++;
+                    }
+                    else
+                    {
+                        uncategorizedDocumentWarnings++;
+                    }
+                }
+            }
+
+            return new List<KeyValuePair<string, int>>
+            {
+                new KeyValuePair<string, int>("missing model", missingModel),
+                new KeyValuePair<string, int>("missing resolved node", missingResolvedNode),
+                new KeyValuePair<string, int>("fallback placement", fallbackPlacement),
+                new KeyValuePair<string, int>("material fallback", materialFallback),
+                new KeyValuePair<string, int>("fake shadow removal", fakeShadowRemoval),
+                new KeyValuePair<string, int>("uncategorized document warning", uncategorizedDocumentWarnings)
+            };
+        }
+
+        private static bool WarningContainsAny(string warning, params string[] tokens)
+        {
+            if (string.IsNullOrWhiteSpace(warning) || tokens == null)
+            {
+                return false;
+            }
+
+            foreach (string token in tokens)
+            {
+                if (!string.IsNullOrWhiteSpace(token) &&
+                    warning.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

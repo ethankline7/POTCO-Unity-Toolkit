@@ -14,6 +14,7 @@ shift /1
 
 if /I "%ACTION%"=="open" goto :open_unity
 if /I "%ACTION%"=="primary-checks" goto :primary_checks
+if /I "%ACTION%"=="parser-regression" goto :parser_regression
 if /I "%ACTION%"=="smoke" goto :smoke
 if /I "%ACTION%"=="dna-demo" goto :dna_demo
 if /I "%ACTION%"=="setup-resources" goto :setup_resources
@@ -36,6 +37,10 @@ exit /b 0
 
 :primary_checks
 call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%primary-checks.ps1" %*
+exit /b %ERRORLEVEL%
+
+:parser_regression
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-parser-regression.ps1" %*
 exit /b %ERRORLEVEL%
 
 :smoke
@@ -120,6 +125,7 @@ echo.
 echo Actions:
 echo   open                 Launch Unity Editor with this project
 echo   primary-checks       Run scripts\primary-checks.ps1
+echo   parser-regression    Run scripts\run-toontown-parser-regression.ps1
 echo   smoke                Run scripts\run-toontown-smoke.ps1
 echo   dna-demo             Run scripts\run-toontown-dna-demo.ps1
 echo   setup-resources      Run scripts\setup-toontown-resources.ps1
@@ -128,6 +134,7 @@ echo.
 echo Examples:
 echo   scripts\run-action.cmd open
 echo   scripts\run-action.cmd primary-checks
+echo   scripts\run-action.cmd parser-regression -LogPath "Temp\toontown-parser-regression.log"
 echo   scripts\run-action.cmd smoke -LogPath "Temp\toontown-smoke.log"
 echo   scripts\run-action.cmd dna-demo -SkipResourceSetup
 echo.

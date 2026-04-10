@@ -1,8 +1,7 @@
 param(
   [string]$UnityExePath,
   [string]$ProjectPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-  [string]$LogPath = "Temp/toontown-dna-mvp-demo.log",
-  [switch]$SkipResourceSetup
+  [string]$LogPath = "Temp/toontown-parser-regression.log"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,7 +31,6 @@ function Resolve-UnityEditorPath {
     Add-Candidate $env:UNITY_EDITOR_PATH
   }
 
-  # Prefer project-pinned/recommended editors before trying newest installed versions.
   Add-Candidate "C:\Program Files\Unity\Hub\Editor\6000.1.11f1\Editor\Unity.exe"
   Add-Candidate "C:\Program Files\Unity\Hub\Editor\6000.3.12f1\Editor\Unity.exe"
   Add-Candidate "C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe"
@@ -41,8 +39,7 @@ function Resolve-UnityEditorPath {
   if (Test-Path $hubEditorsRoot) {
     $versionDirs = Get-ChildItem -Path $hubEditorsRoot -Directory | Sort-Object Name -Descending
     foreach ($dir in $versionDirs) {
-      $candidate = Join-Path $dir.FullName "Editor\Unity.exe"
-      Add-Candidate $candidate
+      Add-Candidate (Join-Path $dir.FullName "Editor\Unity.exe")
     }
   }
 
@@ -61,10 +58,6 @@ if ([string]::IsNullOrWhiteSpace($unityPath)) {
   throw "Unity editor executable not found. Pass -UnityExePath or set UNITY_EDITOR_PATH."
 }
 
-if (-not $SkipResourceSetup.IsPresent) {
-  & "$PSScriptRoot/setup-toontown-resources.ps1"
-}
-
 $logFullPath = Join-Path $projectFullPath $LogPath
 $logDirectory = Split-Path -Parent $logFullPath
 if (-not (Test-Path $logDirectory)) {
@@ -76,11 +69,11 @@ $args = @(
   "-nographics",
   "-quit",
   "-projectPath", $projectFullPath,
-  "-executeMethod", "Toontown.Editor.Validation.ToontownDnaMvpDemoRunner.RunBatch",
+  "-executeMethod", "Toontown.Editor.Validation.ToontownParserRegressionRunner.RunBatch",
   "-logFile", $logFullPath
 )
 
-Write-Host "=== Toontown DNA MVP Demo (Batch) ===" -ForegroundColor Cyan
+Write-Host "=== Toontown Parser Regression (Batch) ===" -ForegroundColor Cyan
 Write-Host ("Unity: {0}" -f $unityPath) -ForegroundColor Yellow
 Write-Host ("Project: {0}" -f $projectFullPath) -ForegroundColor Yellow
 Write-Host ("Log: {0}" -f $logFullPath) -ForegroundColor Yellow
@@ -88,10 +81,10 @@ Write-Host ("Log: {0}" -f $logFullPath) -ForegroundColor Yellow
 $process = Start-Process -FilePath $unityPath -ArgumentList $args -Wait -PassThru
 
 if ($process.ExitCode -eq 0) {
-  Write-Host "DNA MVP demo import completed successfully." -ForegroundColor Green
+  Write-Host "Toontown parser regression passed." -ForegroundColor Green
 
   if (Test-Path $logFullPath) {
-    $keyLines = Select-String -Path $logFullPath -Pattern "Toontown DNA MVP Demo Import|Status:|Parsed objects:|Document warnings:|Created scene objects:|Instantiated models:|Missing models:|Placeholders created:|Fake shadow renderers disabled:|Resolved-node isolate success:|Resolved-node isolate failed:|Door/window parent anchors:|Door/window parent anchor misses:|Forced EGG imports:|Warning categories:|- missing model:|- missing resolved node:|- fallback placement:|- material fallback:|- fake shadow removal:|- uncategorized document warning:|Output scene:"
+    $keyLines = Select-String -Path $logFullPath -Pattern "Toontown Parser Regression|Status:|- \[PASS\]|- \[FAIL\]"
     if ($keyLines) {
       Write-Host "Summary from log:" -ForegroundColor Cyan
       foreach ($line in $keyLines) {
@@ -103,10 +96,10 @@ if ($process.ExitCode -eq 0) {
   exit 0
 }
 
-Write-Host ("DNA MVP demo import failed with exit code {0}." -f $process.ExitCode) -ForegroundColor Red
+Write-Host ("Toontown parser regression failed with exit code {0}." -f $process.ExitCode) -ForegroundColor Red
 if (Test-Path $logFullPath) {
-  Write-Host "Last 160 log lines:" -ForegroundColor Yellow
-  Get-Content $logFullPath -Tail 160
+  Write-Host "Last 120 log lines:" -ForegroundColor Yellow
+  Get-Content $logFullPath -Tail 120
 }
 
 exit $process.ExitCode

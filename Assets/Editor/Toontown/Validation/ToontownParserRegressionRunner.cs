@@ -32,6 +32,22 @@ namespace Toontown.Editor.Validation
             }
         }
 
+        // Used by batch mode: -executeMethod Toontown.Editor.Validation.ToontownParserRegressionRunner.RunBatch
+        public static void RunBatch()
+        {
+            bool passed = Run(out string report);
+            if (passed)
+            {
+                Debug.Log(report);
+            }
+            else
+            {
+                Debug.LogError(report);
+            }
+
+            EditorApplication.Exit(passed ? 0 : 1);
+        }
+
         public static bool Run(out string report)
         {
             var checks = new List<RegressionCheckResult>();
@@ -39,6 +55,8 @@ namespace Toontown.Editor.Validation
 
             checks.Add(RunDictionaryFixtureCheck(reader));
             checks.Add(RunAssignmentFixtureCheck(reader));
+            checks.Add(RunResolvedNodeStrictFixtureCheck());
+            checks.Add(RunResolvedNodeFuzzyFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
             var sb = new StringBuilder();
@@ -146,6 +164,109 @@ namespace Toontown.Editor.Validation
                 return RegressionCheckResult.Fail(
                     "Bundled assignment fixture",
                     $"Exception while parsing fixture: {ex.Message}");
+            }
+        }
+
+        private static RegressionCheckResult RunResolvedNodeStrictFixtureCheck()
+        {
+            GameObject root = new GameObject("__ToontownResolvedNodeStrictRegression");
+            try
+            {
+                var exact = new GameObject("door_origin_ul");
+                exact.transform.SetParent(root.transform, false);
+
+                var fuzzyOnly = new GameObject("door_origin_detail_panel");
+                fuzzyOnly.transform.SetParent(root.transform, false);
+
+                if (!ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "door_origin_ul",
+                        allowFuzzyMatch: false,
+                        out string matchedName,
+                        out string strategy,
+                        out string diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node strict lookup",
+                        $"Expected exact strict lookup to pass, but failed: {diagnostics}");
+                }
+
+                if (matchedName != "door_origin_ul" || strategy != "exact-name")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node strict lookup",
+                        $"Expected exact-name match on door_origin_ul, got '{matchedName}' via '{strategy}'.");
+                }
+
+                if (ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "door_origin",
+                        allowFuzzyMatch: false,
+                        out matchedName,
+                        out strategy,
+                        out diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node strict lookup",
+                        $"Strict lookup unexpectedly matched '{matchedName}' via '{strategy}'.");
+                }
+
+                if (string.IsNullOrWhiteSpace(diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node strict lookup",
+                        "Expected strict lookup miss to include diagnostics.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Resolved-node strict lookup",
+                    "Exact strict matching passes and fuzzy-only candidates remain misses.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static RegressionCheckResult RunResolvedNodeFuzzyFixtureCheck()
+        {
+            GameObject root = new GameObject("__ToontownResolvedNodeFuzzyRegression");
+            try
+            {
+                var fuzzyOnly = new GameObject("door_origin_detail_panel");
+                fuzzyOnly.transform.SetParent(root.transform, false);
+
+                if (!ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "door_origin",
+                        allowFuzzyMatch: true,
+                        out string matchedName,
+                        out string strategy,
+                        out string diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node fuzzy lookup",
+                        $"Expected fuzzy lookup to match door_origin_detail_panel, but failed: {diagnostics}");
+                }
+
+                bool usedFuzzyStrategy =
+                    strategy == "token-overlap" ||
+                    strategy.StartsWith("fuzzy-", System.StringComparison.OrdinalIgnoreCase);
+
+                if (matchedName != "door_origin_detail_panel" || !usedFuzzyStrategy)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node fuzzy lookup",
+                        $"Expected fuzzy match on door_origin_detail_panel, got '{matchedName}' via '{strategy}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Resolved-node fuzzy lookup",
+                    $"Fuzzy fallback matched '{matchedName}' via '{strategy}'.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
             }
         }
 

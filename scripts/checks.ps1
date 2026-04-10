@@ -9,6 +9,7 @@ $required = @(
   'AGENTS.md',
   'docs/WORKFLOW.md',
   'docs/TOONTOWN_MIGRATION_PLAN.md',
+  'docs/TOONTOWN_IMPORTER_STABILIZATION_BRIEF.md',
   'docs/BEGINNER_REMINDERS.md',
   'docs/TOONTOWN_QUICKSTART.md'
 )
