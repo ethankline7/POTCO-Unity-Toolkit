@@ -38,6 +38,8 @@ This pass should harden the existing MVP path:
 
 Use `primary-checks` before every commit. Use the Unity-backed commands when the matching Unity editor is available and the project can be opened without mixing in upgrade churn.
 
+The Unity-backed scripts check the project-pinned editor version before launching. Use `-AllowEditorVersionMismatch` only when intentionally validating the separate Unity upgrade lane.
+
 ## Definition Of Done
 - Primary checks pass.
 - Parser regression passes in Unity or the editor blocker is documented.
