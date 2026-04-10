@@ -21,6 +21,10 @@ namespace Toontown.Editor
             @"^phase_\d+(?:\.\d+)?/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex NodeTokenRegex = new Regex(
+            @"[A-Z]+(?=[A-Z][a-z]|\b)|[A-Z]?[a-z]+|\d+",
+            RegexOptions.Compiled);
+
         private static readonly string[] FakeShadowNameTokens =
         {
             "drop-shadow",
@@ -860,6 +864,7 @@ namespace Toontown.Editor
             string normalized = value.Trim().Trim('"').Replace(" ", string.Empty);
             // Some storage mappings use "clothesshop" while model nodes are "clothshop".
             normalized = normalized.Replace("clothesshop", "clothshop", StringComparison.OrdinalIgnoreCase);
+            normalized = normalized.Replace("clothes_shop", "clothshop", StringComparison.OrdinalIgnoreCase);
             return normalized;
         }
 
@@ -953,19 +958,36 @@ namespace Toontown.Editor
                 return tokens;
             }
 
-            string[] parts = normalizedNodeName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = normalizedNodeName.Split(
+                new[] { '_', '-', '.', ' ' },
+                StringSplitOptions.RemoveEmptyEntries);
             foreach (string part in parts)
             {
-                string token = part.Trim();
-                if (string.IsNullOrWhiteSpace(token) || NodeNoiseTokens.Contains(token))
+                MatchCollection matches = NodeTokenRegex.Matches(part);
+                if (matches.Count == 0)
                 {
+                    AddNodeToken(tokens, part);
                     continue;
                 }
 
-                tokens.Add(token);
+                foreach (Match match in matches)
+                {
+                    AddNodeToken(tokens, match.Value);
+                }
             }
 
             return tokens;
+        }
+
+        private static void AddNodeToken(HashSet<string> tokens, string rawToken)
+        {
+            string token = rawToken?.Trim();
+            if (string.IsNullOrWhiteSpace(token) || NodeNoiseTokens.Contains(token))
+            {
+                return;
+            }
+
+            tokens.Add(token);
         }
 
         private static string BuildResolvedNodeFailureDiagnostics(
@@ -1029,6 +1051,11 @@ namespace Toontown.Editor
             }
 
             string normalized = modelPath.Replace('\\', '/');
+            if (normalized.IndexOf("models/modules/", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
             return normalized.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
         }

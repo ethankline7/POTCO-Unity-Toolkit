@@ -58,6 +58,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunDnaStorageFixtureCheck());
             checks.Add(RunResolvedNodeStrictFixtureCheck());
             checks.Add(RunResolvedNodeFuzzyFixtureCheck());
+            checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
             var sb = new StringBuilder();
@@ -317,6 +318,57 @@ namespace Toontown.Editor.Validation
                 return RegressionCheckResult.Pass(
                     "Resolved-node fuzzy lookup",
                     $"Fuzzy fallback matched '{matchedName}' via '{strategy}'.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static RegressionCheckResult RunResolvedNodeModuleAliasFixtureCheck()
+        {
+            GameObject root = new GameObject("__ToontownResolvedNodeModuleAliasRegression");
+            try
+            {
+                var aliasRoot = new GameObject("partyGate_TT");
+                aliasRoot.transform.SetParent(root.transform, false);
+
+                if (ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "prop_party_gate",
+                        allowFuzzyMatch: false,
+                        out string matchedName,
+                        out string strategy,
+                        out string diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node module alias lookup",
+                        $"Strict lookup unexpectedly matched '{matchedName}' via '{strategy}'.");
+                }
+
+                if (!ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "prop_party_gate",
+                        allowFuzzyMatch: true,
+                        out matchedName,
+                        out strategy,
+                        out diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node module alias lookup",
+                        $"Expected fuzzy module alias lookup to match partyGate_TT, but failed: {diagnostics}");
+                }
+
+                if (matchedName != "partyGate_TT" || strategy != "token-overlap")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node module alias lookup",
+                        $"Expected token-overlap match on partyGate_TT, got '{matchedName}' via '{strategy}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Resolved-node module alias lookup",
+                    "CamelCase module aliases match only when fuzzy lookup is enabled.");
             }
             finally
             {
