@@ -60,6 +60,7 @@ Open the project in Unity 6000.1.11f1, then access tools via:
 - Toontown migration plan: [`docs/TOONTOWN_MIGRATION_PLAN.md`](docs/TOONTOWN_MIGRATION_PLAN.md)
 - Toontown quick start (first runnable flow): [`docs/TOONTOWN_QUICKSTART.md`](docs/TOONTOWN_QUICKSTART.md)
 - Current branch/project status: [`docs/REPO_STATUS.md`](docs/REPO_STATUS.md)
+- Recommended next mainline update: [`docs/NEXT_MAINLINE_UPDATE.md`](docs/NEXT_MAINLINE_UPDATE.md)
 - Required baseline check before commit:
   - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/primary-checks.ps1`
 - Optional local headless smoke check:
@@ -81,7 +82,7 @@ Open the project in Unity 6000.1.11f1, then access tools via:
 
 ### 🎨 EGG File Importer Manager
 Advanced Panda3D `.egg` file processing with comprehensive filtering options:
-- **Multi-Texture Support** - Specialized overlay system for tiling ground textures (Very Broken)
+- **Multi-Texture Support** - Specialized overlay system for tiling ground textures (known limitation; needs stabilization)
 - **Advanced Filtering** - Skip footprints, LOD control, skeletal data filtering
 - **Folder Exclusions** - Default exclusions for gui, effects, sea, sky, textureCards
 - **Manual Import Control** - Disable auto-import to prevent Unity startup delays

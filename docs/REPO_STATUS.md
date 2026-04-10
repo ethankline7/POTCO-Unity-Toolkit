@@ -1,39 +1,47 @@
 # Repo Status
 
-Last reviewed: April 9, 2026, workspace local time.
+Last reviewed: April 10, 2026, workspace local time.
 
-## Current Branch
-- Active branch: `codex/toontown-parity-placement-texture-pass1`
-- Remote state: fetched and current with `origin/codex/toontown-parity-placement-texture-pass1`
-- Relationship to `origin/main`: this branch is six commits ahead
-- Current mainline focus: Toontown DNA scene-import parity, material/texture resolution, placement diagnostics, and local run-action tooling
+## Current State
+- Active branch: `main`
+- Remote state: clean and current with `origin/main`
+- Open PR: `#10 chore: prepare Unity 6000.4.1 upgrade` as a draft
+- Local generated Toontown resource output is ignored and should stay out of commits
+- Stale Toontown branches have been merged, cherry-picked, or deleted
 
-## What Is Solid
-- Shared world-data routing and adapter contracts are in place under `Assets/Editor/Toolkit/WorldData`.
-- POTCO importer/exporter behavior is still routed through legacy-compatible launchers.
-- Toontown `.py` reader/writer scaffolding has moved past placeholder status and has sample parse/export validation.
-- Toontown `.dna` MVP import exists and can build a Unity hierarchy from OpenToontown sample resources.
-- Local validation scripts exist:
-  - `scripts/primary-checks.ps1`
-  - `scripts/run-toontown-smoke.ps1`
-  - `scripts/run-toontown-dna-demo.ps1`
-  - `scripts/run-action.cmd`
+## What Landed Most Recently
+- PR #9 merged the Toontown parity pass:
+  - one-sided model shadow patch import/export flow
+  - material and texture resolution improvements
+  - sign/text card prop controls
+  - door/window parent-anchor diagnostics
+  - generated resource ignore cleanup
+  - Toontown environment switcher
+- `main` also includes the parser regression fixture guard commit:
+  - `fix: guard parser regression fixture reads with structured failure handling`
 
-## Important Local State
-- Unity 6000.4.1 package/editor upgrade changes are intentionally parked on `wip/unity-upgrade-hold`. Keep those separate from Toontown parity/runtime commits unless we decide to upgrade the project baseline.
-- OpenToontown resources are reproducible local data. They should live under `External/` or generated `Assets/Resources/phase_*` output and stay out of normal commits.
-- Generated demo files under `Assets/Editor/Toontown/Samples/Generated/` are validation output, not source.
-- Root logs, Codex screenshots, temporary PRC folders, `.slnx`, and `.vscode` files are local workspace artifacts.
+## What Is Still Risky
+- The Toontown DNA importer is useful but still MVP-grade. Imported scenes can still be visually wrong even when checks pass.
+- Door/window placement diagnostics show the next blocker is layout parity, especially wall-module window spacing/count behavior.
+- Material and texture repair has improved, but it needs focused regression coverage rather than more one-off manual repair passes.
+- The EGG importer has known fragile areas: alpha/texture scope handling, multi-texture behavior, and material assignment edge cases.
+- Unity 6000.4.1 upgrade is intentionally isolated in draft PR #10 and should not be merged until the project opens, imports, and compiles cleanly in that editor version.
 
-## Next Buildable Step
-1. Finish and validate the Toontown parity branch as a focused PR/merge candidate.
-2. Run `scripts/primary-checks.ps1` before every commit that changes source/docs.
-3. Run `scripts/run-action.cmd dna-demo` when checking DNA scene import behavior in Unity.
-4. Decide separately whether to adopt the Unity 6000.4.1 upgrade branch.
-5. Continue Toontown DNA import work in small PRs: asset lookup, material assignment, prop placement, and scene audit/reporting.
+## Recommended Next Main Branch Update
+Next branch: `codex/toontown-importer-stabilization`
 
-## Definition Of Done For This Branch
-- Primary checks pass.
-- No generated resource dumps, logs, screenshots, local IDE files, or temporary conversion files are visible in `git status`.
-- Any new editor tool is documented in the quick-start path.
-- Package/version changes remain isolated unless the branch is explicitly about upgrading Unity.
+Goal: turn the current Toontown import path from "promising MVP" into a reliable baseline that we can trust before expanding features.
+
+Definition of done:
+- `scripts/primary-checks.ps1` passes
+- Toontown smoke flow passes locally or has a documented blocker
+- DNA demo import runs, records key metrics, and produces no missing-model regression
+- Known review fixes stay covered by focused regression checks
+- No Unity/package version changes are mixed into the branch
+- No generated resources, logs, screenshots, local IDE files, or demo output are committed
+
+## Keep Separate
+- Unity upgrade work: PR #10 only
+- Big visual polish: after importer baseline is stable
+- New Toontown systems: after importer baseline is stable
+- POTCO runtime refactors: only if required for a specific importer/exporter bug

@@ -22,6 +22,7 @@
 ## Run Actions
 - Primary (recommended): run `scripts/primary-checks.ps1`.
 - Manual readiness bundle: run `scripts/manual-readiness.ps1`.
+- Local one-command wrapper: run `scripts\run-action.cmd help`.
 - CI mirrors:
   - `Primary CI` for push and branch quality gates.
   - `Commit Quality` for commit subject format and readability checks.
@@ -47,6 +48,12 @@
 | `Toontown DNA MVP Manual` | Manual dispatch | Primary checks plus OpenToontown sparse resource setup and DNA sample availability |
 | `Weekly Health` | Weekly schedule, manual dispatch | Recurring baseline `primary-checks` run for drift detection |
 | `Sun Action` | Weekly Sunday schedule, manual dispatch | Weekend baseline `primary-checks` run for fast health visibility |
+
+## Current Mainline Priority
+- Next branch: `codex/toontown-importer-stabilization`.
+- Goal: harden the existing Toontown DNA import path before adding new feature surface.
+- Keep Unity/package version changes isolated in the draft Unity upgrade PR.
+- Use `docs/NEXT_MAINLINE_UPDATE.md` as the working brief for the next `main` update.
 
 ## Quality Gates
 - No dead code in committed changes.
