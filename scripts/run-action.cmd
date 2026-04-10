@@ -97,15 +97,10 @@ if exist "%CANDIDATE%" (
   exit /b 0
 )
 
-set "CANDIDATE=C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe"
-if exist "%CANDIDATE%" (
-  set "UNITY_EXE=%CANDIDATE%"
-  exit /b 0
-)
-
 echo Unity editor not found.
-echo Set UNITY_EDITOR_PATH to your Unity.exe path, then rerun:
-echo   set UNITY_EDITOR_PATH=C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe
+echo This branch should use the project-pinned editor unless you are intentionally validating the Unity upgrade lane.
+echo Set UNITY_EDITOR_PATH to the pinned Unity.exe path, then rerun:
+echo   set UNITY_EDITOR_PATH=C:\Program Files\Unity\Hub\Editor\6000.1.11f1\Editor\Unity.exe
 exit /b 1
 
 :help_ok
