@@ -59,6 +59,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunResolvedNodeStrictFixtureCheck());
             checks.Add(RunResolvedNodeFuzzyFixtureCheck());
             checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
+            checks.Add(RunResolvedNodeParentAnchorAliasFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
             var sb = new StringBuilder();
@@ -369,6 +370,57 @@ namespace Toontown.Editor.Validation
                 return RegressionCheckResult.Pass(
                     "Resolved-node module alias lookup",
                     "CamelCase module aliases match only when fuzzy lookup is enabled.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static RegressionCheckResult RunResolvedNodeParentAnchorAliasFixtureCheck()
+        {
+            GameObject root = new GameObject("__ToontownResolvedNodeParentAnchorAliasRegression");
+            try
+            {
+                var parentAnchor = new GameObject("library_door_origin");
+                parentAnchor.transform.SetParent(root.transform, false);
+
+                if (ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "door_origin",
+                        allowFuzzyMatch: false,
+                        out string matchedName,
+                        out string strategy,
+                        out string diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node parent-anchor alias lookup",
+                        $"Strict lookup unexpectedly matched '{matchedName}' via '{strategy}'.");
+                }
+
+                if (!ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "door_origin",
+                        allowFuzzyMatch: true,
+                        out matchedName,
+                        out strategy,
+                        out diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node parent-anchor alias lookup",
+                        $"Expected fuzzy parent-anchor lookup to match library_door_origin, but failed: {diagnostics}");
+                }
+
+                if (matchedName != "library_door_origin" || strategy != "token-overlap")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node parent-anchor alias lookup",
+                        $"Expected token-overlap match on library_door_origin, got '{matchedName}' via '{strategy}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Resolved-node parent-anchor alias lookup",
+                    "Generic parent-anchor fallbacks can match prefixed building anchors when fuzzy lookup is enabled.");
             }
             finally
             {

@@ -510,7 +510,8 @@ namespace Toontown.Editor
                     continue;
                 }
 
-                ResolvedNodeSearchResult search = FindResolvedNodeTransform(parentModelRoot, candidate, false);
+                bool allowFuzzyMatch = ShouldAllowParentAnchorFuzzyMatch(candidate);
+                ResolvedNodeSearchResult search = FindResolvedNodeTransform(parentModelRoot, candidate, allowFuzzyMatch);
                 if (search.Match == null)
                 {
                     continue;
@@ -584,6 +585,15 @@ namespace Toontown.Editor
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private static bool ShouldAllowParentAnchorFuzzyMatch(string candidate)
+        {
+            string normalized = NormalizeNodeName(candidate);
+            return string.Equals(normalized, "door_origin", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalized, "door_front", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalized, "window_origin", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalized, "window_locator", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryIsolateResolvedNodeInstance(
