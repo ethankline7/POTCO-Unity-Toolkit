@@ -26,6 +26,7 @@ namespace Toontown.Editor.Validation
             int materialsMissingMainTex = 0;
             int renderersUsingMissingMainTex = 0;
             var missingMaterialNames = new Dictionary<string, int>(System.StringComparer.OrdinalIgnoreCase);
+            var missingRendererDetails = new List<string>();
 
             foreach (Renderer renderer in rendererList)
             {
@@ -35,6 +36,7 @@ namespace Toontown.Editor.Validation
                 }
 
                 bool rendererHasMissing = false;
+                var rendererMissingMaterials = new List<string>();
                 foreach (Material mat in renderer.sharedMaterials)
                 {
                     if (mat == null)
@@ -56,6 +58,7 @@ namespace Toontown.Editor.Validation
 
                     rendererHasMissing = true;
                     materialsMissingMainTex++;
+                    rendererMissingMaterials.Add(mat.name);
 
                     if (!missingMaterialNames.ContainsKey(mat.name))
                     {
@@ -67,6 +70,12 @@ namespace Toontown.Editor.Validation
                 if (rendererHasMissing)
                 {
                     renderersUsingMissingMainTex++;
+                    if (missingRendererDetails.Count < 25)
+                    {
+                        string objectPath = BuildHierarchyPath(renderer.transform);
+                        string materialList = string.Join(", ", rendererMissingMaterials.Distinct());
+                        missingRendererDetails.Add($"{objectPath} :: {materialList}");
+                    }
                 }
             }
 
@@ -87,7 +96,34 @@ namespace Toontown.Editor.Validation
                 }
             }
 
+            if (missingRendererDetails.Count > 0)
+            {
+                report.AppendLine("Renderers using missing _MainTex materials:");
+                foreach (string detail in missingRendererDetails)
+                {
+                    report.AppendLine($"- {detail}");
+                }
+            }
+
             Debug.Log(report.ToString());
+        }
+
+        private static string BuildHierarchyPath(Transform target)
+        {
+            if (target == null)
+            {
+                return "<missing>";
+            }
+
+            var parts = new Stack<string>();
+            Transform current = target;
+            while (current != null)
+            {
+                parts.Push(current.name);
+                current = current.parent;
+            }
+
+            return string.Join("/", parts);
         }
 
         // Used by batch mode:

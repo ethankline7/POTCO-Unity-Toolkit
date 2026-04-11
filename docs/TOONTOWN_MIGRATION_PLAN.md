@@ -78,6 +78,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 
 ### Phase 4 Progress
 - Added a scripted Unity batch wrapper for the Toontown scene material audit, including optional `_MainTex` threshold enforcement for future baseline tightening.
+- Expanded the scene material audit to print affected renderer hierarchy paths so Default-Material cleanup can be grouped by model family instead of guessed from aggregate counts.
 
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
