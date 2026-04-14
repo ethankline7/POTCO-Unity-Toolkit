@@ -79,6 +79,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 ### Phase 4 Progress
 - Added a scripted Unity batch wrapper for the Toontown scene material audit, including optional `_MainTex` threshold enforcement for future baseline tightening.
 - Expanded the scene material audit to print affected renderer hierarchy paths so Default-Material cleanup can be grouped by model family instead of guessed from aggregate counts.
+- Reduced wall/window count-layout diagnostics by keeping single-window wall groups on the normal parent-anchor path and applying width-based spacing fallback for multi-window wall groups when parent width data is available.
 
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
@@ -87,6 +88,56 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Keep expanding validation around EGG alpha/material scope so texture/material definitions cannot leak into unrelated geometry.
 - Capture DNA demo metrics in PR descriptions so visual/import quality changes are comparable between runs.
 - Keep Unity/package upgrade work isolated in draft PR #10 until editor import and compile behavior is confirmed.
+
+### Missing Goals To Add
+- Add numeric quality gates for the importer baseline so "checks pass" is not the only success signal.
+- Add a visual golden-scene baseline for the primary DNA demo review scene so parity regressions are easier to spot.
+- Add a scratch-scene policy so local review scenes stay out of PR scope unless intentionally promoted to tracked fixtures.
+- Add a failure-class coverage map showing which importer risks are protected by automated regression and which still rely on manual review.
+- Add explicit merge sequencing for PR #10 so the Unity upgrade only lands after the stabilization branch is merged and validated.
+
+### Stabilization Quality Gates
+- `scripts/primary-checks.ps1` passes before every push.
+- `scripts/run-action.cmd parser-regression` passes on the project-pinned Unity editor, or the blocker is documented in PR #11.
+- `scripts/run-action.cmd dna-demo -SkipResourceSetup` passes on the project-pinned Unity editor, or the blocker is documented in PR #11.
+- `scripts/run-action.cmd material-audit` is rerun after any importer/material change that could affect `_MainTex` or `Default-Material` counts.
+- Missing models stays at `0`.
+- Resolved-node isolate failures stays at `0`.
+- Window count-layout pending warnings trend downward from the current baseline instead of growing silently.
+- Material-audit `_MainTex` offenders trend downward from the current baseline instead of growing silently.
+- No generated resource dumps, demo output scenes, logs, screenshots, or local scratch scenes are committed unless intentionally promoted as fixtures.
+
+### Visual Baseline
+- Treat the current Toontown DNA demo scene as the primary visual review surface for stabilization work.
+- When importer behavior changes, capture the current DNA demo metrics in PR #11 and note visible scene differences in the PR thread.
+- Prioritize visible review for door/window spacing, landmark entrances, tunnel walls, and known `_MainTex` offender families.
+
+### Scratch Scene Policy
+- Keep untracked local review scenes out of commits by default.
+- Only promote a local scene to a tracked fixture when it is required for repeatable validation or documentation.
+- If a scratch scene is needed during debugging, either keep it untracked or move it under a clearly named generated/samples path before discussing promotion.
+
+### Failure-Class Coverage Map
+- Covered by automated regression: parser dictionary and assignment samples, DNA storage mapping, strict/fuzzy resolved-node lookup, module alias matching, parent-anchor alias matching, zero-count window group handling, EGG material-scope inheritance.
+- Covered by scripted validation but still needs visual review: DNA demo metrics, warning category counts, material audit offender grouping.
+- Still primarily manual and should be reduced over time: wall-module window spacing/count layout parity, scene-level visual placement fidelity, material cleanup for specific offender families.
+
+### Tonight Execution Order (April 13, 2026)
+1. Clean the local worktree and confirm which untracked files are intentional scratch artifacts before any merge or deletion step.
+2. Rerun `primary-checks`, parser regression, DNA demo, and material audit sequentially on the pinned Unity editor to refresh the current baseline.
+3. Update PR #11 with the latest metrics so tonight's work is anchored to one authoritative baseline.
+4. Take the first remaining importer gap as the next vertical slice: window count-layout parity for one representative module family.
+5. Add or tighten a regression fixture for that layout case before widening the implementation.
+6. Implement the smallest importer change that reduces layout warnings without broadening lookup behavior unsafely.
+7. Rerun parser regression and DNA demo, then record whether window count-layout warnings decreased, stayed flat, or regressed.
+8. Take the first material offender cluster from the audit output and do one focused cleanup pass for that family only.
+9. Rerun material audit and capture the new offender count and top remaining clusters in PR #11.
+10. If the branch is stable at the end of the night, prepare PR #11 for ready review; keep PR #10 isolated and do not merge or delete either branch until stabilization is intentionally landed.
+
+### Merge Sequencing
+- Merge PR #11 before revisiting PR #10.
+- After PR #11 lands, switch back to `main`, pull, and delete only branches that are confirmed merged.
+- Keep PR #10 as a draft until the project opens, imports, and compiles cleanly in Unity `6000.4.1f1`.
 
 ## Non-Goals (Current Phase)
 - Full gameplay parity.

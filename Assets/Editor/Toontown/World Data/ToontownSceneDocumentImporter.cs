@@ -123,16 +123,23 @@ namespace Toontown.Editor
                     result.ZeroCountWindowGroupsSkipped++;
                 }
 
+                bool hasWallWindowLayoutRequest =
+                    TryGetWallWindowLayoutRequest(obj, sourceObjectsById, out int requestedWindowCount);
+                bool shouldAttemptWindowCountLayout = false;
                 bool shouldAttemptParentAnchor =
                     !skipModelInstantiation &&
                     ShouldAttemptParentAnchorPlacement(obj.Properties, modelPath) &&
                     !HasExplicitTransformProperties(obj.Properties);
                 if (shouldAttemptParentAnchor &&
-                    TryRegisterWindowCountLayoutPending(obj, sourceObjectsById, result))
+                    hasWallWindowLayoutRequest &&
+                    requestedWindowCount > 1)
                 {
+                    shouldAttemptWindowCountLayout = true;
                     shouldAttemptParentAnchor = false;
                 }
 
+                bool pendingParentAnchorFailure = false;
+                string pendingAnchorDetails = null;
                 if (shouldAttemptParentAnchor)
                 {
                     result.DoorWindowParentAnchorsAttempted++;
@@ -147,13 +154,8 @@ namespace Toontown.Editor
                     }
                     else
                     {
-                        result.DoorWindowParentAnchorsMissed++;
-                        result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
-                        if (!string.IsNullOrWhiteSpace(anchorDetails) &&
-                            result.DoorWindowParentAnchorWarnings.Count < 100)
-                        {
-                            result.DoorWindowParentAnchorWarnings.Add($"{obj.Id} :: {anchorDetails}");
-                        }
+                        pendingParentAnchorFailure = true;
+                        pendingAnchorDetails = anchorDetails;
                     }
                 }
 
@@ -200,6 +202,37 @@ namespace Toontown.Editor
                                 disabledFakeShadows);
                         }
 
+                        if (shouldAttemptWindowCountLayout &&
+                            !TryApplyWallWindowCountLayout(
+                                go.transform,
+                                modelInstance.transform,
+                                obj,
+                                sourceObjectsById,
+                                requestedWindowCount,
+                                out string layoutDetails))
+                        {
+                            RegisterWindowCountLayoutPending(obj, requestedWindowCount, result, layoutDetails);
+                        }
+
+                        if (pendingParentAnchorFailure)
+                        {
+                            bool recoveredByWindowLayout =
+                                hasWallWindowLayoutRequest &&
+                                requestedWindowCount == 1 &&
+                                TryApplyWallWindowCountLayout(
+                                    go.transform,
+                                    modelInstance.transform,
+                                    obj,
+                                    sourceObjectsById,
+                                    requestedWindowCount,
+                                    out _);
+
+                            if (!recoveredByWindowLayout)
+                            {
+                                RegisterParentAnchorMiss(obj, result, pendingAnchorDetails);
+                            }
+                        }
+
                         result.InstantiatedModels++;
                         modelInstantiated = true;
                         instantiatedModelRootsByObjectId[obj.Id] = modelInstance.transform;
@@ -211,6 +244,11 @@ namespace Toontown.Editor
                         if (!result.MissingModelPaths.Contains(modelPath, StringComparer.OrdinalIgnoreCase))
                         {
                             result.MissingModelPaths.Add(modelPath);
+                        }
+
+                        if (pendingParentAnchorFailure)
+                        {
+                            RegisterParentAnchorMiss(obj, result, pendingAnchorDetails);
                         }
                     }
                 }
@@ -1088,16 +1126,16 @@ namespace Toontown.Editor
                    normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static bool TryRegisterWindowCountLayoutPending(
+        private static bool TryGetWallWindowLayoutRequest(
             WorldDataObject sourceObject,
             Dictionary<string, WorldDataObject> sourceObjectsById,
-            ToontownSceneImportResult result)
+            out int requestedCount)
         {
+            requestedCount = 0;
             if (sourceObject == null ||
                 sourceObject.Properties == null ||
-                result == null ||
                 !IsWindowKeyword(sourceObject.Properties) ||
-                !TryGetIntProperty(sourceObject.Properties, "Count", out int requestedCount) ||
+                !TryGetIntProperty(sourceObject.Properties, "Count", out requestedCount) ||
                 requestedCount <= 0)
             {
                 return false;
@@ -1113,6 +1151,39 @@ namespace Toontown.Editor
                 return false;
             }
 
+            return true;
+        }
+
+        private static void RegisterParentAnchorMiss(
+            WorldDataObject sourceObject,
+            ToontownSceneImportResult result,
+            string anchorDetails)
+        {
+            if (sourceObject == null || result == null)
+            {
+                return;
+            }
+
+            result.DoorWindowParentAnchorsMissed++;
+            result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
+            if (!string.IsNullOrWhiteSpace(anchorDetails) &&
+                result.DoorWindowParentAnchorWarnings.Count < 100)
+            {
+                result.DoorWindowParentAnchorWarnings.Add($"{sourceObject.Id} :: {anchorDetails}");
+            }
+        }
+
+        private static void RegisterWindowCountLayoutPending(
+            WorldDataObject sourceObject,
+            int requestedCount,
+            ToontownSceneImportResult result,
+            string details = null)
+        {
+            if (sourceObject == null || result == null || requestedCount <= 0)
+            {
+                return;
+            }
+
             result.WindowCountLayoutGroupsPending++;
             result.WindowCountLayoutRequestedInstances += requestedCount;
             result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
@@ -1120,11 +1191,118 @@ namespace Toontown.Editor
 
             if (result.WindowCountLayoutWarnings.Count < 100)
             {
-                result.WindowCountLayoutWarnings.Add(
-                    $"{sourceObject.Id} :: wall/window count layout pending; count={requestedCount}; parent={sourceObject.ParentId}");
+                string warning = $"{sourceObject.Id} :: wall/window count layout pending; count={requestedCount}; parent={sourceObject.ParentId}";
+                if (!string.IsNullOrWhiteSpace(details))
+                {
+                    warning += $"; {details}";
+                }
+
+                result.WindowCountLayoutWarnings.Add(warning);
+            }
+        }
+
+        private static bool TryApplyWallWindowCountLayout(
+            Transform targetObjectTransform,
+            Transform modelInstanceRoot,
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            int requestedCount,
+            out string layoutDetails)
+        {
+            layoutDetails = "no layout details";
+            if (targetObjectTransform == null || modelInstanceRoot == null || sourceObject == null || requestedCount <= 0)
+            {
+                layoutDetails = "missing layout inputs";
+                return false;
             }
 
+            if (!TryGetWallWindowLayoutWidth(sourceObject, sourceObjectsById, out float parentWidth))
+            {
+                layoutDetails = "parent wall width not found";
+                return false;
+            }
+
+            List<float> offsets = BuildEvenlySpacedWallWindowOffsets(parentWidth, requestedCount);
+            if (offsets.Count != requestedCount)
+            {
+                layoutDetails = $"could not build offsets for count={requestedCount}, width={parentWidth.ToString(CultureInfo.InvariantCulture)}";
+                return false;
+            }
+
+            var modelRoots = new List<Transform> { modelInstanceRoot };
+            for (int i = 1; i < requestedCount; i++)
+            {
+                GameObject clone = UnityEngine.Object.Instantiate(modelInstanceRoot.gameObject, targetObjectTransform, false);
+                clone.name = modelInstanceRoot.gameObject.name;
+                modelRoots.Add(clone.transform);
+            }
+
+            Vector3 baseLocalPosition = modelInstanceRoot.localPosition;
+            for (int i = 0; i < modelRoots.Count; i++)
+            {
+                Transform instanceRoot = modelRoots[i];
+                instanceRoot.localPosition = baseLocalPosition + new Vector3(offsets[i], 0f, 0f);
+            }
+
+            layoutDetails =
+                $"applied {requestedCount} window instances across width {parentWidth.ToString("0.###", CultureInfo.InvariantCulture)}";
             return true;
+        }
+
+        private static bool TryGetWallWindowLayoutWidth(
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            out float width)
+        {
+            width = 0f;
+            if (sourceObject == null || sourceObjectsById == null)
+            {
+                return false;
+            }
+
+            string currentId = sourceObject.ParentId;
+            while (!string.IsNullOrWhiteSpace(currentId) &&
+                   sourceObjectsById.TryGetValue(currentId, out WorldDataObject current) &&
+                   current != null)
+            {
+                if (TryGetFloatProperty(current.Properties, "Width", out width) && width > 0f)
+                {
+                    return true;
+                }
+
+                currentId = current.ParentId;
+            }
+
+            return false;
+        }
+
+        internal static float[] BuildEvenlySpacedWallWindowOffsetsForRegression(int requestedCount, float parentWidth)
+        {
+            return BuildEvenlySpacedWallWindowOffsets(parentWidth, requestedCount).ToArray();
+        }
+
+        private static List<float> BuildEvenlySpacedWallWindowOffsets(float parentWidth, int requestedCount)
+        {
+            var offsets = new List<float>();
+            if (requestedCount <= 0 || parentWidth <= 0f)
+            {
+                return offsets;
+            }
+
+            if (requestedCount == 1)
+            {
+                offsets.Add(0f);
+                return offsets;
+            }
+
+            float spacing = parentWidth / (requestedCount + 1);
+            float leftEdge = -0.5f * parentWidth;
+            for (int i = 0; i < requestedCount; i++)
+            {
+                offsets.Add(leftEdge + spacing * (i + 1));
+            }
+
+            return offsets;
         }
 
         private static bool ShouldSkipZeroCountWindowGroup(Dictionary<string, string> properties)
@@ -1202,6 +1380,29 @@ namespace Toontown.Editor
             }
 
             value = Mathf.RoundToInt(values[0]);
+            return true;
+        }
+
+        private static bool TryGetFloatProperty(
+            Dictionary<string, string> properties,
+            string key,
+            out float value)
+        {
+            value = 0f;
+            if (properties == null ||
+                !properties.TryGetValue(key, out string raw) ||
+                string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            List<float> values = ParseNumbers(raw);
+            if (values.Count == 0)
+            {
+                return false;
+            }
+
+            value = values[0];
             return true;
         }
 

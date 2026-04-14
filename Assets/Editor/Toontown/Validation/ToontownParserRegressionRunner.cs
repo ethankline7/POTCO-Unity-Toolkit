@@ -61,6 +61,9 @@ namespace Toontown.Editor.Validation
             checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
             checks.Add(RunResolvedNodeParentAnchorAliasFixtureCheck());
             checks.Add(RunZeroCountWindowGroupFixtureCheck());
+            checks.Add(RunSingleCountWindowGroupFixtureCheck());
+            checks.Add(RunSingleCountWindowOffsetFixtureCheck());
+            checks.Add(RunMultiCountWindowOffsetFixtureCheck());
             checks.Add(RunEggMaterialScopeFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
@@ -509,6 +512,133 @@ namespace Toontown.Editor.Validation
                     UnityEngine.Object.DestroyImmediate(root);
                 }
             }
+        }
+
+        private static RegressionCheckResult RunSingleCountWindowGroupFixtureCheck()
+        {
+            const string rootName = "__ToontownSingleCountWindowRegression";
+            var document = new WorldDataDocument
+            {
+                Name = "single_count_window_regression"
+            };
+
+            document.Objects.Add(new WorldDataObject
+            {
+                Id = "wall:fixture",
+                Properties = new Dictionary<string, string>
+                {
+                    { "Keyword", "wall" },
+                    { "Name", "wall_fixture" },
+                    { "ResolvedModel", "models/modules/walls" }
+                }
+            });
+
+            document.Objects.Add(new WorldDataObject
+            {
+                Id = "windows:fixture",
+                ParentId = "wall:fixture",
+                Properties = new Dictionary<string, string>
+                {
+                    { "Keyword", "windows" },
+                    { "Count", "1" },
+                    { "ResolvedModel", "models/modules/windows" },
+                    { "ResolvedNode", "window_sm_round_ur" }
+                }
+            });
+
+            try
+            {
+                var result = ToontownSceneDocumentImporter.ImportDocument(
+                    document,
+                    new ToontownSceneImportSettings
+                    {
+                        UseEggFiles = false,
+                        AddObjectListInfo = false,
+                        CreatePlaceholderForMissingModel = false,
+                        ApplyPreviewLighting = false,
+                        RemoveFakeShadowsByDefault = false,
+                        RootObjectName = rootName
+                    });
+
+                if (result.WindowCountLayoutGroupsPending != 0 ||
+                    result.WindowCountLayoutRequestedInstances != 0)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Single-count window group import",
+                        $"Expected single-count window group to avoid pending layout bucket, got pending={result.WindowCountLayoutGroupsPending}, requested={result.WindowCountLayoutRequestedInstances}.");
+                }
+
+                if (result.DoorWindowParentAnchorsAttempted != 1 ||
+                    result.DoorWindowParentAnchorsMissed != 1)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Single-count window group import",
+                        $"Expected single-count window group to use normal parent-anchor flow, got attempted={result.DoorWindowParentAnchorsAttempted}, missed={result.DoorWindowParentAnchorsMissed}.");
+                }
+
+                if (result.GetWarningCategoryCount(ToontownSceneImportResult.WindowCountLayoutCategory) != 0)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Single-count window group import",
+                        "Expected no window-count-layout warning category entry for single-count window group.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Single-count window group import",
+                    "Single-count wall window groups stay on the normal parent-anchor placement path.");
+            }
+            finally
+            {
+                GameObject root = GameObject.Find(rootName);
+                if (root != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(root);
+                }
+            }
+        }
+
+        private static RegressionCheckResult RunMultiCountWindowOffsetFixtureCheck()
+        {
+            float[] offsets = ToontownSceneDocumentImporter.BuildEvenlySpacedWallWindowOffsetsForRegression(2, 15f);
+            if (offsets == null || offsets.Length != 2)
+            {
+                return RegressionCheckResult.Fail(
+                    "Multi-count window layout offsets",
+                    $"Expected 2 offsets, got {(offsets == null ? 0 : offsets.Length)}.");
+            }
+
+            if (!Mathf.Approximately(offsets[0], -2.5f) || !Mathf.Approximately(offsets[1], 2.5f))
+            {
+                return RegressionCheckResult.Fail(
+                    "Multi-count window layout offsets",
+                    $"Expected offsets [-2.5, 2.5], got [{offsets[0]}, {offsets[1]}].");
+            }
+
+            return RegressionCheckResult.Pass(
+                "Multi-count window layout offsets",
+                "Two-window wall layout offsets stay evenly spaced across the parent width.");
+        }
+
+        private static RegressionCheckResult RunSingleCountWindowOffsetFixtureCheck()
+        {
+            float[] offsets = ToontownSceneDocumentImporter.BuildEvenlySpacedWallWindowOffsetsForRegression(1, 15f);
+            if (offsets == null || offsets.Length != 1)
+            {
+                return RegressionCheckResult.Fail(
+                    "Single-count window layout offsets",
+                    $"Expected 1 offset, got {(offsets == null ? 0 : offsets.Length)}.");
+            }
+
+            if (!Mathf.Approximately(offsets[0], 0f))
+            {
+                return RegressionCheckResult.Fail(
+                    "Single-count window layout offsets",
+                    $"Expected centered offset [0], got [{offsets[0]}].");
+            }
+
+            return RegressionCheckResult.Pass(
+                "Single-count window layout offsets",
+                "Single-window wall layout fallback stays centered on the parent width.");
         }
 
         private static RegressionCheckResult RunEggMaterialScopeFixtureCheck()
