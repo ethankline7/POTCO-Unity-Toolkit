@@ -80,6 +80,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added a scripted Unity batch wrapper for the Toontown scene material audit, including optional `_MainTex` threshold enforcement for future baseline tightening.
 - Expanded the scene material audit to print affected renderer hierarchy paths so Default-Material cleanup can be grouped by model family instead of guessed from aggregate counts.
 - Reduced wall/window count-layout diagnostics by keeping single-window wall groups on the normal parent-anchor path and applying width-based spacing fallback for multi-window wall groups when parent width data is available.
+- Swapped importer fallback `_MainTex` assignment to a serializable asset-backed blank texture so `Default-Material` sub-assets no longer lose their texture reference across reimport and audit passes.
 
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
@@ -104,7 +105,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Missing models stays at `0`.
 - Resolved-node isolate failures stays at `0`.
 - Window count-layout pending warnings trend downward from the current baseline instead of growing silently.
-- Material-audit `_MainTex` offenders trend downward from the current baseline instead of growing silently.
+- Material-audit `_MainTex` offenders stay at `0`.
 - No generated resource dumps, demo output scenes, logs, screenshots, or local scratch scenes are committed unless intentionally promoted as fixtures.
 
 ### Visual Baseline

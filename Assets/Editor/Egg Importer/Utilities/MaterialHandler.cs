@@ -13,6 +13,7 @@ public class MaterialHandler
     private static Shader _vertexColorTransparentShader;
     private static Shader _legacyDiffuseShader;
     private static Shader _standardShader;
+    private static Texture2D _fallbackMainTexture;
     
     // Cache common property IDs for better performance
     private static readonly int ColorPropertyId = Shader.PropertyToID("_Color");
@@ -195,10 +196,7 @@ public class MaterialHandler
 
         // Always ensure Default-Material exists
         var defaultMaterial = CreateVertexColorMaterial("Default-Material");
-        if (defaultMaterial.HasProperty("_MainTex"))
-        {
-            defaultMaterial.SetTexture("_MainTex", Texture2D.whiteTexture);
-        }
+        EnsureFallbackMainTexture(defaultMaterial);
         materials.Add(defaultMaterial);
         createdMaterialNames.Add("Default-Material");
 
@@ -788,9 +786,41 @@ public class MaterialHandler
         // Enable GPU Instancing
         mat.enableInstancing = true;
 
+        EnsureFallbackMainTexture(mat);
+
         DebugLogger.LogEggImporter($"Created vertex color material '{materialName}' using shader: {shader.name}");
 
         return mat;
+    }
+
+    public static void EnsureFallbackMainTexture(Material mat)
+    {
+        if (mat == null || !mat.HasProperty("_MainTex"))
+        {
+            return;
+        }
+
+        if (mat.GetTexture("_MainTex") == null)
+        {
+            mat.SetTexture("_MainTex", GetSerializableFallbackMainTexture());
+        }
+    }
+
+    private static Texture2D GetSerializableFallbackMainTexture()
+    {
+        if (_fallbackMainTexture != null)
+        {
+            return _fallbackMainTexture;
+        }
+
+        const string fallbackTextureAssetPath = "Assets/Resources/phase_2/maps/blank.jpg";
+        _fallbackMainTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(fallbackTextureAssetPath);
+        if (_fallbackMainTexture == null)
+        {
+            _fallbackMainTexture = Texture2D.whiteTexture;
+        }
+
+        return _fallbackMainTexture;
     }
 
     private Material CreateInvisibleCollisionMaterial()
