@@ -2130,12 +2130,14 @@ public class GeometryProcessor
         {
             // Clone the cached material with new name for uniqueness
             var clonedMaterial = new Material(_cachedDefaultMaterial) { name = materialName };
+            MaterialHandler.EnsureFallbackMainTexture(clonedMaterial);
             return clonedMaterial;
         }
 
         // Create and cache the default material
         var standardShader = Shader.Find("Standard");
         _cachedDefaultMaterial = new Material(standardShader) { name = materialName };
+        MaterialHandler.EnsureFallbackMainTexture(_cachedDefaultMaterial);
 
         return _cachedDefaultMaterial;
     }

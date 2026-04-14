@@ -56,14 +56,19 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Updated smoke test runner to be batch-safe (no modal dialog in headless execution).
 - Updated smoke test runner to validate both bundled sample formats (dictionary-style and assignment-style) in one run.
 - Expanded reader parsing support for assignment-style `objectStruct[...]` path assignments and quoted-key variants.
+- Normalized quoted scalar values in parsed Toontown properties so direct assignment-style fields round-trip as document values.
 - Added parser regression runner (`Toontown/Validation/Run Parser Regression Tests`) with fixture assertions for dictionary and assignment sample formats.
 - Expanded validator UX with `Validate Both Bundled Samples` and clearer overall PASS/WARN/FAIL status messaging.
 - Added `.dna` document reader MVP (`toontown.dna.zone`) with storage mapping support from `storage*.dna` files.
 - Added `Toontown/World Data/DNA Scene Importer (MVP)` to parse `.dna` and build Unity hierarchy with model instantiation attempts.
 - Added quick-start documentation for OpenToontown resource clone + first DNA import workflow.
+- Hardened module resolved-node alias matching for Toontown DNA imports so model-root aliases can resolve without broadening strict lookup behavior.
 - Added export/import rendering patch flow for one-sided model handling (`DoubleSidedShadows`) so imported scenes can force two-sided shadow casting and cull-off material copies when flagged.
 - Added a sign/text card prop system for world imports (`SignFrame`/`SignImage`) with per-object toggle control for 2D card props vs replacement-prep visibility.
 - Added door/window parent-anchor placement pass with diagnostics so module props can align against parent model anchor nodes more closely to source DNA behavior.
+- Added generic parent-anchor alias fallback for prefixed landmark building door origins while leaving wall/window count placement as a diagnostic.
+- Split wall/window count-layout diagnostics from anchor lookup misses and skip zero-count window groups during import.
+- Added Unity-backed EGG material-scope regression coverage for scoped `<TRef>` inheritance and alpha blend isolation.
 - Added `Toontown/Environment Switcher` for quick editor-side skybox, lighting, fog, ambient audio, and effect preset passes while reviewing imported DNA scenes.
 
 ## Phase 4 - Validation
@@ -71,13 +76,74 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Export round-trip sample and verify structure.
 - Add migration notes and troubleshooting docs.
 
+### Phase 4 Progress
+- Added a scripted Unity batch wrapper for the Toontown scene material audit, including optional `_MainTex` threshold enforcement for future baseline tightening.
+- Expanded the scene material audit to print affected renderer hierarchy paths so Default-Material cleanup can be grouped by model family instead of guessed from aggregate counts.
+- Reduced wall/window count-layout diagnostics by keeping single-window wall groups on the normal parent-anchor path and applying width-based spacing fallback for multi-window wall groups when parent width data is available.
+- Matched OpenLevelEditor wall-style parity for narrow spans by clamping wall/window layout requests to a single centered window when parent width is below `15.0`.
+- Pinned higher authored `window_count` layout coverage in parser regression so wide wall spans keep working for four-window style cases seen in OpenLevelEditor style files.
+- Added a bundled DNA style-code regression fixture so representative OpenLevelEditor door/window/cornice codes keep resolving through storage mappings without depending on external resource installs.
+- Added alias regression coverage for `clothesshop` storage spellings so preferred-code mappings and normalized resolved-node lookup stay aligned with `clothshop` model nodes.
+- Fixed empty preferred-code storage mappings so landmark `store_node [ ... "" ]` entries fall back to their node name instead of being dropped during DNA parsing.
+- Added a first-pass landmark sign import path so `baseline` nodes under landmark buildings emit visible TextMesh labels from the building `title`, making storefront identities show up in the generated scene.
+- Swapped importer fallback `_MainTex` assignment to a serializable asset-backed blank texture so `Default-Material` sub-assets no longer lose their texture reference across reimport and audit passes.
+
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
 - Stabilize the current Toontown DNA importer before adding more feature surface.
-- Add regression coverage for strict vs fuzzy resolved-node matching.
-- Add validation around EGG alpha/material scope so texture/material definitions cannot leak into unrelated geometry.
+- Keep strict vs fuzzy resolved-node matching covered in Unity-backed parser regression.
+- Keep narrow-wall `window_count` parity covered in Unity-backed parser regression so style-authoring rules stay aligned with OpenLevelEditor.
+- Keep expanding validation around EGG alpha/material scope so texture/material definitions cannot leak into unrelated geometry.
 - Capture DNA demo metrics in PR descriptions so visual/import quality changes are comparable between runs.
 - Keep Unity/package upgrade work isolated in draft PR #10 until editor import and compile behavior is confirmed.
+
+### Added Stabilization Goals
+- Numeric quality gates now define the importer baseline in addition to the basic pass/fail checks.
+- The DNA demo scene is now the explicit visual baseline for stabilization review.
+- The scratch-scene policy now keeps local review scenes out of PR scope unless intentionally promoted.
+- The failure-class coverage map now distinguishes automated regression, scripted validation, and still-manual review areas.
+- Merge sequencing for PR #10 now stays explicit so the upgrade lane remains isolated until stabilization lands.
+
+### Stabilization Quality Gates
+- `scripts/primary-checks.ps1` passes before every push.
+- `scripts/run-action.cmd parser-regression` passes on the project-pinned Unity editor, or the blocker is documented in PR #11.
+- `scripts/run-action.cmd dna-demo -SkipResourceSetup` passes on the project-pinned Unity editor, or the blocker is documented in PR #11.
+- `scripts/run-action.cmd material-audit` is rerun after any importer/material change that could affect `_MainTex` or `Default-Material` counts.
+- Missing models stays at `0`.
+- Resolved-node isolate failures stays at `0`.
+- Door/window parent anchor misses stays at `0`.
+- Window count-layout pending warnings stays at `0`.
+- Fallback placement warnings stays at `0`.
+- Material-audit `_MainTex` offenders stay at `0`.
+- No generated resource dumps, demo output scenes, logs, screenshots, or local scratch scenes are committed unless intentionally promoted as fixtures.
+
+### Visual Baseline
+- Treat the current Toontown DNA demo scene as the primary visual review surface for stabilization work.
+- When importer behavior changes, capture the current DNA demo metrics in PR #11 and note visible scene differences in the PR thread.
+- Prioritize visible review for door/window spacing, landmark entrances, tunnel walls, and known `_MainTex` offender families.
+
+### Scratch Scene Policy
+- Keep untracked local review scenes out of commits by default.
+- Only promote a local scene to a tracked fixture when it is required for repeatable validation or documentation.
+- If a scratch scene is needed during debugging, either keep it untracked or move it under a clearly named generated/samples path before discussing promotion.
+
+### Failure-Class Coverage Map
+- Covered by automated regression: parser dictionary and assignment samples, bundled DNA storage mapping, bundled style-code storage mapping, strict/fuzzy resolved-node lookup, spelling alias normalization, module alias matching, parent-anchor alias matching, zero-count window group handling, narrow-wall count clamp, single-count and multi-count offset layout math, high-count window layout math, EGG material-scope inheritance.
+- Covered by scripted validation but still needs visual review: DNA demo metrics, warning category counts, resolved-node isolate totals, door/window anchor totals, fallback-placement totals, material audit offender grouping.
+- Still primarily manual and should be reduced over time: neighborhood-specific landmark/building visual parity, scene-level spacing fidelity beyond the synthetic regression fixtures, environment/lighting/fog presentation, material/art correctness for specific model families after import.
+
+### Closeout Order (April 14, 2026)
+1. Keep only intentional scratch artifacts in the worktree and leave local review scenes untracked unless promoted on purpose.
+2. Rerun `primary-checks`, parser regression, DNA demo, and material audit on the pinned Unity editor before every push or PR status refresh.
+3. Update PR #11 with the current importer baseline: missing models `0`, resolved-node isolate failures `0`, parent-anchor misses `0`, layout pending `0`, fallback placement `0`, and `_MainTex` offenders `0`.
+4. Capture visible DNA demo notes for landmark entrances, door/window spacing, tunnel walls, and any material family that still looks suspicious despite green audits.
+5. Push `codex/toontown-importer-stabilization` only after the validation suite is green and the scratch scene remains out of scope.
+6. Prepare PR #11 for ready review once the visual pass and metric refresh are recorded; keep PR #10 isolated and unmerged until stabilization is intentionally landed.
+
+### Merge Sequencing
+- Merge PR #11 before revisiting PR #10.
+- After PR #11 lands, switch back to `main`, pull, and delete only branches that are confirmed merged.
+- Keep PR #10 as a draft until the project opens, imports, and compiles cleanly in Unity `6000.4.1f1`.
 
 ## Non-Goals (Current Phase)
 - Full gameplay parity.

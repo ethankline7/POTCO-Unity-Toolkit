@@ -38,4 +38,22 @@ Assert-ContentMatch -Content $assignmentContent -Pattern 'objectStruct\["Objects
 Assert-ContentMatch -Content $assignmentContent -Pattern 'objectStruct\["Objects"\]\["assign-root"\]\["Objects"\]\["assign-prop"\]\["Zone"\]\s*=' -ErrorMessage "Assignment sample is missing direct property assignment coverage."
 Assert-ContentMatch -Content $assignmentContent -Pattern "phase_4/models/props/mailbox" -ErrorMessage "Assignment sample is missing expected mailbox model mapping."
 
+$dnaZonePath = 'Assets/Editor/Toontown/Samples/toontown_dna_zone_regression.dna'
+if (-not (Test-Path $dnaZonePath)) {
+  throw "Missing Toontown DNA zone regression sample: $dnaZonePath"
+}
+
+$dnaZoneContent = Get-Content -Raw $dnaZonePath
+Assert-ContentMatch -Content $dnaZoneContent -Pattern 'prop\s+"front-door"' -ErrorMessage "DNA zone regression sample is missing expected prop block."
+Assert-ContentMatch -Content $dnaZoneContent -Pattern 'code\s*\[\s*"tt_test_door"\s*\]' -ErrorMessage "DNA zone regression sample is missing expected storage code reference."
+
+$dnaStoragePath = 'Assets/Editor/Toontown/Samples/toontown_dna_storage_regression.dna'
+if (-not (Test-Path $dnaStoragePath)) {
+  throw "Missing Toontown DNA storage regression sample: $dnaStoragePath"
+}
+
+$dnaStorageContent = Get-Content -Raw $dnaStoragePath
+Assert-ContentMatch -Content $dnaStorageContent -Pattern 'store_node\s*\[' -ErrorMessage "DNA storage regression sample is missing store_node mapping."
+Assert-ContentMatch -Content $dnaStorageContent -Pattern 'door_origin_ul' -ErrorMessage "DNA storage regression sample is missing expected resolved node."
+
 Write-Host 'Toontown sample sanity: OK' -ForegroundColor Green

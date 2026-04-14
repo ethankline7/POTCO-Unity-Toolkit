@@ -8,6 +8,10 @@ namespace Toontown.Editor
     {
         public const string BundledSampleRelativePath = "Assets/Editor/Toontown/Samples/toontown_sample_world.py";
         public const string BundledAssignmentSampleRelativePath = "Assets/Editor/Toontown/Samples/toontown_sample_world_assignment_style.py";
+        public const string BundledDnaZoneRegressionRelativePath = "Assets/Editor/Toontown/Samples/toontown_dna_zone_regression.dna";
+        public const string BundledDnaStorageRegressionRelativePath = "Assets/Editor/Toontown/Samples/toontown_dna_storage_regression.dna";
+        public const string BundledDnaStyleZoneRegressionRelativePath = "Assets/Editor/Toontown/Samples/toontown_dna_style_code_regression.dna";
+        public const string BundledDnaStyleStorageRegressionRelativePath = "Assets/Editor/Toontown/Samples/toontown_dna_style_storage_regression.dna";
         public const string SuggestedExportRelativePath = "Assets/Editor/Toontown/Samples/Generated/toontown_sample_export.py";
         public const string SuggestedAssignmentExportRelativePath = "Assets/Editor/Toontown/Samples/Generated/toontown_sample_assignment_export.py";
 
@@ -22,6 +26,10 @@ namespace Toontown.Editor
 
         public static string BundledSampleFullPath => ToFullPath(BundledSampleRelativePath);
         public static string BundledAssignmentSampleFullPath => ToFullPath(BundledAssignmentSampleRelativePath);
+        public static string BundledDnaZoneRegressionFullPath => ToFullPath(BundledDnaZoneRegressionRelativePath);
+        public static string BundledDnaStorageRegressionFullPath => ToFullPath(BundledDnaStorageRegressionRelativePath);
+        public static string BundledDnaStyleZoneRegressionFullPath => ToFullPath(BundledDnaStyleZoneRegressionRelativePath);
+        public static string BundledDnaStyleStorageRegressionFullPath => ToFullPath(BundledDnaStyleStorageRegressionRelativePath);
         public static string SuggestedExportFullPath => ToFullPath(SuggestedExportRelativePath);
         public static string SuggestedAssignmentExportFullPath => ToFullPath(SuggestedAssignmentExportRelativePath);
         public static string SuggestedDnaSampleFullPath => ToFullPath(SuggestedDnaSampleRelativePath);
@@ -41,6 +49,18 @@ namespace Toontown.Editor
         public static bool BundledAssignmentSampleExists()
         {
             return File.Exists(BundledAssignmentSampleFullPath);
+        }
+
+        public static bool BundledDnaRegressionSamplesExist()
+        {
+            return File.Exists(BundledDnaZoneRegressionFullPath) &&
+                   File.Exists(BundledDnaStorageRegressionFullPath);
+        }
+
+        public static bool BundledDnaStyleRegressionSamplesExist()
+        {
+            return File.Exists(BundledDnaStyleZoneRegressionFullPath) &&
+                   File.Exists(BundledDnaStyleStorageRegressionFullPath);
         }
 
         public static bool SuggestedDnaSampleExists()

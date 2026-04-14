@@ -7,6 +7,7 @@ using POTCO;
 using Toolkit.Editor.WorldData.Contracts;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using WorldDataImporter.Utilities;
 
 namespace Toontown.Editor
@@ -20,6 +21,10 @@ namespace Toontown.Editor
         private static readonly Regex PhasePrefixRegex = new Regex(
             @"^phase_\d+(?:\.\d+)?/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex NodeTokenRegex = new Regex(
+            @"[A-Z]+(?=[A-Z][a-z]|\b)|[A-Z]?[a-z]+|\d+",
+            RegexOptions.Compiled);
 
         private static readonly string[] FakeShadowNameTokens =
         {
@@ -94,6 +99,11 @@ namespace Toontown.Editor
             };
             var instantiatedModelRootsByObjectId =
                 new Dictionary<string, Transform>(StringComparer.OrdinalIgnoreCase);
+            var sourceObjectsById = new Dictionary<string, WorldDataObject>(StringComparer.OrdinalIgnoreCase);
+            foreach (WorldDataObject obj in document.Objects)
+            {
+                sourceObjectsById[obj.Id] = obj;
+            }
 
             foreach (WorldDataObject obj in document.Objects)
             {
@@ -108,10 +118,29 @@ namespace Toontown.Editor
                 go.transform.SetParent(parent.transform, false);
                 ApplyTransform(go.transform, obj.Properties);
                 string modelPath = ResolveModelPath(obj.Properties);
+                bool skipModelInstantiation = ShouldSkipZeroCountWindowGroup(obj.Properties);
+                if (skipModelInstantiation)
+                {
+                    result.ZeroCountWindowGroupsSkipped++;
+                }
+
+                bool hasWallWindowLayoutRequest =
+                    TryGetWallWindowLayoutRequest(obj, sourceObjectsById, out int requestedWindowCount);
+                bool shouldAttemptWindowCountLayout = false;
                 bool shouldAttemptParentAnchor =
+                    !skipModelInstantiation &&
                     ShouldAttemptParentAnchorPlacement(obj.Properties, modelPath) &&
                     !HasExplicitTransformProperties(obj.Properties);
+                if (shouldAttemptParentAnchor &&
+                    hasWallWindowLayoutRequest &&
+                    requestedWindowCount > 1)
+                {
+                    shouldAttemptWindowCountLayout = true;
+                    shouldAttemptParentAnchor = false;
+                }
 
+                bool pendingParentAnchorFailure = false;
+                string pendingAnchorDetails = null;
                 if (shouldAttemptParentAnchor)
                 {
                     result.DoorWindowParentAnchorsAttempted++;
@@ -126,17 +155,13 @@ namespace Toontown.Editor
                     }
                     else
                     {
-                        result.DoorWindowParentAnchorsMissed++;
-                        if (!string.IsNullOrWhiteSpace(anchorDetails) &&
-                            result.DoorWindowParentAnchorWarnings.Count < 100)
-                        {
-                            result.DoorWindowParentAnchorWarnings.Add($"{obj.Id} :: {anchorDetails}");
-                        }
+                        pendingParentAnchorFailure = true;
+                        pendingAnchorDetails = anchorDetails;
                     }
                 }
 
                 bool modelInstantiated = false;
-                if (!string.IsNullOrWhiteSpace(modelPath))
+                if (!skipModelInstantiation && !string.IsNullOrWhiteSpace(modelPath))
                 {
                     GameObject modelInstance = AssetUtilities.InstantiatePrefab(
                         modelPath,
@@ -163,6 +188,7 @@ namespace Toontown.Editor
                             else
                             {
                                 result.ResolvedNodeIsolationsFailed++;
+                                result.AddWarningCategory(ToontownSceneImportResult.MissingResolvedNodeCategory);
                                 result.FailedResolvedNodeEntries.Add(
                                     $"{obj.Id} :: node '{resolvedNode}' :: model '{modelPath}' :: {isolateDetails}");
                             }
@@ -170,7 +196,42 @@ namespace Toontown.Editor
 
                         if (settings.RemoveFakeShadowsByDefault)
                         {
-                            result.FakeShadowRenderersDisabled += RemoveFakeShadowRenderers(modelInstance.transform);
+                            int disabledFakeShadows = RemoveFakeShadowRenderers(modelInstance.transform);
+                            result.FakeShadowRenderersDisabled += disabledFakeShadows;
+                            result.AddWarningCategory(
+                                ToontownSceneImportResult.FakeShadowRemovalCategory,
+                                disabledFakeShadows);
+                        }
+
+                        if (shouldAttemptWindowCountLayout &&
+                            !TryApplyWallWindowCountLayout(
+                                go.transform,
+                                modelInstance.transform,
+                                obj,
+                                sourceObjectsById,
+                                requestedWindowCount,
+                                out string layoutDetails))
+                        {
+                            RegisterWindowCountLayoutPending(obj, requestedWindowCount, result, layoutDetails);
+                        }
+
+                        if (pendingParentAnchorFailure)
+                        {
+                            bool recoveredByWindowLayout =
+                                hasWallWindowLayoutRequest &&
+                                requestedWindowCount == 1 &&
+                                TryApplyWallWindowCountLayout(
+                                    go.transform,
+                                    modelInstance.transform,
+                                    obj,
+                                    sourceObjectsById,
+                                    requestedWindowCount,
+                                    out _);
+
+                            if (!recoveredByWindowLayout)
+                            {
+                                RegisterParentAnchorMiss(obj, result, pendingAnchorDetails);
+                            }
                         }
 
                         result.InstantiatedModels++;
@@ -180,14 +241,21 @@ namespace Toontown.Editor
                     else
                     {
                         result.MissingModels++;
+                        result.AddWarningCategory(ToontownSceneImportResult.MissingModelCategory);
                         if (!result.MissingModelPaths.Contains(modelPath, StringComparer.OrdinalIgnoreCase))
                         {
                             result.MissingModelPaths.Add(modelPath);
+                        }
+
+                        if (pendingParentAnchorFailure)
+                        {
+                            RegisterParentAnchorMiss(obj, result, pendingAnchorDetails);
                         }
                     }
                 }
 
                 if (!modelInstantiated &&
+                    !skipModelInstantiation &&
                     !string.IsNullOrWhiteSpace(modelPath) &&
                     settings.CreatePlaceholderForMissingModel)
                 {
@@ -200,6 +268,7 @@ namespace Toontown.Editor
                     AttachObjectListInfo(go, obj, modelPath);
                 }
 
+                TryCreateLandmarkSignLabel(go, obj, sourceObjectsById);
                 result.CreatedSceneObjects++;
             }
 
@@ -216,6 +285,21 @@ namespace Toontown.Editor
         public static string ResolveModelPathFromProperties(Dictionary<string, string> properties)
         {
             return ResolveModelPath(properties);
+        }
+
+        internal static bool TryFindResolvedNodeForRegression(
+            Transform root,
+            string resolvedNodeName,
+            bool allowFuzzyMatch,
+            out string matchedName,
+            out string strategy,
+            out string diagnostics)
+        {
+            ResolvedNodeSearchResult result = FindResolvedNodeTransform(root, resolvedNodeName, allowFuzzyMatch);
+            matchedName = result.Match != null ? result.Match.name : string.Empty;
+            strategy = result.Strategy ?? string.Empty;
+            diagnostics = result.Diagnostics ?? string.Empty;
+            return result.Match != null;
         }
 
         private static void AttachObjectListInfo(GameObject target, WorldDataObject source, string modelPath)
@@ -250,6 +334,47 @@ namespace Toontown.Editor
             if (collider != null)
             {
                 UnityEngine.Object.DestroyImmediate(collider);
+            }
+        }
+
+        private static void TryCreateLandmarkSignLabel(
+            GameObject target,
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById)
+        {
+            if (target == null ||
+                sourceObject == null ||
+                sourceObjectsById == null ||
+                !HasKeyword(sourceObject.Properties, "baseline") ||
+                !TryGetLandmarkBuildingTitle(sourceObject, sourceObjectsById, out string title))
+            {
+                return;
+            }
+
+            if (target.GetComponentInChildren<TextMesh>(true) != null)
+            {
+                return;
+            }
+
+            GameObject label = new GameObject("__LandmarkSignLabel__");
+            label.transform.SetParent(target.transform, false);
+
+            var textMesh = label.AddComponent<TextMesh>();
+            textMesh.text = title;
+            textMesh.fontSize = 32;
+            textMesh.characterSize = 0.08f;
+            textMesh.anchor = TextAnchor.MiddleCenter;
+            textMesh.alignment = TextAlignment.Center;
+            textMesh.richText = false;
+            textMesh.color = TryGetColor(sourceObject.Properties, "Color", out Color textColor)
+                ? textColor
+                : Color.white;
+
+            MeshRenderer renderer = label.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
             }
         }
 
@@ -442,6 +567,37 @@ namespace Toontown.Editor
                    properties.ContainsKey("Scale");
         }
 
+        private static bool TryGetLandmarkBuildingTitle(
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            out string title)
+        {
+            title = string.Empty;
+            if (sourceObject == null || sourceObjectsById == null)
+            {
+                return false;
+            }
+
+            string currentId = sourceObject.ParentId;
+            while (!string.IsNullOrWhiteSpace(currentId) &&
+                   sourceObjectsById.TryGetValue(currentId, out WorldDataObject current) &&
+                   current != null)
+            {
+                if (HasKeyword(current.Properties, "landmark_building") &&
+                    current.Properties.TryGetValue("Title", out title) &&
+                    !string.IsNullOrWhiteSpace(title))
+                {
+                    title = title.Trim().Trim('"');
+                    return !string.IsNullOrWhiteSpace(title);
+                }
+
+                currentId = current.ParentId;
+            }
+
+            title = string.Empty;
+            return false;
+        }
+
         private static bool TryApplyParentAnchorPlacement(
             Transform targetObjectTransform,
             WorldDataObject sourceObject,
@@ -484,7 +640,8 @@ namespace Toontown.Editor
                     continue;
                 }
 
-                ResolvedNodeSearchResult search = FindResolvedNodeTransform(parentModelRoot, candidate, false);
+                bool allowFuzzyMatch = ShouldAllowParentAnchorFuzzyMatch(candidate);
+                ResolvedNodeSearchResult search = FindResolvedNodeTransform(parentModelRoot, candidate, allowFuzzyMatch);
                 if (search.Match == null)
                 {
                     continue;
@@ -558,6 +715,15 @@ namespace Toontown.Editor
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private static bool ShouldAllowParentAnchorFuzzyMatch(string candidate)
+        {
+            string normalized = NormalizeNodeName(candidate);
+            return string.Equals(normalized, "door_origin", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalized, "door_front", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalized, "window_origin", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(normalized, "window_locator", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryIsolateResolvedNodeInstance(
@@ -838,6 +1004,7 @@ namespace Toontown.Editor
             string normalized = value.Trim().Trim('"').Replace(" ", string.Empty);
             // Some storage mappings use "clothesshop" while model nodes are "clothshop".
             normalized = normalized.Replace("clothesshop", "clothshop", StringComparison.OrdinalIgnoreCase);
+            normalized = normalized.Replace("clothes_shop", "clothshop", StringComparison.OrdinalIgnoreCase);
             return normalized;
         }
 
@@ -931,19 +1098,36 @@ namespace Toontown.Editor
                 return tokens;
             }
 
-            string[] parts = normalizedNodeName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = normalizedNodeName.Split(
+                new[] { '_', '-', '.', ' ' },
+                StringSplitOptions.RemoveEmptyEntries);
             foreach (string part in parts)
             {
-                string token = part.Trim();
-                if (string.IsNullOrWhiteSpace(token) || NodeNoiseTokens.Contains(token))
+                MatchCollection matches = NodeTokenRegex.Matches(part);
+                if (matches.Count == 0)
                 {
+                    AddNodeToken(tokens, part);
                     continue;
                 }
 
-                tokens.Add(token);
+                foreach (Match match in matches)
+                {
+                    AddNodeToken(tokens, match.Value);
+                }
             }
 
             return tokens;
+        }
+
+        private static void AddNodeToken(HashSet<string> tokens, string rawToken)
+        {
+            string token = rawToken?.Trim();
+            if (string.IsNullOrWhiteSpace(token) || NodeNoiseTokens.Contains(token))
+            {
+                return;
+            }
+
+            tokens.Add(token);
         }
 
         private static string BuildResolvedNodeFailureDiagnostics(
@@ -1007,8 +1191,233 @@ namespace Toontown.Editor
             }
 
             string normalized = modelPath.Replace('\\', '/');
+            if (normalized.IndexOf("models/modules/", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
             return normalized.IndexOf("models/modules/doors", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    normalized.IndexOf("models/modules/windows", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool TryGetWallWindowLayoutRequest(
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            out int requestedCount)
+        {
+            requestedCount = 0;
+            if (sourceObject == null ||
+                sourceObject.Properties == null ||
+                !IsWindowKeyword(sourceObject.Properties) ||
+                !TryGetIntProperty(sourceObject.Properties, "Count", out requestedCount) ||
+                requestedCount <= 0)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceObject.ParentId) ||
+                sourceObjectsById == null ||
+                !sourceObjectsById.TryGetValue(sourceObject.ParentId, out WorldDataObject parentObject) ||
+                parentObject == null ||
+                parentObject.Properties == null ||
+                !HasKeyword(parentObject.Properties, "wall"))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void RegisterParentAnchorMiss(
+            WorldDataObject sourceObject,
+            ToontownSceneImportResult result,
+            string anchorDetails)
+        {
+            if (sourceObject == null || result == null)
+            {
+                return;
+            }
+
+            result.DoorWindowParentAnchorsMissed++;
+            result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
+            if (!string.IsNullOrWhiteSpace(anchorDetails) &&
+                result.DoorWindowParentAnchorWarnings.Count < 100)
+            {
+                result.DoorWindowParentAnchorWarnings.Add($"{sourceObject.Id} :: {anchorDetails}");
+            }
+        }
+
+        private static void RegisterWindowCountLayoutPending(
+            WorldDataObject sourceObject,
+            int requestedCount,
+            ToontownSceneImportResult result,
+            string details = null)
+        {
+            if (sourceObject == null || result == null || requestedCount <= 0)
+            {
+                return;
+            }
+
+            result.WindowCountLayoutGroupsPending++;
+            result.WindowCountLayoutRequestedInstances += requestedCount;
+            result.AddWarningCategory(ToontownSceneImportResult.FallbackPlacementCategory);
+            result.AddWarningCategory(ToontownSceneImportResult.WindowCountLayoutCategory);
+
+            if (result.WindowCountLayoutWarnings.Count < 100)
+            {
+                string warning = $"{sourceObject.Id} :: wall/window count layout pending; count={requestedCount}; parent={sourceObject.ParentId}";
+                if (!string.IsNullOrWhiteSpace(details))
+                {
+                    warning += $"; {details}";
+                }
+
+                result.WindowCountLayoutWarnings.Add(warning);
+            }
+        }
+
+        private static bool TryApplyWallWindowCountLayout(
+            Transform targetObjectTransform,
+            Transform modelInstanceRoot,
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            int requestedCount,
+            out string layoutDetails)
+        {
+            layoutDetails = "no layout details";
+            if (targetObjectTransform == null || modelInstanceRoot == null || sourceObject == null || requestedCount <= 0)
+            {
+                layoutDetails = "missing layout inputs";
+                return false;
+            }
+
+            if (!TryGetWallWindowLayoutWidth(sourceObject, sourceObjectsById, out float parentWidth))
+            {
+                layoutDetails = "parent wall width not found";
+                return false;
+            }
+
+            List<float> offsets = BuildEvenlySpacedWallWindowOffsets(parentWidth, requestedCount);
+            if (offsets.Count != requestedCount)
+            {
+                layoutDetails = $"could not build offsets for count={requestedCount}, width={parentWidth.ToString(CultureInfo.InvariantCulture)}";
+                return false;
+            }
+
+            var modelRoots = new List<Transform> { modelInstanceRoot };
+            for (int i = 1; i < requestedCount; i++)
+            {
+                GameObject clone = UnityEngine.Object.Instantiate(modelInstanceRoot.gameObject, targetObjectTransform, false);
+                clone.name = modelInstanceRoot.gameObject.name;
+                modelRoots.Add(clone.transform);
+            }
+
+            Vector3 baseLocalPosition = modelInstanceRoot.localPosition;
+            for (int i = 0; i < modelRoots.Count; i++)
+            {
+                Transform instanceRoot = modelRoots[i];
+                instanceRoot.localPosition = baseLocalPosition + new Vector3(offsets[i], 0f, 0f);
+            }
+
+            layoutDetails =
+                $"applied {requestedCount} window instances across width {parentWidth.ToString("0.###", CultureInfo.InvariantCulture)}";
+            return true;
+        }
+
+        private static bool TryGetWallWindowLayoutWidth(
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            out float width)
+        {
+            width = 0f;
+            if (sourceObject == null || sourceObjectsById == null)
+            {
+                return false;
+            }
+
+            string currentId = sourceObject.ParentId;
+            while (!string.IsNullOrWhiteSpace(currentId) &&
+                   sourceObjectsById.TryGetValue(currentId, out WorldDataObject current) &&
+                   current != null)
+            {
+                if (TryGetFloatProperty(current.Properties, "Width", out width) && width > 0f)
+                {
+                    return true;
+                }
+
+                currentId = current.ParentId;
+            }
+
+            return false;
+        }
+
+        internal static float[] BuildEvenlySpacedWallWindowOffsetsForRegression(int requestedCount, float parentWidth)
+        {
+            return BuildEvenlySpacedWallWindowOffsets(parentWidth, requestedCount).ToArray();
+        }
+
+        internal static int GetEffectiveWallWindowCountForRegression(int requestedCount, float parentWidth)
+        {
+            return GetEffectiveWallWindowCount(requestedCount, parentWidth);
+        }
+
+        private static List<float> BuildEvenlySpacedWallWindowOffsets(float parentWidth, int requestedCount)
+        {
+            var offsets = new List<float>();
+            int effectiveCount = GetEffectiveWallWindowCount(requestedCount, parentWidth);
+            if (effectiveCount <= 0 || parentWidth <= 0f)
+            {
+                return offsets;
+            }
+
+            if (effectiveCount == 1)
+            {
+                offsets.Add(0f);
+                return offsets;
+            }
+
+            float spacing = parentWidth / (effectiveCount + 1);
+            float leftEdge = -0.5f * parentWidth;
+            for (int i = 0; i < effectiveCount; i++)
+            {
+                offsets.Add(leftEdge + spacing * (i + 1));
+            }
+
+            return offsets;
+        }
+
+        private static int GetEffectiveWallWindowCount(int requestedCount, float parentWidth)
+        {
+            if (requestedCount <= 0 || parentWidth <= 0f)
+            {
+                return 0;
+            }
+
+            // Match OpenLevelEditor parity: narrow wall spans should not fan out multiple windows.
+            if (parentWidth < 15f)
+            {
+                return Mathf.Min(1, requestedCount);
+            }
+
+            return requestedCount;
+        }
+
+        private static bool ShouldSkipZeroCountWindowGroup(Dictionary<string, string> properties)
+        {
+            return IsWindowKeyword(properties) &&
+                   TryGetIntProperty(properties, "Count", out int count) &&
+                   count <= 0;
+        }
+
+        private static bool IsWindowKeyword(Dictionary<string, string> properties)
+        {
+            return HasKeyword(properties, "window") || HasKeyword(properties, "windows");
+        }
+
+        private static bool HasKeyword(Dictionary<string, string> properties, string expected)
+        {
+            return properties != null &&
+                   properties.TryGetValue("Keyword", out string keyword) &&
+                   string.Equals(keyword, expected, StringComparison.OrdinalIgnoreCase);
         }
 
         private static Vector3 ConvertPandaVectorToUnity(Vector3 panda)
@@ -1044,6 +1453,76 @@ namespace Toontown.Editor
             }
 
             vector = new Vector3(values[0], values[1], values[2]);
+            return true;
+        }
+
+        private static bool TryGetIntProperty(
+            Dictionary<string, string> properties,
+            string key,
+            out int value)
+        {
+            value = 0;
+            if (properties == null ||
+                !properties.TryGetValue(key, out string raw) ||
+                string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            List<float> values = ParseNumbers(raw);
+            if (values.Count == 0)
+            {
+                return false;
+            }
+
+            value = Mathf.RoundToInt(values[0]);
+            return true;
+        }
+
+        private static bool TryGetFloatProperty(
+            Dictionary<string, string> properties,
+            string key,
+            out float value)
+        {
+            value = 0f;
+            if (properties == null ||
+                !properties.TryGetValue(key, out string raw) ||
+                string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            List<float> values = ParseNumbers(raw);
+            if (values.Count == 0)
+            {
+                return false;
+            }
+
+            value = values[0];
+            return true;
+        }
+
+        private static bool TryGetColor(
+            Dictionary<string, string> properties,
+            string key,
+            out Color color)
+        {
+            color = Color.white;
+            if (properties == null ||
+                !properties.TryGetValue(key, out string raw) ||
+                string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            List<float> values = ParseNumbers(raw);
+            if (values.Count < 3)
+            {
+                return false;
+            }
+
+            float alpha = values.Count > 3 ? values[3] : 1f;
+            color = new Color(values[0], values[1], values[2], alpha);
             return true;
         }
 
@@ -1104,6 +1583,14 @@ namespace Toontown.Editor
     [Serializable]
     public sealed class ToontownSceneImportResult
     {
+        public const string MissingModelCategory = "missing model";
+        public const string MissingResolvedNodeCategory = "missing resolved node";
+        public const string FallbackPlacementCategory = "fallback placement";
+        public const string WindowCountLayoutCategory = "window count layout pending";
+        public const string MaterialFallbackCategory = "material fallback";
+        public const string FakeShadowRemovalCategory = "fake shadow removal";
+        public const string UncategorizedDocumentWarningCategory = "uncategorized document warning";
+
         public string RootObjectName;
         public int TotalDocumentObjects;
         public int CreatedSceneObjects;
@@ -1116,8 +1603,41 @@ namespace Toontown.Editor
         public int DoorWindowParentAnchorsAttempted;
         public int DoorWindowParentAnchorsApplied;
         public int DoorWindowParentAnchorsMissed;
+        public int ZeroCountWindowGroupsSkipped;
+        public int WindowCountLayoutGroupsPending;
+        public int WindowCountLayoutRequestedInstances;
         public List<string> MissingModelPaths = new List<string>();
         public List<string> FailedResolvedNodeEntries = new List<string>();
         public List<string> DoorWindowParentAnchorWarnings = new List<string>();
+        public List<string> WindowCountLayoutWarnings = new List<string>();
+        public Dictionary<string, int> WarningCategoryCounts =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        public void AddWarningCategory(string category, int count = 1)
+        {
+            if (string.IsNullOrWhiteSpace(category) || count <= 0)
+            {
+                return;
+            }
+
+            if (WarningCategoryCounts.TryGetValue(category, out int current))
+            {
+                WarningCategoryCounts[category] = current + count;
+            }
+            else
+            {
+                WarningCategoryCounts[category] = count;
+            }
+        }
+
+        public int GetWarningCategoryCount(string category)
+        {
+            if (string.IsNullOrWhiteSpace(category) || WarningCategoryCounts == null)
+            {
+                return 0;
+            }
+
+            return WarningCategoryCounts.TryGetValue(category, out int count) ? count : 0;
+        }
     }
 }

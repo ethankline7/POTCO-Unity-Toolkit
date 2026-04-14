@@ -11,11 +11,21 @@ if "%~1"=="" goto :help_error
 
 set "ACTION=%~1"
 shift /1
+set "ACTION_ARGS="
 
+:collect_args
+if "%~1"=="" goto :dispatch
+set "ACTION_ARGS=%ACTION_ARGS% "%~1""
+shift /1
+goto :collect_args
+
+:dispatch
 if /I "%ACTION%"=="open" goto :open_unity
 if /I "%ACTION%"=="primary-checks" goto :primary_checks
+if /I "%ACTION%"=="parser-regression" goto :parser_regression
 if /I "%ACTION%"=="smoke" goto :smoke
 if /I "%ACTION%"=="dna-demo" goto :dna_demo
+if /I "%ACTION%"=="material-audit" goto :material_audit
 if /I "%ACTION%"=="setup-resources" goto :setup_resources
 if /I "%ACTION%"=="import-dna-assets" goto :import_dna_assets
 if /I "%ACTION%"=="help" goto :help_ok
@@ -31,27 +41,35 @@ echo Launching Unity project from:
 echo   %PROJECT_ROOT%
 echo Using editor:
 echo   %UNITY_EXE%
-start "" "%UNITY_EXE%" -projectPath "%PROJECT_ROOT%" %*
+start "" "%UNITY_EXE%" -projectPath "%PROJECT_ROOT%" %ACTION_ARGS%
 exit /b 0
 
 :primary_checks
-call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%primary-checks.ps1" %*
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%primary-checks.ps1" %ACTION_ARGS%
+exit /b %ERRORLEVEL%
+
+:parser_regression
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-parser-regression.ps1" %ACTION_ARGS%
 exit /b %ERRORLEVEL%
 
 :smoke
-call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-smoke.ps1" %*
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-smoke.ps1" %ACTION_ARGS%
 exit /b %ERRORLEVEL%
 
 :dna_demo
-call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-dna-demo.ps1" %*
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-dna-demo.ps1" %ACTION_ARGS%
+exit /b %ERRORLEVEL%
+
+:material_audit
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run-toontown-material-audit.ps1" %ACTION_ARGS%
 exit /b %ERRORLEVEL%
 
 :setup_resources
-call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%setup-toontown-resources.ps1" %*
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%setup-toontown-resources.ps1" %ACTION_ARGS%
 exit /b %ERRORLEVEL%
 
 :import_dna_assets
-call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%import-toontown-dna-assets.ps1" %*
+call "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%import-toontown-dna-assets.ps1" %ACTION_ARGS%
 exit /b %ERRORLEVEL%
 
 :resolve_powershell
@@ -92,15 +110,10 @@ if exist "%CANDIDATE%" (
   exit /b 0
 )
 
-set "CANDIDATE=C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe"
-if exist "%CANDIDATE%" (
-  set "UNITY_EXE=%CANDIDATE%"
-  exit /b 0
-)
-
 echo Unity editor not found.
-echo Set UNITY_EDITOR_PATH to your Unity.exe path, then rerun:
-echo   set UNITY_EDITOR_PATH=C:\Program Files\Unity\Hub\Editor\6000.4.1f1\Editor\Unity.exe
+echo This branch should use the project-pinned editor unless you are intentionally validating the Unity upgrade lane.
+echo Set UNITY_EDITOR_PATH to the pinned Unity.exe path, then rerun:
+echo   set UNITY_EDITOR_PATH=C:\Program Files\Unity\Hub\Editor\6000.1.11f1\Editor\Unity.exe
 exit /b 1
 
 :help_ok
@@ -120,15 +133,19 @@ echo.
 echo Actions:
 echo   open                 Launch Unity Editor with this project
 echo   primary-checks       Run scripts\primary-checks.ps1
+echo   parser-regression    Run scripts\run-toontown-parser-regression.ps1
 echo   smoke                Run scripts\run-toontown-smoke.ps1
 echo   dna-demo             Run scripts\run-toontown-dna-demo.ps1
+echo   material-audit       Run scripts\run-toontown-material-audit.ps1
 echo   setup-resources      Run scripts\setup-toontown-resources.ps1
 echo   import-dna-assets    Run scripts\import-toontown-dna-assets.ps1
 echo.
 echo Examples:
 echo   scripts\run-action.cmd open
 echo   scripts\run-action.cmd primary-checks
+echo   scripts\run-action.cmd parser-regression -LogPath "Temp\toontown-parser-regression.log"
 echo   scripts\run-action.cmd smoke -LogPath "Temp\toontown-smoke.log"
 echo   scripts\run-action.cmd dna-demo -SkipResourceSetup
+echo   scripts\run-action.cmd material-audit -MaxMissingMainTex 46
 echo.
 exit /b 0

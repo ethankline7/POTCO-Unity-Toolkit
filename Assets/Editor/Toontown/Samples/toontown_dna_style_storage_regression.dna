@@ -1,0 +1,18 @@
+model "phase_3.5/models/modules/windows" [
+  store_node [ "window" "window_sm_round_ur" ]
+  store_node [ "window" "window_md_curved_ur" ]
+  store_node [ "window" "window_porthole_ur" ]
+]
+
+model "phase_3.5/models/modules/cornices" [
+  store_node [ "cornice" "cornice_curved_ur" ]
+]
+
+model "phase_4/models/modules/doors" [
+  store_node [ "door_double" "door_double_round_ul" ]
+  store_node [ "door_double" "door_double_clothesshop_ur" "door_double_clothshop" ]
+]
+
+place_model "phase_4/models/modules/clothshopTT" [
+  store_node [ "toon_landmark" "toon_landmark_TT_clothes_shop" "" ]
+]

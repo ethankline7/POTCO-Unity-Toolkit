@@ -23,6 +23,7 @@
 - Primary (recommended): run `scripts/primary-checks.ps1`.
 - Manual readiness bundle: run `scripts/manual-readiness.ps1`.
 - Local one-command wrapper: run `scripts\run-action.cmd help`.
+- Toontown scene material audit: run `scripts/run-toontown-material-audit.ps1` after generating the DNA demo scene.
 - CI mirrors:
   - `Primary CI` for push and branch quality gates.
   - `Commit Quality` for commit subject format and readability checks.
