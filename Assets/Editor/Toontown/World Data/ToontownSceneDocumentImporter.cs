@@ -1281,28 +1281,50 @@ namespace Toontown.Editor
             return BuildEvenlySpacedWallWindowOffsets(parentWidth, requestedCount).ToArray();
         }
 
+        internal static int GetEffectiveWallWindowCountForRegression(int requestedCount, float parentWidth)
+        {
+            return GetEffectiveWallWindowCount(requestedCount, parentWidth);
+        }
+
         private static List<float> BuildEvenlySpacedWallWindowOffsets(float parentWidth, int requestedCount)
         {
             var offsets = new List<float>();
-            if (requestedCount <= 0 || parentWidth <= 0f)
+            int effectiveCount = GetEffectiveWallWindowCount(requestedCount, parentWidth);
+            if (effectiveCount <= 0 || parentWidth <= 0f)
             {
                 return offsets;
             }
 
-            if (requestedCount == 1)
+            if (effectiveCount == 1)
             {
                 offsets.Add(0f);
                 return offsets;
             }
 
-            float spacing = parentWidth / (requestedCount + 1);
+            float spacing = parentWidth / (effectiveCount + 1);
             float leftEdge = -0.5f * parentWidth;
-            for (int i = 0; i < requestedCount; i++)
+            for (int i = 0; i < effectiveCount; i++)
             {
                 offsets.Add(leftEdge + spacing * (i + 1));
             }
 
             return offsets;
+        }
+
+        private static int GetEffectiveWallWindowCount(int requestedCount, float parentWidth)
+        {
+            if (requestedCount <= 0 || parentWidth <= 0f)
+            {
+                return 0;
+            }
+
+            // Match OpenLevelEditor parity: narrow wall spans should not fan out multiple windows.
+            if (parentWidth < 15f)
+            {
+                return Mathf.Min(1, requestedCount);
+            }
+
+            return requestedCount;
         }
 
         private static bool ShouldSkipZeroCountWindowGroup(Dictionary<string, string> properties)

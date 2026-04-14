@@ -80,12 +80,14 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added a scripted Unity batch wrapper for the Toontown scene material audit, including optional `_MainTex` threshold enforcement for future baseline tightening.
 - Expanded the scene material audit to print affected renderer hierarchy paths so Default-Material cleanup can be grouped by model family instead of guessed from aggregate counts.
 - Reduced wall/window count-layout diagnostics by keeping single-window wall groups on the normal parent-anchor path and applying width-based spacing fallback for multi-window wall groups when parent width data is available.
+- Matched OpenLevelEditor wall-style parity for narrow spans by clamping wall/window layout requests to a single centered window when parent width is below `15.0`.
 - Swapped importer fallback `_MainTex` assignment to a serializable asset-backed blank texture so `Default-Material` sub-assets no longer lose their texture reference across reimport and audit passes.
 
 ### Phase 4 Recommended Next Pass
 - Branch from `main` as `codex/toontown-importer-stabilization`.
 - Stabilize the current Toontown DNA importer before adding more feature surface.
 - Keep strict vs fuzzy resolved-node matching covered in Unity-backed parser regression.
+- Keep narrow-wall `window_count` parity covered in Unity-backed parser regression so style-authoring rules stay aligned with OpenLevelEditor.
 - Keep expanding validation around EGG alpha/material scope so texture/material definitions cannot leak into unrelated geometry.
 - Capture DNA demo metrics in PR descriptions so visual/import quality changes are comparable between runs.
 - Keep Unity/package upgrade work isolated in draft PR #10 until editor import and compile behavior is confirmed.

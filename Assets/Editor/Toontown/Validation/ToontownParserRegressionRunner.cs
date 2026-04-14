@@ -63,6 +63,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunZeroCountWindowGroupFixtureCheck());
             checks.Add(RunSingleCountWindowGroupFixtureCheck());
             checks.Add(RunSingleCountWindowOffsetFixtureCheck());
+            checks.Add(RunNarrowWallWindowCountFixtureCheck());
             checks.Add(RunMultiCountWindowOffsetFixtureCheck());
             checks.Add(RunEggMaterialScopeFixtureCheck());
 
@@ -617,6 +618,36 @@ namespace Toontown.Editor.Validation
             return RegressionCheckResult.Pass(
                 "Multi-count window layout offsets",
                 "Two-window wall layout offsets stay evenly spaced across the parent width.");
+        }
+
+        private static RegressionCheckResult RunNarrowWallWindowCountFixtureCheck()
+        {
+            int effectiveCount = ToontownSceneDocumentImporter.GetEffectiveWallWindowCountForRegression(2, 14.9f);
+            if (effectiveCount != 1)
+            {
+                return RegressionCheckResult.Fail(
+                    "Narrow wall window-count clamp",
+                    $"Expected narrow walls to clamp two requested windows down to one, got {effectiveCount}.");
+            }
+
+            float[] offsets = ToontownSceneDocumentImporter.BuildEvenlySpacedWallWindowOffsetsForRegression(2, 14.9f);
+            if (offsets == null || offsets.Length != 1)
+            {
+                return RegressionCheckResult.Fail(
+                    "Narrow wall window-count clamp",
+                    $"Expected one centered offset after clamping, got {(offsets == null ? 0 : offsets.Length)}.");
+            }
+
+            if (!Mathf.Approximately(offsets[0], 0f))
+            {
+                return RegressionCheckResult.Fail(
+                    "Narrow wall window-count clamp",
+                    $"Expected centered offset [0] after clamping, got [{offsets[0]}].");
+            }
+
+            return RegressionCheckResult.Pass(
+                "Narrow wall window-count clamp",
+                "Narrow wall spans clamp multi-window requests to a single centered window to match style-editor parity.");
         }
 
         private static RegressionCheckResult RunSingleCountWindowOffsetFixtureCheck()
