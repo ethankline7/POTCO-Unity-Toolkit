@@ -85,6 +85,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Added a bundled DNA style-code regression fixture so representative OpenLevelEditor door/window/cornice codes keep resolving through storage mappings without depending on external resource installs.
 - Added alias regression coverage for `clothesshop` storage spellings so preferred-code mappings and normalized resolved-node lookup stay aligned with `clothshop` model nodes.
 - Fixed empty preferred-code storage mappings so landmark `store_node [ ... "" ]` entries fall back to their node name instead of being dropped during DNA parsing.
+- Added a first-pass landmark sign import path so `baseline` nodes under landmark buildings emit visible TextMesh labels from the building `title`, making storefront identities show up in the generated scene.
 - Swapped importer fallback `_MainTex` assignment to a serializable asset-backed blank texture so `Default-Material` sub-assets no longer lose their texture reference across reimport and audit passes.
 
 ### Phase 4 Recommended Next Pass

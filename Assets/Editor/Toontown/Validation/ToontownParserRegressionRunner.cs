@@ -68,6 +68,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunNarrowWallWindowCountFixtureCheck());
             checks.Add(RunMultiCountWindowOffsetFixtureCheck());
             checks.Add(RunHighCountWindowOffsetFixtureCheck());
+            checks.Add(RunLandmarkSignLabelFixtureCheck());
             checks.Add(RunEggMaterialScopeFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
@@ -781,6 +782,97 @@ namespace Toontown.Editor.Validation
             return RegressionCheckResult.Pass(
                 "High-count window layout offsets",
                 "Wide wall layout offsets stay evenly spaced for four-window style cases authored in OpenLevelEditor style files.");
+        }
+
+        private static RegressionCheckResult RunLandmarkSignLabelFixtureCheck()
+        {
+            var document = new WorldDataDocument
+            {
+                Name = "landmark-sign-regression",
+                Objects = new List<WorldDataObject>
+                {
+                    new WorldDataObject
+                    {
+                        Id = "landmark:clothingshop",
+                        Properties = new Dictionary<string, string>
+                        {
+                            { "Keyword", "landmark_building" },
+                            { "Title", "Clothing Shop" }
+                        }
+                    },
+                    new WorldDataObject
+                    {
+                        Id = "sign:clothingshop",
+                        ParentId = "landmark:clothingshop",
+                        Properties = new Dictionary<string, string>
+                        {
+                            { "Keyword", "sign" }
+                        }
+                    },
+                    new WorldDataObject
+                    {
+                        Id = "baseline:clothingshop",
+                        ParentId = "sign:clothingshop",
+                        Properties = new Dictionary<string, string>
+                        {
+                            { "Keyword", "baseline" },
+                            { "Color", "1 0.611765 0.423529 1" }
+                        }
+                    }
+                }
+            };
+
+            ToontownSceneImportResult result = ToontownSceneDocumentImporter.ImportDocument(
+                document,
+                new ToontownSceneImportSettings
+                {
+                    RootObjectName = "__ToontownLandmarkSignLabelRegression",
+                    ApplyPreviewLighting = false,
+                    AddObjectListInfo = false,
+                    CreatePlaceholderForMissingModel = false,
+                    RemoveFakeShadowsByDefault = false
+                });
+
+            try
+            {
+                GameObject baseline = GameObject.Find("baseline:clothingshop");
+                if (baseline == null)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Landmark sign label import",
+                        "Expected baseline fixture object was not created.");
+                }
+
+                TextMesh label = baseline.GetComponentInChildren<TextMesh>(true);
+                if (label == null)
+                {
+                    return RegressionCheckResult.Fail(
+                        "Landmark sign label import",
+                        "Expected landmark baseline to create a TextMesh label.");
+                }
+
+                if (label.text != "Clothing Shop")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Landmark sign label import",
+                        $"Expected landmark sign label text 'Clothing Shop', got '{label.text}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Landmark sign label import",
+                    "Landmark baseline nodes emit visible TextMesh labels using the building title.");
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(result.RootObjectName))
+                {
+                    GameObject root = GameObject.Find(result.RootObjectName);
+                    if (root != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(root);
+                    }
+                }
+            }
         }
 
         private static RegressionCheckResult RunSingleCountWindowOffsetFixtureCheck()

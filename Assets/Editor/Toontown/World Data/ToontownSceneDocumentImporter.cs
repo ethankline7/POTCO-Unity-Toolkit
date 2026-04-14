@@ -7,6 +7,7 @@ using POTCO;
 using Toolkit.Editor.WorldData.Contracts;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using WorldDataImporter.Utilities;
 
 namespace Toontown.Editor
@@ -267,6 +268,7 @@ namespace Toontown.Editor
                     AttachObjectListInfo(go, obj, modelPath);
                 }
 
+                TryCreateLandmarkSignLabel(go, obj, sourceObjectsById);
                 result.CreatedSceneObjects++;
             }
 
@@ -332,6 +334,47 @@ namespace Toontown.Editor
             if (collider != null)
             {
                 UnityEngine.Object.DestroyImmediate(collider);
+            }
+        }
+
+        private static void TryCreateLandmarkSignLabel(
+            GameObject target,
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById)
+        {
+            if (target == null ||
+                sourceObject == null ||
+                sourceObjectsById == null ||
+                !HasKeyword(sourceObject.Properties, "baseline") ||
+                !TryGetLandmarkBuildingTitle(sourceObject, sourceObjectsById, out string title))
+            {
+                return;
+            }
+
+            if (target.GetComponentInChildren<TextMesh>(true) != null)
+            {
+                return;
+            }
+
+            GameObject label = new GameObject("__LandmarkSignLabel__");
+            label.transform.SetParent(target.transform, false);
+
+            var textMesh = label.AddComponent<TextMesh>();
+            textMesh.text = title;
+            textMesh.fontSize = 32;
+            textMesh.characterSize = 0.08f;
+            textMesh.anchor = TextAnchor.MiddleCenter;
+            textMesh.alignment = TextAlignment.Center;
+            textMesh.richText = false;
+            textMesh.color = TryGetColor(sourceObject.Properties, "Color", out Color textColor)
+                ? textColor
+                : Color.white;
+
+            MeshRenderer renderer = label.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
             }
         }
 
@@ -522,6 +565,37 @@ namespace Toontown.Editor
             return properties.ContainsKey("Pos") ||
                    properties.ContainsKey("Hpr") ||
                    properties.ContainsKey("Scale");
+        }
+
+        private static bool TryGetLandmarkBuildingTitle(
+            WorldDataObject sourceObject,
+            Dictionary<string, WorldDataObject> sourceObjectsById,
+            out string title)
+        {
+            title = string.Empty;
+            if (sourceObject == null || sourceObjectsById == null)
+            {
+                return false;
+            }
+
+            string currentId = sourceObject.ParentId;
+            while (!string.IsNullOrWhiteSpace(currentId) &&
+                   sourceObjectsById.TryGetValue(currentId, out WorldDataObject current) &&
+                   current != null)
+            {
+                if (HasKeyword(current.Properties, "landmark_building") &&
+                    current.Properties.TryGetValue("Title", out title) &&
+                    !string.IsNullOrWhiteSpace(title))
+                {
+                    title = title.Trim().Trim('"');
+                    return !string.IsNullOrWhiteSpace(title);
+                }
+
+                currentId = current.ParentId;
+            }
+
+            title = string.Empty;
+            return false;
         }
 
         private static bool TryApplyParentAnchorPlacement(
@@ -1425,6 +1499,30 @@ namespace Toontown.Editor
             }
 
             value = values[0];
+            return true;
+        }
+
+        private static bool TryGetColor(
+            Dictionary<string, string> properties,
+            string key,
+            out Color color)
+        {
+            color = Color.white;
+            if (properties == null ||
+                !properties.TryGetValue(key, out string raw) ||
+                string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            List<float> values = ParseNumbers(raw);
+            if (values.Count < 3)
+            {
+                return false;
+            }
+
+            float alpha = values.Count > 3 ? values[3] : 1f;
+            color = new Color(values[0], values[1], values[2], alpha);
             return true;
         }
 
