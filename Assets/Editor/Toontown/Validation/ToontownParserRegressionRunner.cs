@@ -256,7 +256,8 @@ namespace Toontown.Editor.Validation
                     ["prop:porthole-window"] = ("phase_3.5/models/modules/windows", "window_porthole_ur"),
                     ["prop:curved-cornice"] = ("phase_3.5/models/modules/cornices", "cornice_curved_ur"),
                     ["prop:round-door"] = ("phase_4/models/modules/doors", "door_double_round_ul"),
-                    ["prop:clothshop-door"] = ("phase_4/models/modules/doors", "door_double_clothesshop_ur")
+                    ["prop:clothshop-door"] = ("phase_4/models/modules/doors", "door_double_clothesshop_ur"),
+                    ["landmark_building:clothshop-landmark"] = ("phase_4/models/modules/clothshopTT", "toon_landmark_TT_clothes_shop")
                 };
 
                 foreach (KeyValuePair<string, (string Model, string Node)> expected in expectedMappings)
@@ -288,7 +289,7 @@ namespace Toontown.Editor.Validation
 
                 return RegressionCheckResult.Pass(
                     "Bundled DNA style-code fixture",
-                    $"Resolved curated wall-style door/window/cornice codes from bundled storage mapping (warnings={doc.Warnings.Count}).");
+                    $"Resolved curated style and landmark codes from bundled storage mapping (warnings={doc.Warnings.Count}).");
             }
             catch (System.Exception ex)
             {

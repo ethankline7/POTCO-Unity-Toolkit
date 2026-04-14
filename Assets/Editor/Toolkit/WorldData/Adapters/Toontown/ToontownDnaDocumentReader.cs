@@ -380,9 +380,14 @@ namespace Toolkit.Editor.WorldData.Adapters.Toontown
 
             string nodeName = SanitizeStoreNodeToken(tokens[1]);
             string preferredCode = tokens.Count > 2 ? SanitizeStoreNodeToken(tokens[2]) : nodeName;
-            if (string.IsNullOrWhiteSpace(nodeName) || string.IsNullOrWhiteSpace(preferredCode))
+            if (string.IsNullOrWhiteSpace(nodeName))
             {
                 return;
+            }
+
+            if (string.IsNullOrWhiteSpace(preferredCode))
+            {
+                preferredCode = nodeName;
             }
 
             var record = new StoreNodeRecord

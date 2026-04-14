@@ -22,4 +22,8 @@ group "style-code-regression-zone" [
   prop "clothshop-door" [
     code [ "door_double_clothshop" ]
   ]
+
+  landmark_building "clothshop-landmark" [
+    code [ "toon_landmark_TT_clothes_shop" ]
+  ]
 ]
