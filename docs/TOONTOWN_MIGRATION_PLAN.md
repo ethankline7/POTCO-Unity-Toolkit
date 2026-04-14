@@ -96,12 +96,12 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Capture DNA demo metrics in PR descriptions so visual/import quality changes are comparable between runs.
 - Keep Unity/package upgrade work isolated in draft PR #10 until editor import and compile behavior is confirmed.
 
-### Missing Goals To Add
-- Add numeric quality gates for the importer baseline so "checks pass" is not the only success signal.
-- Add a visual golden-scene baseline for the primary DNA demo review scene so parity regressions are easier to spot.
-- Add a scratch-scene policy so local review scenes stay out of PR scope unless intentionally promoted to tracked fixtures.
-- Add a failure-class coverage map showing which importer risks are protected by automated regression and which still rely on manual review.
-- Add explicit merge sequencing for PR #10 so the Unity upgrade only lands after the stabilization branch is merged and validated.
+### Added Stabilization Goals
+- Numeric quality gates now define the importer baseline in addition to the basic pass/fail checks.
+- The DNA demo scene is now the explicit visual baseline for stabilization review.
+- The scratch-scene policy now keeps local review scenes out of PR scope unless intentionally promoted.
+- The failure-class coverage map now distinguishes automated regression, scripted validation, and still-manual review areas.
+- Merge sequencing for PR #10 now stays explicit so the upgrade lane remains isolated until stabilization lands.
 
 ### Stabilization Quality Gates
 - `scripts/primary-checks.ps1` passes before every push.
@@ -131,17 +131,13 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Covered by scripted validation but still needs visual review: DNA demo metrics, warning category counts, resolved-node isolate totals, door/window anchor totals, fallback-placement totals, material audit offender grouping.
 - Still primarily manual and should be reduced over time: neighborhood-specific landmark/building visual parity, scene-level spacing fidelity beyond the synthetic regression fixtures, environment/lighting/fog presentation, material/art correctness for specific model families after import.
 
-### Tonight Execution Order (April 13, 2026)
-1. Clean the local worktree and confirm which untracked files are intentional scratch artifacts before any merge or deletion step.
-2. Rerun `primary-checks`, parser regression, DNA demo, and material audit sequentially on the pinned Unity editor to refresh the current baseline.
-3. Update PR #11 with the latest metrics so tonight's work is anchored to one authoritative baseline.
-4. Take the first remaining importer gap as the next vertical slice: window count-layout parity for one representative module family.
-5. Add or tighten a regression fixture for that layout case before widening the implementation.
-6. Implement the smallest importer change that reduces layout warnings without broadening lookup behavior unsafely.
-7. Rerun parser regression and DNA demo, then record whether window count-layout warnings decreased, stayed flat, or regressed.
-8. Take the first material offender cluster from the audit output and do one focused cleanup pass for that family only.
-9. Rerun material audit and capture the new offender count and top remaining clusters in PR #11.
-10. If the branch is stable at the end of the night, prepare PR #11 for ready review; keep PR #10 isolated and do not merge or delete either branch until stabilization is intentionally landed.
+### Closeout Order (April 14, 2026)
+1. Keep only intentional scratch artifacts in the worktree and leave local review scenes untracked unless promoted on purpose.
+2. Rerun `primary-checks`, parser regression, DNA demo, and material audit on the pinned Unity editor before every push or PR status refresh.
+3. Update PR #11 with the current importer baseline: missing models `0`, resolved-node isolate failures `0`, parent-anchor misses `0`, layout pending `0`, fallback placement `0`, and `_MainTex` offenders `0`.
+4. Capture visible DNA demo notes for landmark entrances, door/window spacing, tunnel walls, and any material family that still looks suspicious despite green audits.
+5. Push `codex/toontown-importer-stabilization` only after the validation suite is green and the scratch scene remains out of scope.
+6. Prepare PR #11 for ready review once the visual pass and metric refresh are recorded; keep PR #10 isolated and unmerged until stabilization is intentionally landed.
 
 ### Merge Sequencing
 - Merge PR #11 before revisiting PR #10.
