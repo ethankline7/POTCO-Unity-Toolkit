@@ -83,6 +83,7 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - Matched OpenLevelEditor wall-style parity for narrow spans by clamping wall/window layout requests to a single centered window when parent width is below `15.0`.
 - Pinned higher authored `window_count` layout coverage in parser regression so wide wall spans keep working for four-window style cases seen in OpenLevelEditor style files.
 - Added a bundled DNA style-code regression fixture so representative OpenLevelEditor door/window/cornice codes keep resolving through storage mappings without depending on external resource installs.
+- Added alias regression coverage for `clothesshop` storage spellings so preferred-code mappings and normalized resolved-node lookup stay aligned with `clothshop` model nodes.
 - Swapped importer fallback `_MainTex` assignment to a serializable asset-backed blank texture so `Default-Material` sub-assets no longer lose their texture reference across reimport and audit passes.
 
 ### Phase 4 Recommended Next Pass

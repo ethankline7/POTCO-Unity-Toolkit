@@ -59,6 +59,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunDnaStyleCodeFixtureCheck());
             checks.Add(RunResolvedNodeStrictFixtureCheck());
             checks.Add(RunResolvedNodeFuzzyFixtureCheck());
+            checks.Add(RunResolvedNodeSpellingAliasFixtureCheck());
             checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
             checks.Add(RunResolvedNodeParentAnchorAliasFixtureCheck());
             checks.Add(RunZeroCountWindowGroupFixtureCheck());
@@ -254,7 +255,8 @@ namespace Toontown.Editor.Validation
                     ["prop:curved-window"] = ("phase_3.5/models/modules/windows", "window_md_curved_ur"),
                     ["prop:porthole-window"] = ("phase_3.5/models/modules/windows", "window_porthole_ur"),
                     ["prop:curved-cornice"] = ("phase_3.5/models/modules/cornices", "cornice_curved_ur"),
-                    ["prop:round-door"] = ("phase_4/models/modules/doors", "door_double_round_ul")
+                    ["prop:round-door"] = ("phase_4/models/modules/doors", "door_double_round_ul"),
+                    ["prop:clothshop-door"] = ("phase_4/models/modules/doors", "door_double_clothesshop_ur")
                 };
 
                 foreach (KeyValuePair<string, (string Model, string Node)> expected in expectedMappings)
@@ -392,6 +394,44 @@ namespace Toontown.Editor.Validation
                 return RegressionCheckResult.Pass(
                     "Resolved-node fuzzy lookup",
                     $"Fuzzy fallback matched '{matchedName}' via '{strategy}'.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        private static RegressionCheckResult RunResolvedNodeSpellingAliasFixtureCheck()
+        {
+            GameObject root = new GameObject("__ToontownResolvedNodeSpellingAliasRegression");
+            try
+            {
+                var aliasRoot = new GameObject("door_double_clothshop_ur");
+                aliasRoot.transform.SetParent(root.transform, false);
+
+                if (!ToontownSceneDocumentImporter.TryFindResolvedNodeForRegression(
+                        root.transform,
+                        "door_double_clothesshop_ur",
+                        allowFuzzyMatch: false,
+                        out string matchedName,
+                        out string strategy,
+                        out string diagnostics))
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node spelling alias lookup",
+                        $"Expected spelling-alias lookup to match clothshop node, but failed: {diagnostics}");
+                }
+
+                if (matchedName != "door_double_clothshop_ur" || strategy != "normalized-name")
+                {
+                    return RegressionCheckResult.Fail(
+                        "Resolved-node spelling alias lookup",
+                        $"Expected normalized-name match on door_double_clothshop_ur, got '{matchedName}' via '{strategy}'.");
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Resolved-node spelling alias lookup",
+                    "Normalized resolved-node lookup keeps clothesshop storage aliases aligned with clothshop model nodes.");
             }
             finally
             {

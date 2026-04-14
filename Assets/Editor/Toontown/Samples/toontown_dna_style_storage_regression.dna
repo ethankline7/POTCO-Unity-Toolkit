@@ -10,4 +10,5 @@ model "phase_3.5/models/modules/cornices" [
 
 model "phase_4/models/modules/doors" [
   store_node [ "door_double" "door_double_round_ul" ]
+  store_node [ "door_double" "door_double_clothesshop_ur" "door_double_clothshop" ]
 ]
