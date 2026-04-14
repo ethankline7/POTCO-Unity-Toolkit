@@ -1,0 +1,21 @@
+group "style-code-regression-zone" [
+  prop "round-window" [
+    code [ "window_sm_round_ur" ]
+  ]
+
+  prop "curved-window" [
+    code [ "window_md_curved_ur" ]
+  ]
+
+  prop "porthole-window" [
+    code [ "window_porthole_ur" ]
+  ]
+
+  prop "curved-cornice" [
+    code [ "cornice_curved_ur" ]
+  ]
+
+  prop "round-door" [
+    code [ "door_double_round_ul" ]
+  ]
+]

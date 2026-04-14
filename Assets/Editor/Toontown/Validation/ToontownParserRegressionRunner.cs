@@ -56,6 +56,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunDictionaryFixtureCheck(reader));
             checks.Add(RunAssignmentFixtureCheck(reader));
             checks.Add(RunDnaStorageFixtureCheck());
+            checks.Add(RunDnaStyleCodeFixtureCheck());
             checks.Add(RunResolvedNodeStrictFixtureCheck());
             checks.Add(RunResolvedNodeFuzzyFixtureCheck());
             checks.Add(RunResolvedNodeModuleAliasFixtureCheck());
@@ -226,6 +227,71 @@ namespace Toontown.Editor.Validation
             {
                 return RegressionCheckResult.Fail(
                     "Bundled DNA storage fixture",
+                    $"Exception while parsing fixture: {ex.Message}");
+            }
+        }
+
+        private static RegressionCheckResult RunDnaStyleCodeFixtureCheck()
+        {
+            if (!ToontownToolkitPaths.BundledDnaStyleRegressionSamplesExist())
+            {
+                return RegressionCheckResult.Fail(
+                    "Bundled DNA style-code fixture",
+                    $"Missing fixture pair: {ToontownToolkitPaths.BundledDnaStyleZoneRegressionRelativePath}, " +
+                    $"{ToontownToolkitPaths.BundledDnaStyleStorageRegressionRelativePath}");
+            }
+
+            try
+            {
+                var reader = new ToontownDnaDocumentReader();
+                WorldDataDocument doc = reader.ReadFromFileWithStorage(
+                    ToontownToolkitPaths.BundledDnaStyleZoneRegressionFullPath,
+                    new[] { ToontownToolkitPaths.BundledDnaStyleStorageRegressionFullPath });
+
+                var expectedMappings = new Dictionary<string, (string Model, string Node)>
+                {
+                    ["prop:round-window"] = ("phase_3.5/models/modules/windows", "window_sm_round_ur"),
+                    ["prop:curved-window"] = ("phase_3.5/models/modules/windows", "window_md_curved_ur"),
+                    ["prop:porthole-window"] = ("phase_3.5/models/modules/windows", "window_porthole_ur"),
+                    ["prop:curved-cornice"] = ("phase_3.5/models/modules/cornices", "cornice_curved_ur"),
+                    ["prop:round-door"] = ("phase_4/models/modules/doors", "door_double_round_ul")
+                };
+
+                foreach (KeyValuePair<string, (string Model, string Node)> expected in expectedMappings)
+                {
+                    WorldDataObject obj = doc.Objects.FirstOrDefault(o => o.Id == expected.Key);
+                    if (obj == null)
+                    {
+                        return RegressionCheckResult.Fail(
+                            "Bundled DNA style-code fixture",
+                            $"Expected DNA object id '{expected.Key}' was not parsed.");
+                    }
+
+                    if (!obj.Properties.TryGetValue("ResolvedModel", out string resolvedModel) ||
+                        resolvedModel != expected.Value.Model)
+                    {
+                        return RegressionCheckResult.Fail(
+                            "Bundled DNA style-code fixture",
+                            $"Expected ResolvedModel '{expected.Value.Model}' for '{expected.Key}', got '{resolvedModel}'.");
+                    }
+
+                    if (!obj.Properties.TryGetValue("ResolvedNode", out string resolvedNode) ||
+                        resolvedNode != expected.Value.Node)
+                    {
+                        return RegressionCheckResult.Fail(
+                            "Bundled DNA style-code fixture",
+                            $"Expected ResolvedNode '{expected.Value.Node}' for '{expected.Key}', got '{resolvedNode}'.");
+                    }
+                }
+
+                return RegressionCheckResult.Pass(
+                    "Bundled DNA style-code fixture",
+                    $"Resolved curated wall-style door/window/cornice codes from bundled storage mapping (warnings={doc.Warnings.Count}).");
+            }
+            catch (System.Exception ex)
+            {
+                return RegressionCheckResult.Fail(
+                    "Bundled DNA style-code fixture",
                     $"Exception while parsing fixture: {ex.Message}");
             }
         }
