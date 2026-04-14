@@ -109,7 +109,9 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - `scripts/run-action.cmd material-audit` is rerun after any importer/material change that could affect `_MainTex` or `Default-Material` counts.
 - Missing models stays at `0`.
 - Resolved-node isolate failures stays at `0`.
-- Window count-layout pending warnings trend downward from the current baseline instead of growing silently.
+- Door/window parent anchor misses stays at `0`.
+- Window count-layout pending warnings stays at `0`.
+- Fallback placement warnings stays at `0`.
 - Material-audit `_MainTex` offenders stay at `0`.
 - No generated resource dumps, demo output scenes, logs, screenshots, or local scratch scenes are committed unless intentionally promoted as fixtures.
 
@@ -124,9 +126,9 @@ Port reusable toolkit infrastructure from POTCO-specific workflows to a game-fla
 - If a scratch scene is needed during debugging, either keep it untracked or move it under a clearly named generated/samples path before discussing promotion.
 
 ### Failure-Class Coverage Map
-- Covered by automated regression: parser dictionary and assignment samples, DNA storage mapping, strict/fuzzy resolved-node lookup, module alias matching, parent-anchor alias matching, zero-count window group handling, EGG material-scope inheritance.
-- Covered by scripted validation but still needs visual review: DNA demo metrics, warning category counts, material audit offender grouping.
-- Still primarily manual and should be reduced over time: wall-module window spacing/count layout parity, scene-level visual placement fidelity, material cleanup for specific offender families.
+- Covered by automated regression: parser dictionary and assignment samples, bundled DNA storage mapping, bundled style-code storage mapping, strict/fuzzy resolved-node lookup, spelling alias normalization, module alias matching, parent-anchor alias matching, zero-count window group handling, narrow-wall count clamp, single-count and multi-count offset layout math, high-count window layout math, EGG material-scope inheritance.
+- Covered by scripted validation but still needs visual review: DNA demo metrics, warning category counts, resolved-node isolate totals, door/window anchor totals, fallback-placement totals, material audit offender grouping.
+- Still primarily manual and should be reduced over time: neighborhood-specific landmark/building visual parity, scene-level spacing fidelity beyond the synthetic regression fixtures, environment/lighting/fog presentation, material/art correctness for specific model families after import.
 
 ### Tonight Execution Order (April 13, 2026)
 1. Clean the local worktree and confirm which untracked files are intentional scratch artifacts before any merge or deletion step.
