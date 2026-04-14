@@ -65,6 +65,7 @@ namespace Toontown.Editor.Validation
             checks.Add(RunSingleCountWindowOffsetFixtureCheck());
             checks.Add(RunNarrowWallWindowCountFixtureCheck());
             checks.Add(RunMultiCountWindowOffsetFixtureCheck());
+            checks.Add(RunHighCountWindowOffsetFixtureCheck());
             checks.Add(RunEggMaterialScopeFixtureCheck());
 
             bool passed = checks.All(c => c.Passed);
@@ -648,6 +649,31 @@ namespace Toontown.Editor.Validation
             return RegressionCheckResult.Pass(
                 "Narrow wall window-count clamp",
                 "Narrow wall spans clamp multi-window requests to a single centered window to match style-editor parity.");
+        }
+
+        private static RegressionCheckResult RunHighCountWindowOffsetFixtureCheck()
+        {
+            float[] offsets = ToontownSceneDocumentImporter.BuildEvenlySpacedWallWindowOffsetsForRegression(4, 20f);
+            if (offsets == null || offsets.Length != 4)
+            {
+                return RegressionCheckResult.Fail(
+                    "High-count window layout offsets",
+                    $"Expected 4 offsets, got {(offsets == null ? 0 : offsets.Length)}.");
+            }
+
+            if (!Mathf.Approximately(offsets[0], -6f) ||
+                !Mathf.Approximately(offsets[1], -2f) ||
+                !Mathf.Approximately(offsets[2], 2f) ||
+                !Mathf.Approximately(offsets[3], 6f))
+            {
+                return RegressionCheckResult.Fail(
+                    "High-count window layout offsets",
+                    $"Expected offsets [-6, -2, 2, 6], got [{offsets[0]}, {offsets[1]}, {offsets[2]}, {offsets[3]}].");
+            }
+
+            return RegressionCheckResult.Pass(
+                "High-count window layout offsets",
+                "Wide wall layout offsets stay evenly spaced for four-window style cases authored in OpenLevelEditor style files.");
         }
 
         private static RegressionCheckResult RunSingleCountWindowOffsetFixtureCheck()
